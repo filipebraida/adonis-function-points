@@ -54,6 +54,16 @@ registra a sua.
 variação entre analistas. Erro sistemático se calibra; variância entre
 contadores, não.
 
+## Suporte
+
+| | v1 |
+|---|---|
+| AdonisJS 7 + Lucid 22 | **sim** — schema gerado, `codegen`, com ou sem Tuyau |
+| AdonisJS 6 / Lucid 21 | não — detectado e reportado |
+| Kysely e outros ORMs | não — detectado e reportado; a costura existe e é testada |
+
+Fora do escopo, o pacote diz que não suporta. Nunca conta zero em silêncio.
+
 ## Instalação
 
 ```bash

@@ -19,6 +19,31 @@ ninguém a alcança.
 Consequência prática: a qualidade do pacote é a qualidade desse rastreamento. É
 onde o esforço vai.
 
+## Escopo do v1: AdonisJS 7 + Lucid 22
+
+Decisão do autor após a validação externa: **o v1 mira core 7 com Lucid 22**.
+Não é limitação de desenho — as costuras são gerais e a fixture Kysely fica como
+sentinela — é sequência: um backend de ponta a ponta antes do segundo. Das 10
+apps levantadas, 9 usam Lucid.
+
+Fora do v1, detectado e reportado, nunca contado errado:
+
+| detectado | comportamento |
+|---|---|
+| core 6 / Lucid 21 | "não suportado no v1" — sem schema gerado, sem codegen |
+| ORM ≠ Lucid (Kysely…) | "ORM não suportado"; costura provada pela fixture pulada |
+| core 5 | `layout: unknown`, 0 aliases — fora de escopo |
+
+O que o escopo v7 devolve ao jogo — com as precondições reais, lidas no código
+do framework:
+
+| artefato | como obter | precondição |
+|---|---|---|
+| rotas → handler | **runtime**: bootar a app (`environment: 'web'`, para os preloads de rota carregarem) e ler `router.toJSON()` — é exatamente o que `node ace codegen` faz | app bootável: deps instaladas, env presente; **sem banco** |
+| `database/schema.ts` | versionado, ou `node ace schema:generate` | o gerador **introspecta o banco vivo** — sem conexão, tem que estar versionado |
+| DETs de entrada | validator por AST; registry do Tuyau quando existir | — |
+| grafo de chamadas | AST | — |
+
 ## Ordem das fontes
 
 **Revisada após a validação externa**
@@ -26,12 +51,19 @@ onde o esforço vai.
 a ordem original ("gerado primeiro") só vale para AdonisJS 7 + Lucid 22 + Tuyau.
 Os starter kits oficiais estão em core 6.18 / Lucid 21.6, sem nenhum gerado.
 
-| # | fonte | papel | confiabilidade |
+No escopo v7, por fato:
+
+| fato | fonte primária | fallback | confiabilidade |
 |---|---|---|---|
-| 1 | **AST** — validators, models com cadeia de herança, `routes.ts` listados nos `preloads` do `adonisrc.ts` | **base**: v6 e v7, com ou sem Tuyau | heurística controlada |
-| 2 | **artefato gerado** — schema Lucid 22, codegen core 7, registry Tuyau | **upgrade de precisão** onde existe; em v7, regenerável sob demanda | canônica |
-| 3 | **runtime** | decisão pendente: dentro ou fora do v1 | exata, exige bootar |
-| 4 | **convenção de pasta** | agrupamento de relatório | metadado |
+| rotas, verbos, handler | **runtime** (`router.toJSON()` após boot sem banco) | parser de `routes.ts` via `preloads` | exata / heurística |
+| funções de dados, colunas | **`database/schema.ts`** (Lucid 22) | model por AST seguindo herança | canônica / heurística |
+| DETs de entrada | registry **Tuyau**, se houver | validator por AST | canônica / boa |
+| grafo, escrita, FTR | **AST** | — | heurística controlada |
+| agrupamento | convenção de pasta | — | metadado |
+
+**Runtime entrou no v1, só para rotas.** O core 7 prova que bootar sem banco é
+o padrão do próprio framework (`codegen` faz isso). Nada de runtime para dados:
+`schema:generate` precisa do banco, então o arquivo versionado é a fonte.
 
 O relatório diz **qual fonte produziu cada fato**. Uma contagem feita só por
 AST e outra com schema gerado não são equivalentes, e o número tem que carregar

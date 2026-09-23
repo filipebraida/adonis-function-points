@@ -23,9 +23,10 @@ primeiro coletor.
 
 **Ressalva honesta:** as duas primeiras fixtures foram escritas pela mesma mão,
 ao mesmo tempo, e compartilham o registry e o schema byte a byte. Elas são
-regressão, não generalização. A terceira (`minimal_v6`) deriva de um layout de
-autoria externa e **sem nenhum artefato gerado** — é ela que testa se o caminho
-por AST, sozinho, chega à mesma contagem.
+regressão, não generalização. A terceira (`minimal_nogen`) é a mesma app v7
+**sem nenhum gerado versionado** — testa se o fallback por AST chega à mesma
+contagem. A quarta (`minimal_kysely`) fica pulada no v1 e existe para provar a
+costura: quando Kysely entrar, só `sources/` e `detectors/` podem mudar.
 
 ## Taxonomia das fixtures
 
@@ -34,10 +35,11 @@ tests/fixtures/
 ├── apps/                     aplicações completas e mínimas
 │   ├── minimal_flat/           MVC plano
 │   ├── minimal_modular/        módulo por domínio — MESMA app lógica
-│   ├── minimal_v6/             MESMA app, layout do web-starter-kit oficial:
-│   │                           v6, sem nenhum gerado, rotas em start/routes/
-│   ├── minimal_kysely/         MESMA app, sem Lucid: kysely-codegen, repositórios
-│   │                           em src/, @inject() por tipo, módulos aninhados
+│   ├── minimal_nogen/          MESMA app em v7, sem .adonisjs/ nem schema.ts
+│   │                           versionados: prova o fallback por AST
+│   ├── minimal_kysely/         MESMA app, sem Lucid — SENTINELA, pulada no v1:
+│   │                           prova que Kysely entra só por sources/ e detectors/
+│   ├── minimal_v6/             futuro (fora do v1): web-starter-kit oficial
 │   └── vazquez/                benchmark público, gabarito 56 PF
 ├── patterns/                 onde mora a lógica          [7 fixtures, feito]
 ├── models/                   estilos de definição de model
@@ -78,7 +80,8 @@ Exemplos antes do código:
   um por módulo, diretório `start/routes/*.ts`, e hub que só importa módulos
 - `scanRoots`: diretórios alcançáveis pelos aliases, não só `app/`
 - `moduleOf()` com módulo aninhado (`admin/taxonomies`)
-- `framework.orm: 'lucid' | 'kysely' | 'unknown'`
+- `framework.orm: 'lucid' | 'kysely' | 'unknown'` e `framework.core` — fora do
+  escopo v1 é **reportado**, não contado
 - `framework: { core, lucid, tuyau }` — decide a estratégia e vai para o relatório
 - `canRegenerate` — em v7, oferecer `codegen` / `schema:generate` antes de contar
 
@@ -109,17 +112,21 @@ Exemplos antes do código:
 
 **Pronto quando:** `DataStore[]` idêntico entre as quatro fixtures de app.
 
-## Fase 3 — transações candidatas: parser de rotas como base, registry como upgrade
+## Fase 3 — transações candidatas: runtime como base, AST como fallback
 
-**Invertido após a validação externa.** O registry com tipos de body é Tuyau
-(opcional); o `controllers.ts` é core 7. Fora da casa, nenhuma app tem os dois.
+**Revisado com o escopo v7.** O core 7 boota a app sem banco para gerar tipos
+de rota (`codegen`); `fp:inventory` faz o mesmo e lê `router.toJSON()` —
+rota, verbos, nome, **handler**. Exige `environment: 'web'` no boot para os
+preloads de rota carregarem, e env presente. Sem app bootável, o parser de
+`routes.ts` assume. O registry com tipos de body continua sendo Tuyau, opcional.
 
 Exemplos antes do código:
 
-- arquivos de rota vêm dos `preloads` do `adonisrc.ts`: um só, um por módulo,
-  ou um diretório `start/routes/*.ts` — as três formas encontradas
-- `routes_ast` é a base: rota multi-linha, `.resource()` expandido com
-  `.only()`/`.apiOnly()`, controller por lazy import **ou** por mapa gerado
+- **runtime**: `router.toJSON()` produz os mesmos `EntryPoint` que o parser de
+  AST na mesma fixture — os dois caminhos têm que concordar
+- fallback `routes_ast`: arquivos de rota vêm dos `preloads` do `adonisrc.ts`
+  seguindo imports (as quatro topologias); rota multi-linha; `.resource()` com
+  `.only()`/`.apiOnly()`; controller por lazy import **ou** por mapa gerado
 - DETs de entrada saem do **validator por AST** (`vine.object` recursivo,
   spread resolvido, array e objeto aninhado com regra registrada em
   `counting-decisions.md`); com Tuyau presente, o registry prevalece
@@ -181,9 +188,14 @@ estão em `counting-decisions.md`, com a regra normativa:
 3. **§7 DETs de tipos compostos** — tabela por forma; spread não resolvido
    conta 0 e entra em `unresolved`. Base: AFP §4 e §7.3, IFPUG grupo repetitivo.
 
-Ficam duas de escopo:
+Decidida também:
 
-4. **Runtime: dentro ou fora do v1.** Está na arquitetura e em nenhuma fase.
+4. **Runtime: dentro do v1, só para rotas.** Boot sem banco é padrão do próprio
+   core 7. Para dados, `schema:generate` exige banco — fonte é o arquivo
+   versionado.
+
+Fica uma de escopo:
+
 5. **Orçamento de desempenho.** Fixtures têm 2 entidades; alvo real tem 48 e
    1100 arquivos. Grafo com hooks sobre ts-morph precisa caber em CI.
 
