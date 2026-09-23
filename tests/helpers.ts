@@ -9,6 +9,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 export const fixturePath = (...parts: string[]) => path.join(HERE, 'fixtures', ...parts)
 
+/** raiz de uma fixture de aplicação completa, em tests/fixtures/apps/ */
+export const appFixturePath = (name: string) => fixturePath('apps', name)
+
 /**
  * Monta um projeto ts-morph a partir de uma fixture.
  *

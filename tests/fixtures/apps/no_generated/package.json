@@ -1,0 +1,8 @@
+{
+  "name": "no-generated",
+  "type": "module",
+  "imports": {
+    "#models/*": "./app/models/*.js",
+    "#start/*": "./start/*.js"
+  }
+}

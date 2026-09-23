@@ -1,0 +1,13 @@
+{
+  "name": "minimal-flat",
+  "type": "module",
+  "imports": {
+    "#controllers/*": "./app/controllers/*.js",
+    "#actions/*": "./app/actions/*.js",
+    "#models/*": "./app/models/*.js",
+    "#validators/*": "./app/validators/*.js",
+    "#database/*": "./database/*.js",
+    "#start/*": "./start/*.js",
+    "#generated/*": "./.adonisjs/server/*.js"
+  }
+}

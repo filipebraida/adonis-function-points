@@ -1,0 +1,11 @@
+{
+  "name": "overlapping-aliases",
+  "type": "module",
+  "imports": {
+    "#app/*": "./app/*.js",
+    "#app/legacy/*": "./vendor/legacy/*.js",
+    "#core/*": "./app/core/*.js",
+    "#billing/*": "./app/billing/*.js",
+    "#exact": "./app/billing/models/invoice.js"
+  }
+}

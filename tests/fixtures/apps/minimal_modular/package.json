@@ -1,0 +1,11 @@
+{
+  "name": "minimal-modular",
+  "type": "module",
+  "imports": {
+    "#app/*": "./app/*.js",
+    "#catalog/*": "./app/catalog/*.js",
+    "#core/*": "./app/core/*.js",
+    "#start/*": "./start/*.js",
+    "#generated/*": "./.adonisjs/server/*.js"
+  }
+}
