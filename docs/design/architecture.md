@@ -1,123 +1,168 @@
 # Arquitetura
 
-## Duas camadas, deliberadamente separadas
+Revisada após o levantamento de 6 aplicações AdonisJS de produção
+([`../research/adonisjs-variation.md`](../research/adonisjs-variation.md)). A
+versão anterior procurava artefatos por convenção de pasta e teria contado zero
+em duas das seis apps.
+
+## A tese
+
+**O grafo transação → funções de dados é a espinha da contagem. Todo o resto é
+filtro de borda.**
+
+Isso não é preferência de desenho — caiu do AFP. Três das quatro decisões de
+borda em [`counting-decisions.md`](counting-decisions.md) se resolvem pela mesma
+regra: rota estática não conta porque não alcança dado; rota de pacote terceiro
+idem; hook de model conta porque está no caminho; tabela órfã não conta porque
+ninguém a alcança.
+
+Consequência prática: a qualidade do pacote é a qualidade desse rastreamento. É
+onde o esforço vai.
+
+## Ordem das fontes
+
+| # | fonte | o que entrega | confiabilidade |
+|---|---|---|---|
+| 1 | **artefato gerado** | rotas, verbos, DETs de entrada, colunas canônicas | canônica |
+| 2 | **runtime** | `router.toJSON()`, metadados do Lucid | exata, exige bootar |
+| 3 | **AST** | grafo de chamadas, detecção de escrita | heurística |
+| 4 | **convenção de pasta** | agrupamento de relatório | metadado |
+
+**Convenção de pasta nunca é usada para encontrar coisa.** Um pacote que procura
+models em `app/**/models/` conta zero numa das apps levantadas, onde 35 arquivos
+de model não estendem `BaseModel` do Lucid e só 3 têm `@column`.
+
+### Os dois artefatos gerados
+
+Presentes nas 6 aplicações, independentes de layout:
+
+**`.adonisjs/client/registry/schema.d.ts`** — 157 a 164 rotas por app, com nome,
+verbos, padrão e os tipos de `body`/`query` inferidos do VineJS. Ou seja: as
+transações candidatas **e** seus DETs de entrada, de graça. Acompanhado de
+`.adonisjs/server/controllers.ts` (nome → arquivo do controller).
+
+**`database/schema.ts`** — gerado das migrations, classes `<Nome>Schema` com
+`static $columns` canônico. É a fonte certa de DETs e resolve sozinha duas
+variações que quebram um parser de models: estilos de definição heterogêneos, e
+colunas que **pacotes** acrescentam via migration própria — que aparecem ali sem
+o contador precisar saber que aquele pacote existe.
+
+## Camadas
 
 ```
-src/inventory/   fatos crus da aplicação — NÃO conhece APF
-src/albrecht/    regras IFPUG/AFP aplicadas sobre o inventário
+src/inventory/   fatos crus — NÃO conhece APF
+src/albrecht/    regras IFPUG/AFP sobre o inventário
 ```
 
-**Regra inegociável:** `src/inventory/**` nunca importa de `src/albrecht/**`.
+**Regra inegociável:** `src/inventory/**` nunca importa de `src/albrecht/**`. O
+inventário não sabe o que é um ALI. É isso que permite extrair a camada para um
+pacote próprio se as métricas estatísticas crescerem.
 
-O inventário não sabe o que é um ALI. É isso que permite, se as métricas
-estatísticas crescerem, extrair a camada de inventário para um pacote próprio
-sem reescrever nada — e o contador de PF vira só mais um consumidor dela.
+```
+src/
+├── inventory/
+│   ├── app_context.ts        descobre a app: imports do package.json,
+│   │                         artefatos gerados, layout
+│   ├── sources/              fatos, por ARTEFATO (não por pasta)
+│   │   ├── route_registry.ts     registry gerado -> transações + DETs entrada
+│   │   ├── controllers_map.ts    mapa gerado nome -> arquivo
+│   │   ├── data_schema.ts        schema gerado -> data stores + DETs
+│   │   ├── routes_ast.ts         fallback quando não há registry
+│   │   └── model_hooks.ts        hooks, que entram no caminho da transação
+│   ├── graph/
+│   │   ├── call_graph.ts     transação -> dados, em nível de MÉTODO
+│   │   └── coverage.ts       o que não foi resolvido, exigido pelo AFP
+│   ├── resolvers/            como seguir cada padrão de código
+│   └── detectors/            o que é leitura/escrita (lucid, query builder)
+└── albrecht/
+    ├── tables.ts             tabelas de complexidade IFPUG
+    ├── data_functions.ts     ALI vs AIE, DET/RET
+    ├── transactional_functions.ts   EE vs SE, DET/FTR
+    ├── technical_filter.ts   AFP 6.5.2.1.1 + origem da escrita
+    └── counter.ts
+```
 
-Enquanto isso não acontecer, **um repo flat, um pacote publicado**, igual ao
-`adonis-auditing`. Nada de monorepo preventivo.
+## Descoberta no lugar de configuração
 
-## Por que "Albrecht"
+`AppContext` descobre o que precisa em vez de perguntar:
 
-Allan J. Albrecht inventou a APF na IBM em 1979; o IFPUG só foi fundado em 1986
-para padronizar o método dele. Mas o nome aqui não é homenagem decorativa: a
-literatura de medição funcional usa "Albrecht function points" para distinguir
-da linhagem COSMIC, que conta movimentos de dados e produz números
-incompatíveis. Se um dia houver `src/cosmic/`, a separação já está nomeada.
+- **aliases `#`** — lidos do `imports` do `package.json`, nunca deduzidos:
+  existem duas convenções incompatíveis em uso (`#models/*` por tipo,
+  `#collect/*` por módulo);
+- **artefatos gerados** — localizados pelo cabeçalho de geração e pela forma das
+  classes, não pelo caminho;
+- **layout** — detectado, e usado só para agrupar relatório.
 
-## Fontes de dados: runtime + estático
+Sobra como configuração apenas o que é **decisão de negócio**, que nenhuma
+heurística deveria tomar: a fronteira da aplicação, quais repositórios são
+mantidos externamente (AIE), e overrides com justificativa obrigatória.
 
-A dissertação do Ligeiro precisou de modelos UML (AndroMDA) porque não tinha
-acesso ao runtime da aplicação. Nós temos, e isso muda o custo de tudo:
+## Extensibilidade é requisito
 
-| Fato | Origem | Confiabilidade |
-|---|---|---|
-| rotas, métodos, padrões, handlers | `router.toJSON()` em runtime | exata |
-| colunas e tipos dos models | `Model.$columnsDefinitions` | exata |
-| relações e cardinalidade | `Model.$relationsDefinitions` | exata |
-| tabelas físicas | migrations (AST) | exata |
-| DETs de entrada | schema VineJS | quase exata |
-| DETs de saída | transformers (AST) | boa |
-| escreve ou só lê? | grafo de chamadas (ts-morph) | **heurística — o ponto crítico** |
-| FTR/AR | models alcançáveis pelo handler | heurística, precisa de poda |
+AdonisJS não impõe organização. Medido nas 6 apps, a escrita se espalha assim:
 
-Regra geral: **runtime para o que não pode errar, AST para o que é
-inerentemente heurístico.**
+| app | controllers | services | actions | queries | jobs | models |
+|---|---|---|---|---|---|---|
+| A | 0 | 3 | 15 | 0 | 0 | 3 |
+| B | 14 | 16 | 92 | 0 | 0 | 0 |
+| C | 27 | 154 | 131 | 8 | 63 | 5 |
+| D | 0 | 1 | 135 | 0 | 1 | 1 |
 
-Consequência operacional: o coletor de runtime precisa funcionar com o
-container instanciado mas sem conexão de banco, senão não roda em CI. Validar
-isso cedo.
+Nenhuma usa menos de 4 tipos de artefato. O rastreamento não pode privilegiar
+nenhum — segue o grafo onde ele for, e o tipo de artefato é só metadado.
 
-## Extensibilidade é requisito, não enfeite
-
-AdonisJS não impõe padrão de organização. A mesma transação pode estar escrita
-como controller gordo, action object, service estático, service injetado,
-repository, job. Um pacote que só entenda um desses padrões só funciona no
-projeto que o originou.
-
-Por isso quatro pontos de extensão, em `src/inventory/resolvers/types.ts`:
+Quatro pontos de extensão em `src/inventory/resolvers/types.ts`:
 
 - **`CallResolver`** — como seguir de um call site ao próximo corpo
-- **`PersistenceDetector`** — o que conta como leitura/escrita de dados
-  (separado de propósito: trocar o ORM muda o detector, não o grafo)
-- **`DataStoreCollector`** — de onde saem os candidatos a ALI/AIE
-- **`EntryPointCollector`** — de onde saem os candidatos a EE/SE/CE
+- **`PersistenceDetector`** — o que é leitura/escrita (trocar o ORM troca isto,
+  não o grafo)
+- **`DataStoreCollector`** — de onde saem candidatos a ALI/AIE
+- **`EntryPointCollector`** — de onde saem candidatos a EE/SE/CE
 
-Estratégias registradas em `config/function_points.ts` rodam **antes** das
-embutidas.
+Estratégias do usuário rodam **antes** das embutidas. **A primeira que
+reivindica, vence** — formas sintaticamente idênticas têm significados
+diferentes (`Job.dispatch(p)`, `Service.create(p)` e `Model.find(p)` são todas
+`Identificador.metodo(args)`), e só a ordem as separa.
 
 ### Transação não é sinônimo de rota HTTP
 
-Um comando ace que importa uma planilha e um job agendado que sincroniza com
-sistema externo são funções transacionais pelo IFPUG. Cada um é um
-`EntryPointCollector`. Contar só HTTP subestima o tamanho.
+Comando ace que importa planilha e job agendado que sincroniza com sistema
+externo são funções transacionais pelo IFPUG. Cada um é um
+`EntryPointCollector`.
 
 ## Rastreabilidade é requisito
 
-Se PF vira fatura, alguém vai contestar um número. Toda função contada carrega
-`Rationale`: a regra aplicada, a origem de cada DET, a origem de cada FTR, o
-caminho percorrido no grafo, e qualquer override manual **com justificativa
-obrigatória**. É o que `fp:explain` imprime.
+Toda função contada carrega `Rationale`: regra aplicada, origem de cada DET e
+FTR, caminho no grafo, e overrides com justificativa obrigatória. É o que
+`fp:explain` imprime. Se PF vira fatura, alguém vai contestar um número, e um
+número sem procedência é indefensável.
 
-Sem isso a contagem é um número mágico e ninguém confia.
-
-Corolário: o ruleset é versionado e sai em todo relatório. Contagens só são
-comparáveis entre releases se as regras não mudaram no meio — trate o arquivo
-de regras como parte do contrato.
+O ruleset é versionado e sai em todo relatório: contagens só são comparáveis se
+as regras não mudaram no meio.
 
 ## Dizer "não sei" é melhor que errar em silêncio
 
-Chamada que nenhum resolvedor segue entra em `unresolved` e conta na métrica de
-cobertura. Se a cobertura cai abaixo de `minCoverage`, a contagem **falha** em
-vez de emitir um número que parece certo.
+Chamada que nenhum resolvedor segue entra em `unresolved` e conta na cobertura.
+Abaixo de `minCoverage`, a contagem **falha**.
 
-Um total com 40% das chamadas não resolvidas não deveria virar fatura.
+O AFP não trata isso como opcional:
+
+> "If the transaction execution depends on code that is unknown or unavailable
+> to the automated tool, the code end point shall be cataloged and listed in the
+> generated report in order to detect and quantify the missing patterns and
+> libraries." — AFP §6.5.3
+
+Isso importa ainda mais depois da decisão sobre rotas estáticas: "não alcançou
+dado nenhum" significa *ou* que a rota é legitimamente estática, *ou* que o
+rastreador falhou. As duas têm que ser distinguíveis no relatório.
 
 ## Documentos irmãos
 
-- [`../research/adonisjs-variation.md`](../research/adonisjs-variation.md) —
-  levantamento de 6 apps AdonisJS de produção: o que varia entre layouts e
-  quais artefatos gerados atravessam todos eles.
-- [`counting-decisions.md`](counting-decisions.md) — casos de borda decididos,
-  com a regra do AFP que sustenta cada um.
-
-## Fases
-
-| fase | entrega | estado |
-|---|---|---|
-| 0 | scaffold e convenções | feito |
-| 1 | coletores → `fp-inventory.json` | próxima, e é a fase cara |
-| 2 | motor Albrecht → `fp-count.json` | tabelas prontas |
-| 3 | `fp:diff` (inclusão/alteração/exclusão) e CI | — |
-| 4 | `fp:calibrate` contra contagem manual | — |
-| 5 | métricas estruturais sobre o mesmo inventário | — |
-
-O spike mostrou que a Fase 2 é mais barata do que se estimou (as tabelas IFPUG
-são triviais, as funções de dados quase se contam sozinhas) e a **Fase 1 é mais
-cara**: precisa de um resolvedor de grafo de chamadas de verdade, não de regex.
-
-## Teste de aceitação
-
-O estudo de caso de Vazquez, Simões e Albert (2011) tem contagem manual
-publicada de 56 PF e foi o gabarito da dissertação do Ligeiro. Implementar como
-app-fixture em `tests/fixtures/` e assertar o resultado. É o benchmark público
-mais direto que existe para validar o motor.
+- [`../research/adonisjs-variation.md`](../research/adonisjs-variation.md) — o
+  que varia entre apps e o que não varia
+- [`../research/spike-findings.md`](../research/spike-findings.md) — medições do
+  spike e armadilhas já pagas
+- [`counting-decisions.md`](counting-decisions.md) — casos de borda, com a regra
+  do AFP que sustenta cada um
+- [`resolvers.md`](resolvers.md) — catálogo de padrões de código
+- [`implementation-plan.md`](implementation-plan.md) — o plano, guiado por testes
