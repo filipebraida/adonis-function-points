@@ -132,14 +132,24 @@ O AST deixa de ser fallback e vira o produto. Os gerados são o que torna o AST
 - `routeFiles`: lidos de `adonisrc.ts` `preloads`, não adivinhados
 - `framework: { core, lucid, tuyau }`: versões, para escolher a estratégia e
   para o relatório dizer em que base a contagem foi feita
-- `canRegenerate`: em v7, oferecer `codegen`/`schema:generate` antes de contar,
-  em vez de confiar em arquivo possivelmente obsoleto
+- `scanRoots`: diretórios alcançáveis pelos aliases, não só `app/`
+
+> **Corrigido depois.** Esta seção propunha um `canRegenerate` que oferecesse
+> rodar `codegen`/`schema:generate` antes de contar. Vale para o `codegen` — que
+> boota a app sem banco — mas **não** para o `schema:generate`, que introspecta
+> o banco vivo. Sem conexão não há como regenerar o schema, então a fonte de
+> dados é o arquivo versionado. Ver o escopo do v1 em `../design/architecture.md`.
 
 ### A invariante de ouro ganha uma terceira fixture
 
-Derivada do layout do `web-starter-kit` (autoria externa, v6, sem nenhum
-gerado). É a que impede a invariante de ser só regressão do que eu mesmo
-escrevi.
+Derivada de um layout de autoria externa e **sem nenhum gerado versionado**. É a
+que impede a invariante de ser só regressão do que eu mesmo escrevi.
+
+> **Ajustado com o escopo v1.** A fixture proposta aqui era do `web-starter-kit`
+> (v6). Com o v1 fixado em core 7 + Lucid 22, ela virou `minimal_nogen`: a mesma
+> app em v7, porém sem `.adonisjs/` nem `database/schema.ts` versionados —
+> isola a variável que interessa (o fallback por AST) sem arrastar uma versão
+> fora de escopo.
 
 ## Nota sobre o próprio processo
 
