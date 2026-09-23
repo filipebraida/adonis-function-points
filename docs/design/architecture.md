@@ -92,6 +92,14 @@ vez de emitir um número que parece certo.
 
 Um total com 40% das chamadas não resolvidas não deveria virar fatura.
 
+## Documentos irmãos
+
+- [`../research/adonisjs-variation.md`](../research/adonisjs-variation.md) —
+  levantamento de 6 apps AdonisJS de produção: o que varia entre layouts e
+  quais artefatos gerados atravessam todos eles.
+- [`counting-decisions.md`](counting-decisions.md) — casos de borda decididos,
+  com a regra do AFP que sustenta cada um.
+
 ## Fases
 
 | fase | entrega | estado |
