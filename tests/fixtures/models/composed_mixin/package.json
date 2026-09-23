@@ -1,0 +1,13 @@
+{
+  "name": "model-style-composed_mixin",
+  "type": "module",
+  "dependencies": {
+    "@adonisjs/core": "^7.5.0",
+    "@adonisjs/lucid": "^22.4.2"
+  },
+  "imports": {
+    "#models/*": "./app/models/*.js",
+    "#database/*": "./database/*.js",
+    "#mixins/*": "./app/mixins/*.js"
+  }
+}

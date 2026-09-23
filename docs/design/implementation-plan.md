@@ -18,8 +18,8 @@ fixture Kysely fica pulada como sentinela delas.
 
 | | |
 |---|---|
-| feito | scaffold; **Fase 1 completa** (`AppContext`: aliases, gerados, layout, `routeFiles`, `scanRoots`, `framework`, `moduleOf` aninhado); tabelas IFPUG; 5 resolvedores de chamada; 58 testes |
-| falta | Fases 2–8: tudo que produz inventário e contagem |
+| feito | scaffold; **Fases 1 e 2 completas** (`AppContext` + `collectDataStores`); tabelas IFPUG; 5 resolvedores de chamada; 72 testes |
+| falta | Fases 3–8: pontos de entrada, grafo, contagem |
 
 ## Método: exemplo primeiro
 
@@ -96,36 +96,37 @@ Três decisões que só a implementação revelou:
   em `tests/factories/` numa app real; varrer isso contaria escrita de teste
   como função da aplicação. Default conservador, sobrescrevível por `boundary`.
 
-## Fase 2 — funções de dados
+## Fase 2 — funções de dados ✅
 
-A metade confiável da contagem (~24% do total). A invariante de ordem do
-`ResolverContext` exige data stores prontos antes de qualquer análise de handler.
+Entregue: `collectDataStores` percorre a **cadeia de herança** a partir de cada
+classe da aplicação e a reconhece como repositório de dados quando a cadeia
+chega ao `BaseModel` do Lucid. Colunas, chave primária, tabela física,
+subgrupos de composição e procedência por atributo.
 
-Duas fontes, com precedência:
+Validado contra 5 aplicações de produção, com contagem **exata** em todas:
+`app A` 35, `app C` 32, `app B` 30, `app D` 13, `starter-kit` 4. Entre 41
+e 385 ms por aplicação.
 
-1. **`database/schema.ts` versionado** (Lucid 22) — canônico. Note que
-   `schema:generate` **introspecta o banco vivo**, então não há como regenerar
-   em CI sem conexão: a fonte é o arquivo versionado.
-2. **Model por AST**, seguindo a cadeia de herança (`extends UserSchema`,
-   `extends compose(Base, Auditable)`). Olhar só o arquivo zera uma app inteira
-   — numa das levantadas há 35 models e zero `extends BaseModel`.
+Quatro correções que só a app real revelou — nenhuma fixture as teria pego:
 
-Exemplos primeiro:
+- **Base própria derrubava o model inteiro.** 17 dos 34 models de uma app
+  estendem um `BaseModel` local. O código via o nome, não batia com o
+  specifier do Lucid e seguia adiante sem resolver.
+- **Import com alias.** Essa base faz `import { BaseModel as AdonisBaseModel }`.
+  Comparar o nome do identificador local é errado por construção: o que
+  identifica é o par (specifier, nome exportado na origem).
+- **Classe base virava repositório fantasma.** Regra: classe usada como
+  ancestral por outro model é base, não repositório — sem tabela, não conta.
+- **Pendência de toda classe da app.** Controllers e exceptions que estendem
+  algo de pacote entravam no relatório. Passou a ser por cadeia, e só sobe se a
+  cadeia for mesmo de model: de ~100 pendências para 2–11 por app.
 
-- os três estilos em `models/` produzem **as mesmas colunas** por AST
-- com schema gerado presente, `static $columns` prevalece e o `DataStore`
-  registra de qual fonte veio
-- coluna acrescentada por migration de pacote aparece; propriedade transiente não
-- `minimal_nogen` chega ao mesmo `DataStore[]` das outras duas
-- `DataStore` carrega `table` e os nomes dos DETs, exigidos pela identidade (§5)
-- **limitação declarada do fallback:** mixin vindo de pacote que acrescenta
-  coluna (`compose(Base, SoftDeletes)` → `deletedAt`) só é visível pelo schema
-  gerado. Sem schema, o AST resolve a cadeia até a fronteira de `node_modules`
-  e **registra o mixin não resolvido na cobertura** — nunca finge que a coluna
-  não existe. É a decisão §4 admitindo o próprio limite.
+E uma decisão sobre relatório: a **razão** da pendência tem que ser exata. Uma
+fábrica de mixin local (`compose(Base, withRoles())`) não é "fora da
+aplicação" — dizer isso mandaria o usuário procurar no lugar errado.
 
-**Pronto quando:** `DataStore[]` idêntico entre as três fixtures, e a cobertura
-de `minimal_nogen` lista o que o AST não alcançou.
+**Lacuna conhecida, declarada em teste:** fábrica de mixin não é resolvida; a
+coluna que ela acrescenta só existe na classe retornada pela função.
 
 ## Fase 3 — pontos de entrada
 

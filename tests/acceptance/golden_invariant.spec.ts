@@ -1,6 +1,7 @@
 import { test } from '@japa/runner'
 
 import { discoverApp } from '../../src/inventory/app_context.js'
+import { collectDataStores } from '../../src/inventory/sources/data_stores.js'
 import { appFixturePath } from '../helpers.js'
 
 /**
@@ -71,9 +72,39 @@ test.group('invariante de ouro: a forma não muda a contagem', () => {
     assert.isUndefined(nogen.generated.controllersMap)
   })
 
-  test('Fase 2 — as três apps produzem os mesmos repositórios de dados', ({ assert }) => {
-    assert.isTrue(true)
-  }).skip(true, 'aguarda sources/data_schema')
+  test('Fase 2 — as três apps produzem os mesmos repositórios de dados', async ({ assert }) => {
+    const resultados = await Promise.all(
+      APPS.map(async (name) => collectDataStores(await discoverApp(appFixturePath(name))))
+    )
+
+    /**
+     * Assinatura comparável: nome, tabela e colunas. Deliberadamente NÃO inclui
+     * `module` nem `provenance` — são justamente o que muda entre layouts, e
+     * incluí-los faria o teste afirmar o contrário do que existe para afirmar.
+     */
+    const assinatura = (result: (typeof resultados)[number]) =>
+      result.stores
+        .map(
+          (store) =>
+            `${store.name}:${store.table}:${store.attributes
+              .map((a) => a.name)
+              .sort()
+              .join(',')}`
+        )
+        .sort()
+        .join(' | ')
+
+    const [referencia, ...outras] = resultados.map(assinatura)
+
+    for (const [index, assinaturaOutra] of outras.entries()) {
+      assert.equal(assinaturaOutra, referencia, `${APPS[index + 1]} divergiu de ${APPS[0]}`)
+    }
+
+    // e a assinatura descreve a app que as três implementam
+    assert.include(referencia, 'Author:authors')
+    assert.include(referencia, 'Book:books')
+    assert.include(referencia, 'authorId,createdAt,id,isbn,publishedYear,title')
+  })
 
   test('Fase 3 — as três apps produzem os mesmos pontos de entrada', ({ assert }) => {
     assert.isTrue(true)

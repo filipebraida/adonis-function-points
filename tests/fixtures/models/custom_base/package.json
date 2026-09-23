@@ -1,0 +1,6 @@
+{
+  "name": "model-style-custom-base",
+  "type": "module",
+  "dependencies": { "@adonisjs/core": "^7.5.0", "@adonisjs/lucid": "^22.4.2" },
+  "imports": { "#models/*": "./app/models/*.js" }
+}
