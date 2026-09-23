@@ -36,6 +36,8 @@ tests/fixtures/
 │   ├── minimal_modular/        módulo por domínio — MESMA app lógica
 │   ├── minimal_v6/             MESMA app, layout do web-starter-kit oficial:
 │   │                           v6, sem nenhum gerado, rotas em start/routes/
+│   ├── minimal_kysely/         MESMA app, sem Lucid: kysely-codegen, repositórios
+│   │                           em src/, @inject() por tipo, módulos aninhados
 │   └── vazquez/                benchmark público, gabarito 56 PF
 ├── patterns/                 onde mora a lógica          [7 fixtures, feito]
 ├── models/                   estilos de definição de model
@@ -71,9 +73,12 @@ Exemplos antes do código:
 
 **Acréscimos após a validação externa:**
 
-- `routeFiles` lidos dos `preloads` do `adonisrc.ts` — terceira forma de rotas
-  encontrada fora da casa (`start/routes/*.ts`), e a lista é a fonte
-  autoritativa
+- `routeFiles` lidos dos `preloads` do `adonisrc.ts`, **seguindo os `import`
+  estáticos** que eles alcançam — quatro topologias encontradas: arquivo único,
+  um por módulo, diretório `start/routes/*.ts`, e hub que só importa módulos
+- `scanRoots`: diretórios alcançáveis pelos aliases, não só `app/`
+- `moduleOf()` com módulo aninhado (`admin/taxonomies`)
+- `framework.orm: 'lucid' | 'kysely' | 'unknown'`
 - `framework: { core, lucid, tuyau }` — decide a estratégia e vai para o relatório
 - `canRegenerate` — em v7, oferecer `codegen` / `schema:generate` antes de contar
 
@@ -99,8 +104,10 @@ Exemplos antes do código:
 - coluna acrescentada por migration de "pacote" aparece; propriedade transiente
   (como `auditComment`) não
 - `minimal_v6`, sem gerado nenhum, chega ao mesmo `DataStore[]` que as outras
+- `minimal_kysely`: `types/db.ts` do kysely-codegen produz o mesmo `DataStore[]`
+  — segundo `DataStoreCollector`, e o relatório diz qual foi usado
 
-**Pronto quando:** `DataStore[]` idêntico entre as três fixtures de app.
+**Pronto quando:** `DataStore[]` idêntico entre as quatro fixtures de app.
 
 ## Fase 3 — transações candidatas: parser de rotas como base, registry como upgrade
 
@@ -121,7 +128,13 @@ Exemplos antes do código:
 - `router.on(...).renderInertia(...)` vira `EntryPoint` sem handler, para a
   Fase 4 decidir
 
-**Pronto quando:** as três fixtures de app produzem o mesmo conjunto de
+- cada `EntryPoint` carrega `identity` — `(verbo, padrão normalizado)` — como
+  decidido em `counting-decisions.md` §5; fixture com a mesma rota sob `.as()`
+  diferente prova que a identidade não depende do nome
+- DETs por tipo composto seguem a tabela de `counting-decisions.md` §7; com
+  Tuyau, registry e validator **têm que dar o mesmo número**
+
+**Pronto quando:** as quatro fixtures de app produzem o mesmo conjunto de
 `EntryPoint`.
 
 ## Fase 4 — `graph/call_graph`: o rastreamento
@@ -139,6 +152,11 @@ Exemplos antes do código:
   a decisão sobre hooks é inexecutável
 - **nível de método, não de arquivo**: fixture com service que tem um método de
   leitura e um de escrita; quem chama só o de leitura não vira EE
+- `minimal_kysely`: a rota chega à escrita por `@inject()` no construtor →
+  repositório em `src/` → `.insertInto()`; exige `PersistenceDetector` de Kysely
+  e resolução por tipo
+- `HandlerBehavior.scope` com `bodyHash` normalizado (sem whitespace/comentário),
+  para o `fp:diff` — §5
 - `edges/model_hook/`: a escrita no `@afterCreate` entra na transação que a
   disparou e soma FTR
 - `edges/static_route/`: não alcança dado, não vira função, **e aparece no
@@ -149,22 +167,21 @@ Exemplos antes do código:
 **Pronto quando:** cobertura de 100% nas fixtures e o relatório distingue "rota
 legitimamente estática" de "rastreador falhou".
 
-## Decisões que precisam existir antes da Fase 4
+## Decisões tomadas antes da Fase 4
 
-A revisão sênior apontou três decisões adiadas para onde não podiam ser
-adiadas. Todas vão para `counting-decisions.md` com a regra IFPUG/AFP:
+As três que a revisão sênior apontou como adiadas para onde não podiam ser
+estão em `counting-decisions.md`, com a regra normativa:
 
-1. **Identidade de função entre versões.** `fp:diff` é a feature que toca
-   dinheiro; rota renomeada ou controller movido não pode virar exclusão +
-   inclusão e faturar em dobro. A identidade restringe o formato do inventário,
-   então é decidida agora mesmo que o diff seja implementado depois.
-2. **DETs de saída.** Com Inertia, o que é exibido é o que vai em
-   `inertia.render('page', props)` — model serializado inteiro? transformer?
-   Sem isso, toda SE tem DET inventado.
-3. **DETs para tipos compostos.** Array, objeto aninhado, union, spread — o
-   spike usou "+3 para spread". O IFPUG tem regra; nós não registramos nenhuma.
+1. **§5 Identidade entre versões** — ponto de entrada `(verbo, padrão)` para
+   transação, tabela para dado; modificação por checksum de AST normalizado;
+   fatores da AEP como default, SISP como preset. Base: OMG AEP 1.0.
+2. **§6 DETs de saída** — campos dos data stores lidos, estreitados por
+   `select`/transformer; divergência com o contador humano aceita e rastreada
+   por `detSource`. Base: AFP §7.3.
+3. **§7 DETs de tipos compostos** — tabela por forma; spread não resolvido
+   conta 0 e entra em `unresolved`. Base: AFP §4 e §7.3, IFPUG grupo repetitivo.
 
-E duas de escopo:
+Ficam duas de escopo:
 
 4. **Runtime: dentro ou fora do v1.** Está na arquitetura e em nenhuma fase.
 5. **Orçamento de desempenho.** Fixtures têm 2 entidades; alvo real tem 48 e

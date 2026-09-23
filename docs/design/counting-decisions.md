@@ -167,3 +167,160 @@ transação → dados é a espinha da contagem**, e o resto é filtro de borda.
 
 Também reforça a prioridade já identificada no spike: a qualidade do pacote é a
 qualidade desse rastreamento. É onde o esforço tem que ir.
+
+---
+
+## 5. Identidade de uma função entre versões (`fp:diff`)
+
+É a decisão que toca dinheiro: num contrato por demanda, o que se fatura é
+inclusão / alteração / exclusão entre duas versões. Se uma rota renomeada vira
+"exclusão + inclusão", fatura em dobro; se uma alteração real passa como "sem
+mudança", não fatura. A identidade **restringe o formato do inventário** desde a
+Fase 2, por isso é decidida antes de existir o diff.
+
+**Base normativa: OMG Automated Enhancement Points 1.0** — a spec irmã do AFP,
+feita exatamente para medir manutenção entre duas revisões.
+
+> "Each Artifact shall be analyzed in both revisions to determine whether it is:
+> Added — when it exists in revision ToRevision while it didn't exist in
+> FromRevision. […] Modified — when it exists in both revisions but whose source
+> code changed between revision FromRevision and ToRevision." — AEP §6.3
+
+> "A modified transaction exists when one or more of the computational objects
+> in its Implementation Scope is modified, added to the processing flow, or
+> removed from the processing flow. Computational object modification status is
+> based on their source code checksum." — AEP §6.5
+
+A AEP define também *split* e *merge* de entidades de dados (pelos DETs que
+migram de uma para outra) e *mudança de tipo* (ALI ↔ AIE), e pondera cada caso
+por um **Complexity Factor**: adicionada = 1; excluída = 0,4; modificada entre
+0,25 e 1,75 pela Tabela 6.1, com teto de 0,25–0,75 quando o que mudou é
+artefato compartilhado.
+
+### Decisão
+
+**Identidade de função transacional = identidade do ponto de entrada**, nunca
+da implementação:
+
+| tipo | chave |
+|---|---|
+| HTTP | `(verbo, padrão normalizado)` — parâmetros anonimizados (`/books/:id` ≡ `/books/:uuid`), prefixos de grupo aplicados, barra final removida |
+| comando ace | `commandName` |
+| job / listener agendado | nome da classe |
+
+**Não** é o nome da rota (`.as()` é opcional e cosmético — renomear não muda a
+função que o usuário vê) nem o caminho do controller (é implementação: mover
+`books_controller.ts` de módulo não altera a função).
+
+**Identidade de função de dados = nome físico da tabela.** É de onde o AFP
+deriva a função de dados. Split/merge detectados como na AEP: se a maioria dos
+DETs de uma tabela aparece em outra na revisão seguinte, é split/merge, não
+exclusão + inclusão.
+
+**Modificação = mudança no checksum do escopo de implementação**, como na AEP,
+com um refinamento deliberado: o checksum é do **AST normalizado** dos corpos
+alcançados (sem whitespace, sem comentários), não dos bytes do arquivo. Rodar o
+prettier não pode virar fatura.
+
+**Renomeação de URL** é mudança visível ao usuário e conta como exclusão +
+inclusão — mas o relatório marca como `possível renomeação` quando o escopo de
+implementação é idêntico ao de uma função excluída, para o contador humano
+decidir. É o único caso em que a ferramenta sugere em vez de afirmar.
+
+**Fatores por tipo de mudança** são configuráveis, com a AEP como default. O
+Roteiro de Métricas do SISP usa fatores próprios para inclusão/alteração/
+exclusão; entra como *preset* nomeado, com os valores conferidos contra a versão
+do roteiro em vigor no contrato — não de memória.
+
+### O que o inventário passa a carregar
+
+- `EntryPoint.identity`: a chave acima, calculada na coleta
+- `HandlerBehavior.scope`: lista de `{ file, member, bodyHash }` alcançados
+- `DataStore.table` e os nomes dos DETs (para split/merge)
+
+---
+
+## 6. DETs de saída (SE / CE)
+
+Com Inertia, o que sai é `inertia.render('page', props)`. Model serializado
+inteiro? Só o que a tela mostra? Só o transformer? Sem decisão, toda SE tem DET
+inventado.
+
+**Base normativa: o AFP conta DET de transação pelos campos de dados usados, não
+pelo que é renderizado.**
+
+> "A data function shall be identified as used if any of its tables or table
+> fields are used. Each data function (ILF or EIF) shall be identified as a File
+> Type Referenced (FTR) and each table field shall be identified a Data Element
+> Type (DET). […] Count only one DET for each unique field that is required to
+> complete the Output Transaction. If a DET both enters and exits the boundary,
+> count that DET only once." — AFP §7.3
+
+E o AFP é explícito sobre a prioridade quando isso diverge do contador humano:
+
+> "This specification prioritizes repeatability and consistency over consistency
+> with the IFPUG CPM counting guidelines." — AFP §6.1
+
+### Decisão
+
+DETs de uma SE = **união dos campos distintos dos data stores lidos no escopo de
+implementação**, estreitada pelo que for estaticamente visível:
+
+| o código faz | DETs |
+|---|---|
+| `Book.query()` / `selectFrom('books').selectAll()` | todas as colunas de `books` |
+| `.select(['title', 'isbn'])` | só as selecionadas |
+| `.preload('author')` / join | + colunas do relacionado |
+| passa por transformer / DTO que lista campos | **as chaves do transformer** — é o que cruza a fronteira |
+| prop escalar derivada (`total`, `canEdit`) | 1 DET cada — dado derivado saindo da fronteira |
+| campo que entra e sai (filtro ecoado na tela) | conta uma vez |
+
+**Divergência conhecida e aceita:** o contador humano conta os campos *exibidos*;
+sem `.select()` nem transformer, nós contamos a tabela inteira e superestimamos.
+É a troca que o AFP faz de propósito — repetibilidade sobre fidelidade — e vai
+para o `Rationale` de cada função como `detSource: 'all-columns'` vs
+`'transformer'` vs `'select'`, para o `fp:calibrate` medir o viés por origem.
+
+**Mensagens de erro/confirmação:** o IFPUG manual conta +1 DET; o AFP não. Segue
+o AFP. O estudo do Ligeiro mostrou que essa é a divergência sistemática de −1 DET
+por transação; fica como `messageDet: 0 | 1` na config, para calibração, com
+default 0.
+
+---
+
+## 7. DETs para tipos compostos (entrada)
+
+Validators VineJS e tipos do registry têm objeto aninhado, array, union, spread.
+O spike usou "+3 para spread" — chute, e chute é o que este pacote existe para
+eliminar.
+
+**Base normativa:**
+
+> "A data element type is a unique user recognizable, non-repeated attribute
+> that is part of an ILF, EIF, EI or EO." — AFP §4, citando ISO/IEC 20926
+>
+> "Count only one DET for each unique field that is required to complete the
+> External Input." — AFP §7.3
+
+E a regra IFPUG para grupo repetitivo: DET recursivo conta só na primeira
+ocorrência.
+
+### Decisão
+
+| forma no validator / tipo | DETs | por quê |
+|---|---|---|
+| campo escalar | 1 | atributo único |
+| `vine.object({ a, b })` aninhado | folhas contadas individualmente | o usuário preenche cada uma |
+| `vine.array(vine.string())` | 1 | grupo repetitivo de um atributo |
+| `vine.array(vine.object({ a, b }))` | folhas do objeto, **uma vez** | grupo repetitivo conta na primeira ocorrência |
+| `vine.enum(...)` / union | 1 | um atributo com domínio |
+| `.optional()` / `.nullable()` | 1 | o campo existe |
+| parâmetro de rota (`:id`) | 1 cada | entrada exigida para completar |
+| upload de arquivo | 1 | um atributo |
+| `...base.getProperties()` (spread) | folhas do `base`, **resolvido** | se não resolver, conta **0 e entra em `unresolved`** — nunca chuta |
+| campo que entra e sai | 1 | AFP §7.3 |
+| botão/comando de submissão | 0 | IFPUG manual conta 1; AFP não. Config `commandDet`, default 0 |
+
+Com Tuyau presente, o `body` do registry é a mesma árvore já resolvida (spread
+inclusive) e prevalece sobre o AST do validator. As duas fontes têm que dar o
+mesmo número — é um teste da Fase 3.

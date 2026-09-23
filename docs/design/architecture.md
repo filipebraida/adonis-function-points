@@ -56,6 +56,24 @@ de model, e colunas que **pacotes** acrescentam via migration própria. Em v7 o
 pacote deve oferecer regenerar antes de contar, em vez de confiar em arquivo
 possivelmente obsoleto.
 
+### Lucid não é dado
+
+O `romainlanz.com` (core team) usa **Kysely + kysely-codegen**, sem Lucid: o
+schema gerado é `types/db.ts` (`interface Articles { … }` por tabela), as
+migrations usam a DSL do Kysely, e a escrita é `.insertInto()/.updateTable()/
+.deleteFrom()`. `DataStoreCollector` e `PersistenceDetector` são pontos de
+extensão porque uma app do core team precisa deles — não por hipótese. O v1
+suporta **Lucid e Kysely**; o relatório diz qual detector produziu cada acesso.
+
+### A raiz de varredura não é `app/`
+
+Na mesma app, os repositórios — onde mora 100% da escrita — ficam em
+`src/<módulo>/repositories/`, fora de `app/`. A raiz de varredura é **o
+conjunto de diretórios alcançáveis pelos aliases do `package.json`**
+(`app/`, `src/`, `shared/`, `types/`…), e módulos podem ser aninhados
+(`app/admin/taxonomies/`). `moduleOf()` devolve o caminho de módulo completo,
+não o primeiro segmento.
+
 ## Camadas
 
 ```
@@ -124,7 +142,10 @@ nenhum — segue o grafo onde ele for, e o tipo de artefato é só metadado.
 
 Quatro pontos de extensão em `src/inventory/resolvers/types.ts`:
 
-- **`CallResolver`** — como seguir de um call site ao próximo corpo
+- **`CallResolver`** — como seguir de um call site ao próximo corpo. Inclui
+  resolução **por tipo do parâmetro do construtor** (`@inject()` com
+  `constructor(private q: GetArticleQuery)`), que em apps com DI é o *único*
+  caminho da rota à escrita
 - **`PersistenceDetector`** — o que é leitura/escrita (trocar o ORM troca isto,
   não o grafo)
 - **`DataStoreCollector`** — de onde saem candidatos a ALI/AIE

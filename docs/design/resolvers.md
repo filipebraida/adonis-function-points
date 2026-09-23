@@ -10,7 +10,8 @@ cada um. A lista é aberta por construção — ver
 | action object | `await new CreateUser().handle(p)` | `action-object` | **feito** |
 | action em variável | `const a = new CreateUser(); a.handle()` | `action-object` | **feito** |
 | service estático | `await UserService.create(p)` | `static-service` | **feito** |
-| service injetado | `await this.users.create(p)` | `property-service` | exige type checker |
+| service injetado | `constructor(private users: UserService)` + `this.users.create(p)` | `property-service` | **obrigatório** — resolução pelo tipo do parâmetro; único caminho em apps com `@inject()` (21 arquivos no `romainlanz.com`) |
+| repositório Kysely | `this.repo.create(p)` → `db.insertInto('users')` | `property-service` + detector Kysely | **obrigatório** — sem Lucid, é a escrita |
 | função de módulo | `await createUser(p)` | `module-function` | **feito** |
 | job | `await CreateUserJob.dispatch(p)` | `job-dispatch` | **feito** |
 | query builder | `db.table('users').insert(p)` | detector próprio | a fazer |

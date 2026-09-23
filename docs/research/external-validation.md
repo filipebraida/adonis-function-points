@@ -13,6 +13,7 @@ dessa amostra.
 | `adonisjs/inertia-starter-kit` | oficial | ^6.18 | ^21.6 | não |
 | `adocasts/building-with-adonisjs-and-inertia` | terceiro | ^6.17 | ^21.6 | não |
 | `HipsterBrown/adonis-realworld-example-app` | terceiro | ^5.9 | ^18 | não |
+| `RomainLanz/romainlanz.com` | core team | ^7.3 | **nenhum — Kysely** | sim |
 
 Mais a leitura do código-fonte do `@adonisjs/lucid` 22, `@adonisjs/core` 7,
 `@adonisjs/assembler` 8 e `@tuyau/core` 1.2 para descobrir **quem gera o quê**.
@@ -38,6 +39,36 @@ Três esclarecimentos que mudam o desenho:
    o pacote pode **regenerar sob demanda** (`node ace codegen`,
    `node ace schema:generate`); em v6 não há o que regenerar.
 
+## Quinta app: `romainlanz.com` (core team do AdonisJS)
+
+Indicada pelo autor do projeto. É a que mais afasta do stack da casa e por isso
+a mais valiosa:
+
+| aspecto | o que tem | consequência |
+|---|---|---|
+| framework | core **7.3**, Tuyau (via `catalog:`), Inertia 4 | `.adonisjs/` **versionado**: registry + `controllers.ts` presentes |
+| persistência | **Kysely + pg** — sem Lucid | `lucidDetector` inútil; escrita é `.insertInto()/.updateTable()/.deleteFrom()` |
+| schema gerado | `types/db.ts` por **kysely-codegen** — `interface Articles { id; title; … }` por tabela | terceiro formato de schema gerado, sem `@column` nenhum |
+| migrations | DSL do Kysely (`db.schema.createTable().addColumn()`) | parser de migration do Lucid não serve |
+| layout | módulo por domínio, com **módulos aninhados** (`app/admin/taxonomies/`) e um `app/app/` | `moduleOf()` de um nível só erra |
+| repositórios | em **`src/<módulo>/repositories/`**, fora de `app/` | qualquer varredura restrita a `app/` perde 100% das escritas |
+| injeção | `@inject()` em 21 arquivos; `constructor(private readonly q: GetArticleBySlugQuery)` | resolução **por tipo do parâmetro**, não por import — o caso do type checker |
+| rotas | `preloads` → `#start/routes` → arquivo-hub que só `import`a `#articles/routes` etc. | quarta topologia: preload → hub → módulos |
+
+`discoverApp`: `module-per-domain`, 22 aliases, registry sim, ctrl map sim,
+schema **não** (correto — não há schema Lucid), `#models/user` null (correto —
+não existe o alias). Comportou-se bem; o que falta é o que vem depois dele.
+
+Três lições que entram no desenho:
+
+1. **`DataStoreCollector` precisa de um segundo coletor de verdade** — kysely-codegen —
+   e o `PersistenceDetector` de Kysely. Não é hipótese de extensibilidade; é uma
+   app de membro do core team.
+2. **`property_service` por tipo do construtor deixa de ser "depois".** Aqui é o
+   único caminho da rota à escrita.
+3. **A raiz de varredura não é `app/`.** É o conjunto de diretórios alcançáveis
+   pelos aliases do `package.json` — `src/`, `shared/`, `types/` incluídos.
+
 ## Como o `AppContext` se comportou
 
 | repo | layout | aliases | registry | ctrl map | schema | `#models/user` |
@@ -56,8 +87,10 @@ O desenho "dizer não sei" segurou. O que não segura é a ordem das fontes.
 ## Outras variações encontradas fora da casa
 
 - **Rotas em diretório**: `start/routes/web.ts` + `start/routes/auth.ts`, sem
-  `start/routes.ts`. Terceira forma, além das duas já conhecidas. **A fonte
-  autoritativa é a lista `preloads` do `adonisrc.ts`**, não convenção de caminho.
+  `start/routes.ts`. Terceira forma, além das duas já conhecidas. E uma quarta
+  no `romainlanz.com`: preload de um hub que só `import`a os arquivos de módulo.
+  **A fonte autoritativa é a lista `preloads` do `adonisrc.ts`, seguindo os
+  `import` estáticos que ela alcança** — não convenção de caminho.
 - **Referência a controller por lazy import** (`const X = () => import(...)`) em
   100% das externas — o `#generated/controllers` é exclusivo de v7.
 - **Models com `@column` no próprio arquivo** em 13/13 (adocasts). O estilo
