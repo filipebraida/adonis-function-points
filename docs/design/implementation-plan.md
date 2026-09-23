@@ -53,17 +53,21 @@ tests/fixtures/
 │   ├── no_generated/        ausência reportável                   [feito]
 │   ├── overlapping_aliases/ especificidade de alias               [feito]
 │   ├── minimal_nogen/       v7 SEM gerados versionados: prova o fallback por AST
-│   ├── minimal_kysely/      SENTINELA, pulada no v1: prova que outro ORM entra
-│   │                        mexendo só em sources/ e detectors/
+│   ├── minimal_kysely/      placeholder pulado no v1; só vira prova da costura
+│   │                        quando for despulado com um segundo ORM de verdade
 │   └── vazquez/             benchmark público, gabarito 56 PF
 ├── patterns/                onde mora a lógica            [7 fixtures, feito]
-├── models/                  direct · generated_schema · composed_mixin
-└── edges/                   static_route · vendor_route · model_hook · package_table
+├── models/                  direct · generated_schema · composed_mixin  [a criar]
+└── edges/                   static_route · vendor_route · model_hook ·
+                             package_table                              [a criar]
+
+tests/app/                   UMA app AdonisJS 7 bootável (config, providers,
+                             sqlite), para o único teste de runtime — Fase 3
 ```
 
 Fixtures são estáticas — o ts-morph parseia a árvore sem instalar nem bootar.
-Exceção deliberada: a Fase 3 precisa de **uma** app bootável para exercitar o
-caminho de runtime.
+A única exceção é `tests/app/`: bootável, lenta, roda num grupo de integração
+separado da suíte unitária.
 
 ---
 
@@ -110,18 +114,37 @@ Exemplos primeiro:
 - coluna acrescentada por migration de pacote aparece; propriedade transiente não
 - `minimal_nogen` chega ao mesmo `DataStore[]` das outras duas
 - `DataStore` carrega `table` e os nomes dos DETs, exigidos pela identidade (§5)
+- **limitação declarada do fallback:** mixin vindo de pacote que acrescenta
+  coluna (`compose(Base, SoftDeletes)` → `deletedAt`) só é visível pelo schema
+  gerado. Sem schema, o AST resolve a cadeia até a fronteira de `node_modules`
+  e **registra o mixin não resolvido na cobertura** — nunca finge que a coluna
+  não existe. É a decisão §4 admitindo o próprio limite.
 
-**Pronto quando:** `DataStore[]` idêntico entre as três fixtures.
+**Pronto quando:** `DataStore[]` idêntico entre as três fixtures, e a cobertura
+de `minimal_nogen` lista o que o AST não alcançou.
 
 ## Fase 3 — pontos de entrada
 
-**Runtime como fonte primária.** O core 7 já boota a app sem banco para gerar
-tipos de rota (`node ace codegen`); o `fp:inventory` faz o mesmo e lê
-`router.toJSON()`, que devolve `{ pattern, name, handler, methods, middleware }`.
+**Ordem de construção: AST primeiro, runtime depois.** As fixtures não bootam,
+e a invariante de ouro depende de `minimal_nogen`, que só existe por AST. O
+parser de `routes.ts` é o que se constrói e se testa primeiro — chamá-lo de
+"fallback" descreve a precedência em produção, não a sequência de trabalho.
 
+**Em produção, runtime é a fonte primária.** O core 7 já boota a app sem banco
+para gerar tipos de rota (`node ace codegen`); o `fp:inventory` faz o mesmo e lê
+`router.toJSON()`, que devolve `{ pattern, name, handler, methods, middleware }`.
 Precondições: app bootável, `environment: 'web'` (sem isso os preloads de rota
-não carregam) e env presente. Faltando qualquer uma, o parser de `routes.ts`
-assume.
+não carregam) e env presente. Faltando qualquer uma, o parser assume e o
+relatório diz qual fonte foi usada.
+
+**Regra de conflito, decidida:** quando os dois estão disponíveis e divergem,
+**runtime vence** — é o router real — e cada divergência é listada no relatório
+como `route-source-mismatch`, porque significa ou rota registrada por código que
+o parser não entende, ou parser com bug. As duas coisas interessam.
+
+**O teste de runtime é um só**, de integração, contra `tests/app/` — uma app
+AdonisJS 7 mínima e bootável, com `config/`, providers e sqlite. Roda num grupo
+separado da suíte unitária, porque é lento.
 
 Exemplos primeiro:
 
@@ -145,6 +168,26 @@ Exemplos primeiro:
 É onde mora a incerteza: a detecção de escrita decide EE vs SE em ~40% das
 transações, e a qualidade do pacote é a qualidade deste rastreamento.
 
+**A decisão mais cara do projeto mora aqui, e tem que ser tomada às claras:**
+resolver `constructor(private q: GetArticleQuery)` exige o **type checker**. O
+`Project` do ts-morph deixa de ser leve (`skipFileDependencyResolution`) e passa
+a carregar o `tsconfig` da app e os tipos de `node_modules`. Isso multiplica o
+custo de toda a análise. Por isso:
+
+- o grafo nasce **sintático** (todos os resolvedores exceto `property-service`),
+  e o desempenho é medido na app real da casa *antes* de o type checker entrar;
+- `property-service` entra em seguida, e o custo é medido de novo **no mesmo
+  dia**. Se estourar o teto, a alternativa é resolução por convenção de nome do
+  parâmetro (`private users: UserService` → `#…/user_service`) com o type
+  checker como opção — não o contrário.
+
+**Fronteira de `node_modules`, decidida:** o grafo **não entra** em código de
+pacote, com uma exceção estreita: hooks e mixins registrados em models da
+aplicação (`compose(Base, Auditable)`) são seguidos **um nível** para dentro do
+pacote, e cada passo assim é marcado `vendor: true`. É o que torna executável o
+filtro técnico da decisão §4 ("escrita que nasce só em `node_modules`") sem
+transformar o pacote num analisador de dependências.
+
 Exemplos primeiro:
 
 - as 7 fixtures de `patterns/` alcançam o data store e detectam a escrita —
@@ -162,8 +205,12 @@ Exemplos primeiro:
   comentário), exigido pelo `fp:diff` (§5)
 - chamada que nenhum resolvedor segue entra em `unresolved`, com arquivo e linha
 
-**Pronto quando:** cobertura de 100% nas fixtures, e o relatório distingue "rota
-legitimamente estática" de "rastreador falhou".
+**Pronto quando:** cobertura de 100% nas fixtures — que é tautológico, as
+fixtures são escritas para resolver — **e cobertura ≥ 85% em duas apps reais da
+casa**, uma de cada layout. 85% é o `minCoverage` default: se o pacote não
+atinge o próprio limiar nas apps para as quais foi desenhado, o limiar está
+errado ou o grafo está. O relatório distingue "rota legitimamente estática" de
+"rastreador falhou".
 
 **Medir aqui:** a sensibilidade à poda de ARs. A conclusão do spike — "move só
 2–7%" — foi obtida com o rastreamento quebrado, FTR médio 1,36, e não se
@@ -191,7 +238,12 @@ função.
 - **invariante de ouro**: as três fixtures com contagem idêntica
 - **benchmark Vazquez**: gabarito de 56 PF, tolerância declarada. O Ligeiro
   chegou a 52 (~7%) com divergências sistemáticas; o teste registra a tolerância
-  e o motivo de cada divergência em vez de escondê-las
+  e o motivo de cada divergência em vez de escondê-las.
+  **A fixture é escrita a partir da especificação dos casos de uso e congelada
+  em commit próprio antes de o contador existir**, com as escolhas de
+  transcrição documentadas (quais campos viram validator, o que vira transformer).
+  Sem isso, a independência do benchmark é ilusória: nada impediria afinar a
+  fixture até bater 56.
 - **fumaça em app real**, fora da suíte: cobertura e ordem de grandeza
 
 ## Fase 7 — superfície de uso
@@ -199,8 +251,18 @@ função.
 `fp:inventory`, `fp:count`, `fp:explain`, depois `fp:diff` e `fp:calibrate`.
 
 `fp:diff` é o que vira fatura: inclusão / alteração / exclusão, com os fatores da
-AEP por default e SISP como preset. `fp:explain` merece teste próprio — a
-procedência é requisito, não enfeite, e tem que sobreviver a refatoração.
+AEP por default e SISP como preset. Duas decisões que o tornam viável:
+
+- **opera sobre dois inventários salvos** (`fp-inventory.json` gerado por
+  release e guardado como artefato), nunca sobre dois checkouts. Bootar a versão
+  antiga, com dependências possivelmente diferentes, é exatamente o tipo de
+  problema que não vale resolver.
+- **recusa comparar inventários de `rulesetVersion` diferentes.** A arquitetura
+  exige o ruleset versionado; este é o item que o implementa: sai em todo
+  relatório, e o diff falha em vez de somar laranjas com maçãs.
+
+`fp:explain` merece teste próprio — a procedência é requisito, não enfeite, e
+tem que sobreviver a refatoração.
 
 ## Fase 8 — métricas estatísticas
 
@@ -238,12 +300,16 @@ estava sendo seguida.
 
 **Orçamento de desempenho.** As fixtures têm 2 entidades; o alvo real tem 48 e
 ~1100 arquivos. O grafo com hooks sobre ts-morph pode não caber em CI. Medir na
-Fase 4 contra a app real e fixar o teto antes da Fase 7.
+Fase 4 contra a app real **em dois momentos**: com o grafo sintático, e no dia
+em que o type checker entrar — porque é ele que muda a ordem de grandeza. Teto
+proposto para discutir: 60 s numa app de 1100 arquivos, sem cache.
 
 ## Ordem, e por quê
 
-Fases 1–3 são baratas e produzem fato canônico. A Fase 4 é cara e concentra o
-risco. A Fase 5 é quase aritmética, porque as tabelas já existem.
+Fases 1–3 são baratas e produzem fato canônico — com uma ressalva de
+sequência: dentro delas, **AST vem antes de runtime**, porque as fixtures não
+bootam. A Fase 4 é cara e concentra o risco, e dentro dela o grafo sintático vem
+antes do type checker. A Fase 5 é quase aritmética, porque as tabelas já existem.
 
 Isso inverte a estimativa original, que achava a contagem difícil e a coleta
 fácil. O spike mostrou o contrário: as tabelas IFPUG são aritmética, as funções
