@@ -1,0 +1,14 @@
+{
+  "name": "minimal-nogen",
+  "type": "module",
+  "dependencies": {
+    "@adonisjs/core": "^7.5.0",
+    "@adonisjs/lucid": "^22.4.2"
+  },
+  "imports": {
+    "#app/*": "./app/*.js",
+    "#admin/*": "./app/admin/*.js",
+    "#catalog/*": "./src/catalog/*.js",
+    "#start/*": "./start/*.js"
+  }
+}

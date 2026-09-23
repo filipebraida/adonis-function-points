@@ -39,11 +39,49 @@ export type AppContext = {
   /** detectado; usado para AGRUPAR relatório, nunca para encontrar arquivos */
   layout: AppLayout
 
+  /**
+   * Arquivos que registram rotas, a partir dos `preloads` do adonisrc,
+   * seguindo os `import` estáticos que eles alcançam.
+   *
+   * A lista de preloads é a fonte autoritativa — não convenção de caminho.
+   * Quatro topologias foram encontradas: arquivo único, um por módulo, um
+   * diretório, e um hub que só reexporta.
+   */
+  routeFiles: string[]
+
+  /**
+   * Diretórios a varrer, derivados dos alvos dos aliases.
+   *
+   * Não é `app/`: numa app levantada, 100% da escrita mora em `src/`.
+   * Raízes aninhadas em outras são colapsadas.
+   */
+  scanRoots: string[]
+
+  /** versões e ORM — escolhem a estratégia e vão para o relatório */
+  framework: FrameworkInfo
+
   /** `#catalog/models/book` -> caminho absoluto, ou null */
   resolveSpecifier(specifier: string): string | null
 
   /** módulo ao qual um arquivo pertence, para agrupar o relatório */
   moduleOf(absPath: string): string
+}
+
+export type FrameworkInfo = {
+  /** major do @adonisjs/core, quando declarado */
+  core?: number
+  /** major do @adonisjs/lucid, quando declarado */
+  lucid?: number
+  orm: 'lucid' | 'kysely' | 'unknown'
+  /** Tuyau dá DETs de entrada tipados; opcional */
+  tuyau: boolean
+  /**
+   * Dentro do escopo do v1 (core 7 + Lucid 22).
+   *
+   * Fora dele o pacote reporta em vez de contar — contar errado em silêncio é
+   * a pior falha possível num número que vira fatura.
+   */
+  supported: boolean
 }
 
 /** pastas que nomeiam um TIPO de artefato, em qualquer dos dois layouts */
@@ -78,7 +116,8 @@ const GENERATED_MARKER = 'automatically generated'
 
 export async function discoverApp(root: string): Promise<AppContext> {
   const abs = path.resolve(root)
-  const subpathImports = await readSubpathImports(abs)
+  const pkg = await readJson(path.join(abs, 'package.json'))
+  const subpathImports = readSubpathImports(pkg)
   const layout = await detectLayout(abs)
 
   const resolveSpecifier = (specifier: string): string | null =>
@@ -90,23 +129,169 @@ export async function discoverApp(root: string): Promise<AppContext> {
     dataSchema: await findDataSchema(abs, resolveSpecifier),
   }
 
+  const scanRoots = await collectScanRoots(abs, subpathImports)
+  const routeFiles = await collectRouteFiles(abs, resolveSpecifier)
+
   return {
     root: abs,
     subpathImports,
     generated,
     layout,
+    routeFiles,
+    scanRoots,
+    framework: readFramework(pkg),
     resolveSpecifier,
-    moduleOf: (absPath) => moduleOf(abs, layout, absPath),
+    moduleOf: (absPath) => moduleOf(abs, absPath),
   }
+}
+
+// ---------------------------------------------------------------------------
+// framework
+// ---------------------------------------------------------------------------
+const majorOf = (range?: string): number | undefined => {
+  const m = range?.match(/(\d+)\./)
+  return m ? Number(m[1]) : undefined
+}
+
+function readFramework(pkg: Record<string, unknown> | null): FrameworkInfo {
+  const deps = {
+    ...((pkg?.dependencies as Record<string, string>) ?? {}),
+    ...((pkg?.devDependencies as Record<string, string>) ?? {}),
+  }
+
+  const core = majorOf(deps['@adonisjs/core'])
+  const lucid = majorOf(deps['@adonisjs/lucid'])
+  const orm: FrameworkInfo['orm'] = lucid ? 'lucid' : deps['kysely'] ? 'kysely' : 'unknown'
+
+  return {
+    core,
+    lucid,
+    orm,
+    tuyau: Boolean(deps['@tuyau/core']),
+    supported: core === 7 && lucid !== undefined && lucid >= 22,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// raízes de varredura
+// ---------------------------------------------------------------------------
+/**
+ * Deriva os diretórios a varrer dos ALVOS dos aliases, e colapsa os aninhados.
+ *
+ * Manter `app/admin` ao lado de `app` faria cada arquivo ser varrido duas vezes
+ * e, pior, mudaria o módulo calculado: `app/admin/catalog/...` viraria
+ * "catalog" em vez de "admin/catalog".
+ */
+async function collectScanRoots(root: string, imports: Map<string, string>): Promise<string[]> {
+  const candidates = new Set<string>()
+
+  for (const target of imports.values()) {
+    const dir = target.replace(/^\.\//, '').split('*')[0].replace(/\/$/, '')
+    if (!dir || dir.startsWith('.')) continue
+    if (NON_APPLICATION_ROOTS.some((pattern) => pattern.test(dir))) continue
+    candidates.add(dir)
+  }
+
+  const existing: string[] = []
+  for (const dir of candidates) {
+    const full = path.join(root, dir)
+    if (await isDirectory(full)) existing.push(dir)
+  }
+
+  // remove o que estiver dentro de outra raiz
+  const collapsed = existing.filter(
+    (dir) => !existing.some((other) => other !== dir && isInside(dir, other))
+  )
+
+  return [...new Set(collapsed)].sort().map((dir) => path.join(root, dir))
+}
+
+const isInside = (child: string, parent: string) => child.startsWith(parent + '/')
+
+/**
+ * Raízes que um alias alcança mas que NÃO são código de aplicação.
+ *
+ * Não é preciosismo: numa app real há `.insertInto()` em `tests/factories/`.
+ * Varrer isso contaria escrita de teste como função da aplicação — e o número
+ * vai para uma fatura.
+ *
+ * É decisão de fronteira, então o default é conservador e a lista fica
+ * sobrescrevível pela configuração (`boundary`), como manda a arquitetura.
+ */
+const NON_APPLICATION_ROOTS = [
+  /^tests?(\/|$)/,
+  /^config(\/|$)/,
+  /^database(\/|$)/,
+  /^public(\/|$)/,
+  /^resources(\/|$)/,
+  /^inertia(\/|$)/,
+  /^bin(\/|$)/,
+  /^build(\/|$)/,
+  /^node_modules(\/|$)/,
+]
+
+// ---------------------------------------------------------------------------
+// arquivos de rota
+// ---------------------------------------------------------------------------
+const ROUTE_CALL = /\brouter\s*\.\s*(get|post|put|patch|delete|any|resource|on|group)\s*\(/
+
+/**
+ * Parte dos `preloads` do adonisrc e segue os `import` estáticos.
+ *
+ * Um preload pode ser um hub que não define rota nenhuma, só reexporta — foi o
+ * que a app do core team fez. Seguir só o preload devolveria um arquivo vazio.
+ */
+async function collectRouteFiles(
+  root: string,
+  resolveSpecifier: (s: string) => string | null
+): Promise<string[]> {
+  const adonisrc = await readFileOrNull(path.join(root, 'adonisrc.ts'))
+  if (!adonisrc) return []
+
+  const found: string[] = []
+  const seen = new Set<string>()
+
+  const visit = async (file: string, depth: number) => {
+    if (seen.has(file) || depth < 0) return
+    seen.add(file)
+
+    const source = await readFileOrNull(file)
+    if (source === null) return
+
+    if (ROUTE_CALL.test(source)) found.push(file)
+
+    for (const spec of staticImportsOf(source)) {
+      const target = resolveSpecifier(spec)
+      if (target) await visit(target, depth - 1)
+    }
+  }
+
+  for (const spec of preloadSpecifiersOf(adonisrc)) {
+    const target = resolveSpecifier(spec)
+    if (target) await visit(target, 3)
+  }
+
+  return found
+}
+
+/** `preloads: [() => import('#start/routes'), ...]` */
+function preloadSpecifiersOf(adonisrc: string): string[] {
+  const block = adonisrc.match(/preloads\s*:\s*\[([\s\S]*?)\]/)
+  if (!block) return []
+  return [...block[1].matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g)].map((m) => m[1])
+}
+
+/** imports estáticos, incluindo `import '#x'` sem binding */
+function staticImportsOf(source: string): string[] {
+  return [...source.matchAll(/\bimport\s+(?:[^'"]*?\bfrom\s*)?['"]([^'"]+)['"]/g)].map((m) => m[1])
 }
 
 // ---------------------------------------------------------------------------
 // aliases de subpath
 // ---------------------------------------------------------------------------
-async function readSubpathImports(root: string): Promise<Map<string, string>> {
+function readSubpathImports(pkg: Record<string, unknown> | null): Map<string, string> {
   const map = new Map<string, string>()
-  const raw = await readJson(path.join(root, 'package.json'))
-  const imports = (raw?.imports ?? {}) as Record<string, unknown>
+  const imports = (pkg?.imports ?? {}) as Record<string, unknown>
 
   for (const [key, value] of Object.entries(imports)) {
     const target = typeof value === 'string' ? value : pickDefault(value)
@@ -200,12 +385,32 @@ async function detectLayout(root: string): Promise<AppLayout> {
   return 'unknown'
 }
 
-function moduleOf(root: string, layout: AppLayout, absPath: string): string {
-  const rel = path.relative(root, absPath)
-  const segments = rel.split(path.sep)
-  if (segments[0] !== 'app') return segments[0] ?? 'app'
-  if (layout === 'module-per-domain') return segments[1] ?? 'app'
-  return 'app'
+/** contêineres de topo que não nomeiam domínio — só abrigam código */
+const CODE_CONTAINERS = new Set(['app', 'src'])
+
+/**
+ * Módulo = segmentos entre o contêiner de topo e o primeiro segmento que nomeia
+ * um TIPO de artefato.
+ *
+ *   app/models/book.ts                 -> 'app'           (nada antes do tipo)
+ *   app/catalog/models/book.ts         -> 'catalog'
+ *   app/admin/catalog/models/book.ts   -> 'admin/catalog'  (aninhado)
+ *   src/catalog/actions/create_book.ts -> 'catalog'         (fora de app/)
+ *
+ * Deliberadamente NÃO usa `scanRoots`: em layout plano não existe alias
+ * `#app/*`, e as raízes acabam sendo as próprias pastas de tipo
+ * (`app/models`), o que faria o módulo virar "models".
+ *
+ * Serve só para agrupar relatório. Nunca para encontrar arquivo.
+ */
+function moduleOf(root: string, absPath: string): string {
+  const segments = path.relative(root, absPath).split(path.sep).slice(0, -1)
+  const body = CODE_CONTAINERS.has(segments[0]) ? segments.slice(1) : segments
+
+  const kindAt = body.findIndex((segment) => ARTIFACT_KINDS.has(segment))
+  const moduleSegments = kindAt === -1 ? body : body.slice(0, kindAt)
+
+  return moduleSegments.length > 0 ? moduleSegments.join('/') : 'app'
 }
 
 // ---------------------------------------------------------------------------
@@ -287,6 +492,23 @@ async function readEntries(dir: string) {
 async function listDirs(dir: string): Promise<string[]> {
   const entries = await readEntries(dir)
   return entries.filter((e) => e.isDirectory()).map((e) => e.name)
+}
+
+async function isDirectory(dir: string): Promise<boolean> {
+  try {
+    const stats = await fs.stat(dir)
+    return stats.isDirectory()
+  } catch {
+    return false
+  }
+}
+
+async function readFileOrNull(file: string): Promise<string | null> {
+  try {
+    return await fs.readFile(file, 'utf8')
+  } catch {
+    return null
+  }
 }
 
 async function firstExisting(root: string, candidates: string[]): Promise<string | undefined> {

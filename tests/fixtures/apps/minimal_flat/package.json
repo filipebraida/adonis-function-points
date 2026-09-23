@@ -1,6 +1,10 @@
 {
   "name": "minimal-flat",
   "type": "module",
+  "dependencies": {
+    "@adonisjs/core": "^7.5.0",
+    "@adonisjs/lucid": "^22.4.2"
+  },
   "imports": {
     "#controllers/*": "./app/controllers/*.js",
     "#actions/*": "./app/actions/*.js",
@@ -8,6 +12,8 @@
     "#validators/*": "./app/validators/*.js",
     "#database/*": "./database/*.js",
     "#start/*": "./start/*.js",
-    "#generated/*": "./.adonisjs/server/*.js"
+    "#generated/*": "./.adonisjs/server/*.js",
+    "#config/*": "./config/*.js",
+    "#tests/*": "./tests/*.js"
   }
 }

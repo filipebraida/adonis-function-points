@@ -18,8 +18,8 @@ fixture Kysely fica pulada como sentinela delas.
 
 | | |
 |---|---|
-| feito | scaffold; `AppContext` (aliases, gerados, layout); tabelas IFPUG; 5 resolvedores de chamada; 42 testes |
-| falta | tudo que produz inventário e contagem |
+| feito | scaffold; **Fase 1 completa** (`AppContext`: aliases, gerados, layout, `routeFiles`, `scanRoots`, `framework`, `moduleOf` aninhado); tabelas IFPUG; 5 resolvedores de chamada; 58 testes |
+| falta | Fases 2–8: tudo que produz inventário e contagem |
 
 ## Método: exemplo primeiro
 
@@ -71,26 +71,30 @@ separado da suíte unitária.
 
 ---
 
-## Fase 1 — `AppContext`: descoberta *(parcial)*
+## Fase 1 — `AppContext`: descoberta ✅
 
-Já feito: aliases lidos do `package.json` com regra de especificidade; gerados
-achados pelo que são e não por onde estão; layout por peso de evidência;
-ausência reportada em vez de assumida.
+Entregue: aliases com regra de especificidade; gerados achados pelo que são e
+não por onde estão; layout por peso de evidência; ausência reportada em vez de
+assumida; `routeFiles` a partir dos `preloads` seguindo os `import` estáticos;
+`scanRoots` pelos alvos dos aliases, com aninhados colapsados e não-aplicação
+excluída; `framework` com versões, ORM e `supported`; `moduleOf` aninhado.
 
-Falta:
+Validado contra 7 aplicações reais: a contagem de arquivos de rota bate com a
+manual em todas (`app C` 12, `app B` 14, `app D` 7, `app A` 1), o hub de
+rotas do `romainlanz.com` é seguido, e as duas apps fora de escopo (core 6, e
+Kysely sem Lucid) saem como `supported: false`.
 
-- **`routeFiles`** — dos `preloads` do `adonisrc.ts`, seguindo os `import`
-  estáticos que eles alcançam. Quatro topologias encontradas nas apps reais:
-  arquivo único, um por módulo, diretório `start/routes/*.ts`, e um hub que só
-  importa os arquivos de módulo.
-- **`scanRoots`** — diretórios alcançáveis pelos aliases, não apenas `app/`.
-  Numa app externa, 100% da escrita mora em `src/`.
-- **`moduleOf()` com módulo aninhado** (`admin/taxonomies`).
-- **`framework: { core, lucid, orm }`** — escolhe a estratégia, vai para o
-  relatório, e fora do escopo v1 faz o pacote reportar em vez de contar.
+Três decisões que só a implementação revelou:
 
-**Pronto quando:** `minimal_flat`, `minimal_modular` e `minimal_nogen` produzem
-`AppContext` equivalente, diferindo só em `layout` e `generated`.
+- **`moduleOf` não pode depender de `scanRoots`.** Em layout plano não existe
+  alias `#app/*`, então as raízes acabam sendo as próprias pastas de tipo
+  (`app/models`) e o módulo viraria "models". Deriva do caminho relativo à raiz.
+- **Hub de rotas é passo de travessia, não arquivo de rota.** Um arquivo que só
+  reexporta não tem `router.` para parsear. A primeira versão do teste afirmava
+  o contrário — o teste é que estava errado.
+- **Raízes que não são código de aplicação ficam de fora.** Há `.insertInto()`
+  em `tests/factories/` numa app real; varrer isso contaria escrita de teste
+  como função da aplicação. Default conservador, sobrescrevível por `boundary`.
 
 ## Fase 2 — funções de dados
 
