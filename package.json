@@ -1,0 +1,78 @@
+{
+  "name": "@filipebraida/adonis-function-points",
+  "description": "Automated function point counting and code metrics for AdonisJS applications.",
+  "version": "0.1.0",
+  "engines": { "node": ">=24.0.0" },
+  "type": "module",
+  "files": ["build", "!build/bin", "!build/tests"],
+  "main": "build/index.js",
+  "exports": {
+    ".": { "types": "./build/index.d.ts", "import": "./build/index.js" },
+    "./types": { "types": "./build/src/types.d.ts", "import": "./build/src/types.js" },
+    "./resolvers": {
+      "types": "./build/src/inventory/resolvers/index.d.ts",
+      "import": "./build/src/inventory/resolvers/index.js"
+    },
+    "./function_points_provider": {
+      "types": "./build/providers/function_points_provider.d.ts",
+      "import": "./build/providers/function_points_provider.js"
+    },
+    "./commands": { "types": "./build/commands/main.d.ts", "import": "./build/commands/main.js" },
+    "./commands/*": { "types": "./build/commands/*.d.ts", "import": "./build/commands/*.js" }
+  },
+  "scripts": {
+    "copy:templates": "copyfiles \"stubs/**/*.stub\" build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "quick:test": "node --import=@poppinss/ts-exec --enable-source-maps bin/test.ts",
+    "pretest": "npm run lint",
+    "test": "c8 npm run quick:test",
+    "precompile": "npm run lint",
+    "compile": "tsdown && tsc --emitDeclarationOnly --declaration",
+    "postcompile": "npm run copy:templates",
+    "build": "npm run compile",
+    "version": "npm run build",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "adonisjs", "adonis", "function-points", "function-point-analysis",
+    "ifpug", "afp", "cosmic", "apf", "pontos-de-funcao", "metrics",
+    "code-metrics", "static-analysis", "software-measurement"
+  ],
+  "author": "Filipe Braida <filipebraida@gmail.com>",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/filipebraida/adonis-function-points.git" },
+  "bugs": { "url": "https://github.com/filipebraida/adonis-function-points/issues" },
+  "homepage": "https://github.com/filipebraida/adonis-function-points#readme",
+  "dependencies": {
+    "@poppinss/utils": "^6.7.0",
+    "ts-morph": "^24.0.0"
+  },
+  "devDependencies": {
+    "@adonisjs/assembler": "^8.0.0",
+    "@adonisjs/core": "^7.0.0",
+    "@adonisjs/eslint-config": "^3.0.0",
+    "@adonisjs/lucid": "^22.0.0",
+    "@adonisjs/prettier-config": "^1.4.5",
+    "@adonisjs/tsconfig": "^2.0.0",
+    "@japa/assert": "^4.2.0",
+    "@japa/runner": "^5.3.0",
+    "@poppinss/ts-exec": "^1.4.4",
+    "@types/node": "^25.3.5",
+    "c8": "^11.0.0",
+    "copyfiles": "^2.4.1",
+    "eslint": "^10.0.3",
+    "prettier": "^3.8.1",
+    "tsdown": "^0.21.0",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "@adonisjs/core": "^7.0.0",
+    "@adonisjs/lucid": "^22.0.0"
+  },
+  "peerDependenciesMeta": { "@adonisjs/lucid": { "optional": true } },
+  "publishConfig": { "access": "public" },
+  "c8": { "reporter": ["text", "html"], "exclude": ["tests/**"] },
+  "prettier": "@adonisjs/prettier-config"
+}

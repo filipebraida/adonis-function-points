@@ -1,0 +1,23 @@
+{{{
+  exports({ to: app.configPath('function_points.ts') })
+}}}
+import { defineConfig } from '@filipebraida/adonis-function-points'
+
+export default defineConfig({
+  /**
+   * A fronteira da aplicação é uma decisão de negócio, não técnica.
+   * Reveja com quem assina o contrato, não só com o time.
+   */
+  boundary: {
+    infrastructure: ['access_tokens', 'reset_password_tokens', 'audits'],
+    ignoreEntryPoints: ['drive.fs.serve', 'prometheus.metrics'],
+    externallyMaintained: [],
+  },
+
+  retStrategy: 'constant',
+  maxCallDepth: 3,
+  collapseInquiriesIntoOutputs: true,
+
+  /** Recusa emitir contagem se o rastreamento cobrir menos que isto. */
+  minCoverage: 0.85,
+})

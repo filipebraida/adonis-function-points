@@ -1,0 +1,10 @@
+node_modules
+build
+coverage
+.DS_Store
+*.log
+fp-inventory.json
+fp-count.json
+
+# spikes exploratórios com dados internos — nunca versionar
+.local-spikes/
