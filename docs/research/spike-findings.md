@@ -36,8 +36,12 @@ determinística e responde por ~24% do total.
 ## O que é difícil
 
 **Detecção de escrita é o parâmetro crítico do projeto.** Ela decide EE vs SE
-em ~40% das transações. Não é a poda de ARs, como se supôs no plano inicial —
-a poda move o total só 2–7%.
+em ~40% das transações.
+
+> **Conclusão retirada.** Este documento afirmava que "a poda de ARs move o
+> total só 2–7%". O número foi medido com o rastreamento quebrado (FTR médio
+> 1,36), ou seja, com poucos ARs para podar. Não sustenta a conclusão. A
+> sensibilidade à poda será medida de novo quando o grafo funcionar.
 
 Progressão medida da detecção de escrita, sobre 159 transações:
 

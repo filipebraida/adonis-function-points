@@ -21,6 +21,12 @@ pacote passar a depender de convenção de pasta, de alias, ou de estilo de mode
 ele falha. É o teste mais importante do projeto e é escrito **antes** do
 primeiro coletor.
 
+**Ressalva honesta:** as duas primeiras fixtures foram escritas pela mesma mão,
+ao mesmo tempo, e compartilham o registry e o schema byte a byte. Elas são
+regressão, não generalização. A terceira (`minimal_v6`) deriva de um layout de
+autoria externa e **sem nenhum artefato gerado** — é ela que testa se o caminho
+por AST, sozinho, chega à mesma contagem.
+
 ## Taxonomia das fixtures
 
 ```
@@ -28,6 +34,8 @@ tests/fixtures/
 ├── apps/                     aplicações completas e mínimas
 │   ├── minimal_flat/           MVC plano
 │   ├── minimal_modular/        módulo por domínio — MESMA app lógica
+│   ├── minimal_v6/             MESMA app, layout do web-starter-kit oficial:
+│   │                           v6, sem nenhum gerado, rotas em start/routes/
 │   └── vazquez/                benchmark público, gabarito 56 PF
 ├── patterns/                 onde mora a lógica          [7 fixtures, feito]
 ├── models/                   estilos de definição de model
@@ -61,37 +69,59 @@ Exemplos antes do código:
 - com o registry ausente, **reporta ausência**; não assume, não inventa
 - `moduleOf()` devolve o módulo na modular e um rótulo estável na plana
 
-**Pronto quando:** as duas fixtures de app produzem o mesmo `AppContext`
-normalizado, diferindo só em `layout`.
+**Acréscimos após a validação externa:**
 
-## Fase 2 — `sources/data_schema`: funções de dados
+- `routeFiles` lidos dos `preloads` do `adonisrc.ts` — terceira forma de rotas
+  encontrada fora da casa (`start/routes/*.ts`), e a lista é a fonte
+  autoritativa
+- `framework: { core, lucid, tuyau }` — decide a estratégia e vai para o relatório
+- `canRegenerate` — em v7, oferecer `codegen` / `schema:generate` antes de contar
 
-**Por que aqui:** é a metade confiável da contagem (~24% do total, quase sem
-heurística), e a invariante de ordem do `ResolverContext` exige que os data
-stores existam antes de qualquer análise de handler.
+**Pronto quando:** as três fixtures de app produzem `AppContext` equivalente,
+diferindo só em `layout` e `framework`.
+
+## Fase 2 — funções de dados: AST como base, schema gerado como upgrade
+
+**Por que aqui:** é a metade confiável da contagem (~24% do total), e a
+invariante de ordem do `ResolverContext` exige que os data stores existam antes
+de qualquer análise de handler.
+
+**Invertido após a validação externa.** O schema gerado só existe no Lucid 22;
+os kits oficiais estão no 21. O parser de model por AST é a base, e precisa
+**seguir a cadeia de herança** — `extends UserSchema`, `extends compose(Base,
+Auditable)` — porque olhar só o arquivo zera uma app inteira.
 
 Exemplos antes do código:
 
-- os três estilos em `fixtures/models/` produzem **as mesmas colunas** — é o que
-  impede a falha silenciosa que zeraria uma app inteira
-- `static $columns` é preferido ao AST quando presente
+- os três estilos em `fixtures/models/` produzem **as mesmas colunas** por AST
+- com schema gerado presente, `static $columns` prevalece, e o `DataStore` diz
+  de qual fonte veio
 - coluna acrescentada por migration de "pacote" aparece; propriedade transiente
   (como `auditComment`) não
+- `minimal_v6`, sem gerado nenhum, chega ao mesmo `DataStore[]` que as outras
 
-**Pronto quando:** `DataStore[]` idêntico entre as duas fixtures de app.
+**Pronto quando:** `DataStore[]` idêntico entre as três fixtures de app.
 
-## Fase 3 — `sources/route_registry`: transações candidatas
+## Fase 3 — transações candidatas: parser de rotas como base, registry como upgrade
+
+**Invertido após a validação externa.** O registry com tipos de body é Tuyau
+(opcional); o `controllers.ts` é core 7. Fora da casa, nenhuma app tem os dois.
 
 Exemplos antes do código:
 
-- rota do registry vira `EntryPoint` com verbo, padrão, nome
-- `body`/`query` do registry viram DETs de entrada, sem parsear validator
+- arquivos de rota vêm dos `preloads` do `adonisrc.ts`: um só, um por módulo,
+  ou um diretório `start/routes/*.ts` — as três formas encontradas
+- `routes_ast` é a base: rota multi-linha, `.resource()` expandido com
+  `.only()`/`.apiOnly()`, controller por lazy import **ou** por mapa gerado
+- DETs de entrada saem do **validator por AST** (`vine.object` recursivo,
+  spread resolvido, array e objeto aninhado com regra registrada em
+  `counting-decisions.md`); com Tuyau presente, o registry prevalece
 - `controllers_map` resolve pelo caminho pontuado; **fixture com nome colidindo
   entre dois módulos** prova que resolve o certo
-- sem registry, `routes_ast` assume — com as armadilhas já conhecidas: rota
-  multi-linha, `.resource()` expandido, `.only()`/`.apiOnly()`
+- `router.on(...).renderInertia(...)` vira `EntryPoint` sem handler, para a
+  Fase 4 decidir
 
-**Pronto quando:** as duas fixtures de app produzem o mesmo conjunto de
+**Pronto quando:** as três fixtures de app produzem o mesmo conjunto de
 `EntryPoint`.
 
 ## Fase 4 — `graph/call_graph`: o rastreamento
@@ -102,7 +132,11 @@ decide EE vs SE em ~40% das transações.
 Exemplos antes do código:
 
 - cada uma das 7 fixtures de `patterns/` alcança o data store e detecta a
-  escrita — inclusive `property_service`, hoje lacuna conhecida
+  escrita — **inclusive `property_service`**: `@inject()` é o padrão oficial do
+  AdonisJS, e fora da casa é a primeira coisa que precisa funcionar, não a última
+- **mapeamento data store → classe de model**: o hook mora em `class Book
+  extends BookSchema`, não no schema; sem achar a classe a partir do data store,
+  a decisão sobre hooks é inexecutável
 - **nível de método, não de arquivo**: fixture com service que tem um método de
   leitura e um de escrita; quem chama só o de leitura não vira EE
 - `edges/model_hook/`: a escrita no `@afterCreate` entra na transação que a
@@ -114,6 +148,27 @@ Exemplos antes do código:
 
 **Pronto quando:** cobertura de 100% nas fixtures e o relatório distingue "rota
 legitimamente estática" de "rastreador falhou".
+
+## Decisões que precisam existir antes da Fase 4
+
+A revisão sênior apontou três decisões adiadas para onde não podiam ser
+adiadas. Todas vão para `counting-decisions.md` com a regra IFPUG/AFP:
+
+1. **Identidade de função entre versões.** `fp:diff` é a feature que toca
+   dinheiro; rota renomeada ou controller movido não pode virar exclusão +
+   inclusão e faturar em dobro. A identidade restringe o formato do inventário,
+   então é decidida agora mesmo que o diff seja implementado depois.
+2. **DETs de saída.** Com Inertia, o que é exibido é o que vai em
+   `inertia.render('page', props)` — model serializado inteiro? transformer?
+   Sem isso, toda SE tem DET inventado.
+3. **DETs para tipos compostos.** Array, objeto aninhado, union, spread — o
+   spike usou "+3 para spread". O IFPUG tem regra; nós não registramos nenhuma.
+
+E duas de escopo:
+
+4. **Runtime: dentro ou fora do v1.** Está na arquitetura e em nenhuma fase.
+5. **Orçamento de desempenho.** Fixtures têm 2 entidades; alvo real tem 48 e
+   1100 arquivos. Grafo com hooks sobre ts-morph precisa caber em CI.
 
 ## Fase 5 — `albrecht`: as regras
 
@@ -166,6 +221,10 @@ explicitamente com o motivo até a Fase 6.
 alguém adicionar fixture sem estratégia — ou se um padrão passar a ser resolvido
 e a lista não for atualizada.
 
+**Toda afirmação "universal" é testada fora da amostra que a gerou** antes de
+virar dependência de desenho. A validação externa derrubou a premissa central
+do plano em meio dia — barato porque veio antes da Fase 2.
+
 **Toda armadilha vira regressão.** As três que já custaram caro — rota
 multi-linha, colisão de nome de controller, `Job.dispatch` confundido com
 service estático — têm teste que falha se voltarem.
@@ -179,3 +238,8 @@ existem.
 Isso inverte a estimativa original, que achava a contagem difícil e a coleta
 fácil. O spike mostrou o contrário: as tabelas IFPUG são aritmética, as funções
 de dados quase se contam sozinhas, e **todo o problema real é o grafo**.
+
+Uma conclusão do spike foi **retirada**: "a poda de ARs move o total só 2–7%".
+Foi medida com o rastreamento quebrado (FTR médio 1,36). Quando o grafo
+funcionar e o FTR subir, a poda pode ser o que mais mexe na complexidade. Será
+reavaliada na Fase 4, com dado válido.

@@ -21,31 +21,40 @@ onde o esforço vai.
 
 ## Ordem das fontes
 
-| # | fonte | o que entrega | confiabilidade |
+**Revisada após a validação externa**
+([`../research/external-validation.md`](../research/external-validation.md)):
+a ordem original ("gerado primeiro") só vale para AdonisJS 7 + Lucid 22 + Tuyau.
+Os starter kits oficiais estão em core 6.18 / Lucid 21.6, sem nenhum gerado.
+
+| # | fonte | papel | confiabilidade |
 |---|---|---|---|
-| 1 | **artefato gerado** | rotas, verbos, DETs de entrada, colunas canônicas | canônica |
-| 2 | **runtime** | `router.toJSON()`, metadados do Lucid | exata, exige bootar |
-| 3 | **AST** | grafo de chamadas, detecção de escrita | heurística |
+| 1 | **AST** — validators, models com cadeia de herança, `routes.ts` listados nos `preloads` do `adonisrc.ts` | **base**: v6 e v7, com ou sem Tuyau | heurística controlada |
+| 2 | **artefato gerado** — schema Lucid 22, codegen core 7, registry Tuyau | **upgrade de precisão** onde existe; em v7, regenerável sob demanda | canônica |
+| 3 | **runtime** | decisão pendente: dentro ou fora do v1 | exata, exige bootar |
 | 4 | **convenção de pasta** | agrupamento de relatório | metadado |
+
+O relatório diz **qual fonte produziu cada fato**. Uma contagem feita só por
+AST e outra com schema gerado não são equivalentes, e o número tem que carregar
+essa proveniência.
 
 **Convenção de pasta nunca é usada para encontrar coisa.** Um pacote que procura
 models em `app/**/models/` conta zero numa das apps levantadas, onde 35 arquivos
-de model não estendem `BaseModel` do Lucid e só 3 têm `@column`.
+de model não estendem `BaseModel` do Lucid — e é por isso que o parser de model
+por AST tem que **seguir a cadeia de herança** (`extends compose(Base, Mixin)`),
+não olhar só o arquivo.
 
-### Os dois artefatos gerados
+### Os artefatos gerados, e quem os gera
 
-Presentes nas 6 aplicações, independentes de layout:
+| artefato | gerador | desde |
+|---|---|---|
+| `database/schema.ts` — `*Schema` com `$columns` canônico | `@adonisjs/lucid` oficial, `migration:run` (padrão) ou `schema:generate` | Lucid 22 |
+| `.adonisjs/server/controllers.ts`, `routes.d.ts` (nome + params, **sem body**) | `@adonisjs/core` `codegen` | core 7 |
+| `.adonisjs/client/registry/schema.d.ts` — rotas **com tipos de body/query** | `@tuyau/core`, terceiro, opcional | — |
 
-**`.adonisjs/client/registry/schema.d.ts`** — 157 a 164 rotas por app, com nome,
-verbos, padrão e os tipos de `body`/`query` inferidos do VineJS. Ou seja: as
-transações candidatas **e** seus DETs de entrada, de graça. Acompanhado de
-`.adonisjs/server/controllers.ts` (nome → arquivo do controller).
-
-**`database/schema.ts`** — gerado das migrations, classes `<Nome>Schema` com
-`static $columns` canônico. É a fonte certa de DETs e resolve sozinha duas
-variações que quebram um parser de models: estilos de definição heterogêneos, e
-colunas que **pacotes** acrescentam via migration própria — que aparecem ali sem
-o contador precisar saber que aquele pacote existe.
+Quando presentes, resolvem sozinhos duas variações caras: estilos heterogêneos
+de model, e colunas que **pacotes** acrescentam via migration própria. Em v7 o
+pacote deve oferecer regenerar antes de contar, em vez de confiar em arquivo
+possivelmente obsoleto.
 
 ## Camadas
 
@@ -64,10 +73,12 @@ src/
 │   ├── app_context.ts        descobre a app: imports do package.json,
 │   │                         artefatos gerados, layout
 │   ├── sources/              fatos, por ARTEFATO (não por pasta)
-│   │   ├── route_registry.ts     registry gerado -> transações + DETs entrada
-│   │   ├── controllers_map.ts    mapa gerado nome -> arquivo
-│   │   ├── data_schema.ts        schema gerado -> data stores + DETs
-│   │   ├── routes_ast.ts         fallback quando não há registry
+│   │   ├── routes_ast.ts         BASE: rotas dos preloads, lazy import ou mapa
+│   │   ├── models_ast.ts         BASE: models seguindo a cadeia de herança
+│   │   ├── validators_ast.ts     BASE: DETs de entrada
+│   │   ├── route_registry.ts     upgrade (Tuyau): DETs de entrada tipados
+│   │   ├── controllers_map.ts    upgrade (core 7): nome -> arquivo
+│   │   ├── data_schema.ts        upgrade (Lucid 22): colunas canônicas
 │   │   └── model_hooks.ts        hooks, que entram no caminho da transação
 │   ├── graph/
 │   │   ├── call_graph.ts     transação -> dados, em nível de MÉTODO
@@ -158,6 +169,8 @@ rastreador falhou. As duas têm que ser distinguíveis no relatório.
 
 ## Documentos irmãos
 
+- [`../research/external-validation.md`](../research/external-validation.md) —
+  a tese testada fora da amostra: quem gera cada artefato e a matriz de suporte
 - [`../research/adonisjs-variation.md`](../research/adonisjs-variation.md) — o
   que varia entre apps e o que não varia
 - [`../research/spike-findings.md`](../research/spike-findings.md) — medições do

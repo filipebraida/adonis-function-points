@@ -86,7 +86,14 @@ Esse é o tipo de falha que o pacote precisa tornar impossível.
 `transformers` em 5 de 6, `dtos` em 1, e nomes como `resources`, `schemas`,
 `collections`, `content`, `mixins`, `support`. A lista é aberta.
 
-## O que NÃO varia
+## O que NÃO varia — nesta amostra
+
+> **Ressalva adicionada após a validação externa**
+> ([`external-validation.md`](external-validation.md)): as 6 apps são de um
+> único autor, todas em AdonisJS 7 + Lucid 22 + Tuyau. Os artefatos abaixo são
+> gerados por tooling oficial, mas **só existem nessa combinação**. Os starter
+> kits oficiais (core 6.18, Lucid 21.6) não têm nenhum deles. Ver a matriz de
+> suporte no documento de validação.
 
 Duas espinhas **geradas**, presentes nas 6 aplicações, independentes de layout:
 

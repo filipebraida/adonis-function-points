@@ -8,3 +8,4 @@ fp-count.json
 
 # spikes exploratórios com dados internos — nunca versionar
 .local-spikes/
+tmp/
