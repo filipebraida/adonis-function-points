@@ -164,8 +164,7 @@ function-by-function agreement rather than on its own.
 
 Reproduce it with `npm test` — the benchmark is
 `tests/acceptance/vazquez.spec.ts`, and the reference is
-[`tests/fixtures/apps/vazquez/REFERENCIA.md`](tests/fixtures/apps/vazquez/REFERENCIA.md)
-(in Portuguese, like the case study it transcribes).
+[`tests/fixtures/apps/vazquez/REFERENCE.md`](tests/fixtures/apps/vazquez/REFERENCE.md).
 
 ## Principles
 

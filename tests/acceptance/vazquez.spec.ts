@@ -14,7 +14,7 @@ import { appFixturePath } from '../helpers.js'
  * The only reference in this project that we did not produce: a published
  * manual count, over a specification we did not write.
  *
- * The fixture and the reference (`fixtures/apps/vazquez/REFERENCIA.md`) were
+ * The fixture and the reference (`fixtures/apps/vazquez/REFERENCE.md`) were
  * frozen in their own commit BEFORE the counter was ever run against them, and
  * the transcription choices are documented there. Without that the independence
  * would be illusory: nothing would stop us adjusting the fixture until the
@@ -55,7 +55,7 @@ async function countFixture(): Promise<CountResult> {
       .map((entry) => [entry.id, analyzer.analyze(entry.handler!)])
   )
 
-  // `Pessoa` belongs to access control, outside the boundary — see REFERENCIA.md
+  // `Pessoa` belongs to access control, outside the boundary — see REFERENCE.md
   return count(
     { app, stores, entryPoints, behaviors },
     { boundary: { externallyMaintained: ['Pessoa'] } }
@@ -93,7 +93,7 @@ test.group('Vazquez benchmark: transactional functions', () => {
   })
 
   /**
-   * The two divergences were PREDICTED in REFERENCIA.md before the run, and
+   * The two divergences were PREDICTED in REFERENCE.md before the run, and
    * come from the standard, not from defects:
    *
    *   +1  `Consulta Apontamento Diário` is an EQ in the reference. AFP §6.5.3

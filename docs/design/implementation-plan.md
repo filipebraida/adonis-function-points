@@ -342,7 +342,7 @@ do que parecia. A regra de processo está se pagando.
 
 A fixture e o gabarito foram **congelados em commit próprio antes** de o contador
 rodar sobre eles, com as escolhas de transcrição documentadas em
-`fixtures/apps/vazquez/REFERENCIA.md`. Sem isso a independência seria ilusória.
+`fixtures/apps/vazquez/REFERENCE.md`. Sem isso a independência seria ilusória.
 
 |                                  | total  | vs gabarito |
 | -------------------------------- | ------ | ----------- |
