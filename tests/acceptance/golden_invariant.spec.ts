@@ -33,13 +33,13 @@ import { appFixturePath } from '../helpers.js'
  * or a writing style, this test fails. It is the most important test in the
  * project, and that is why it was written before the first collector.
  *
- * The assertions were unlocked phase by phase — see
- * docs/design/implementation-plan.md.
+ * The assertions were unlocked layer by layer, each one as its collector
+ * landed — see docs/design/implementation-plan.md.
  */
 const APPS = ['minimal_flat', 'minimal_modular', 'minimal_nogen'] as const
 
 test.group('golden invariant: shape does not change the count', () => {
-  test('Phase 1 — the three apps are discovered equivalently', async ({ assert }) => {
+  test('discovery — the three apps are discovered equivalently', async ({ assert }) => {
     const apps = await Promise.all(APPS.map((name) => discoverApp(appFixturePath(name))))
     const [flat, modular, nogen] = apps
 
@@ -75,7 +75,7 @@ test.group('golden invariant: shape does not change the count', () => {
     assert.isUndefined(nogen.generated.controllersMap)
   })
 
-  test('Phase 2 — the three apps produce the same data stores', async ({ assert }) => {
+  test('data stores — the three apps produce the same ones', async ({ assert }) => {
     const results = await Promise.all(
       APPS.map(async (name) => collectDataStores(await discoverApp(appFixturePath(name))))
     )
@@ -110,7 +110,7 @@ test.group('golden invariant: shape does not change the count', () => {
     assert.include(reference, 'authorId,createdAt,id,isbn,publishedYear,title')
   })
 
-  test('Phase 3 — the three apps produce the same entry points', async ({ assert }) => {
+  test('entry points — the three apps produce the same ones', async ({ assert }) => {
     const results = await Promise.all(
       APPS.map(async (name) => collectEntryPoints(await discoverApp(appFixturePath(name))))
     )
@@ -141,7 +141,7 @@ test.group('golden invariant: shape does not change the count', () => {
     }
   })
 
-  test('Phase 5 — the three apps produce an identical count', async ({ assert }) => {
+  test('count — the three apps produce an identical one', async ({ assert }) => {
     const results = await Promise.all(
       APPS.map(async (name) => {
         const app = await discoverApp(appFixturePath(name))
