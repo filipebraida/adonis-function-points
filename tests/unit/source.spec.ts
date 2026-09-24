@@ -52,6 +52,18 @@ test.group('source: a count says what it counted', () => {
     assert.equal(count.source!.config, '/x/config.ts')
   })
 
+  /**
+   * Has teeth on any platform: the input is deliberately mixed, so a product
+   * that merely stored what it was given would fail here on Linux too.
+   */
+  test('the recorded config path is canonical whatever the caller passed', async ({ assert }) => {
+    const { count } = await analyze(appFixturePath('minimal_flat'), {
+      configFile: 'D:\\app\\config/function_points.ts',
+    })
+
+    assert.equal(count.source!.config, 'D:/app/config/function_points.ts')
+  })
+
   test('and a timestamp', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('minimal_flat'))
     assert.match(count.source!.countedAt, /^\d{4}-\d{2}-\d{2}T/)

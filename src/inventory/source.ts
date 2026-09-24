@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { toPosix } from './paths.js'
+
 /**
  * What a count counted.
  *
@@ -54,6 +56,12 @@ const git = (root: string, args: string[]): string | undefined => {
 }
 
 export function describeSource(root: string, config: string | null): CountSource {
+  /**
+   * Normalised here rather than trusted from the caller. `loadConfig` already
+   * returns a canonical path, but `analyze()` takes `configFile` from anyone
+   * using the package as a library, and whatever arrives is what ships inside
+   * every saved count.
+   */
   const revision = git(root, ['rev-parse', 'HEAD'])
   const status = revision === undefined ? undefined : git(root, ['status', '--porcelain'])
 
@@ -63,7 +71,7 @@ export function describeSource(root: string, config: string | null): CountSource
     branch: revision === undefined ? undefined : git(root, ['rev-parse', '--abbrev-ref', 'HEAD']),
     dirty: status === undefined ? undefined : status.length > 0,
     countedAt: new Date().toISOString(),
-    config,
+    config: config === null ? null : toPosix(config),
   }
 }
 

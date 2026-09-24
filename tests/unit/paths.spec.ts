@@ -1,5 +1,7 @@
 import { test } from '@japa/runner'
 
+import path from 'node:path'
+
 import { discoverApp } from '../../src/inventory/app_context.js'
 import { samePath, toPosix } from '../../src/inventory/paths.js'
 import { analyze } from '../../src/pipeline.js'
@@ -35,7 +37,9 @@ test.group('paths: one canonical spelling', () => {
   test('every path the inventory emits is posix', async ({ assert }) => {
     for (const app of ['minimal_flat', 'minimal_nogen', 'model_hooks']) {
       const { inventory, count } = await analyze(appFixturePath(app), {
-        configFile: `${appFixturePath(app)}/config/function_points.ts`,
+        // deliberately native, to prove the emitted `source` is canonical
+        // whatever spelling the caller used
+        configFile: path.join(appFixturePath(app), 'config', 'function_points.ts'),
       })
       const found = [...pathsIn(inventory), ...pathsIn(count)]
 
