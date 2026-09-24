@@ -1,44 +1,38 @@
 import type { CallResolver, ResolverRegistry } from './types.js'
 
 import { actionObjectResolver } from './action_object.js'
-import { sameClassMethodResolver } from './same_class_method.js'
 import { jobDispatchResolver } from './job_dispatch.js'
 import { moduleFunctionResolver } from './module_function.js'
 import { propertyServiceResolver } from './property_service.js'
+import { sameClassMethodResolver } from './same_class_method.js'
 import { staticServiceResolver } from './static_service.js'
 
 export * from './types.js'
 
 /**
- * Estratégias embutidas, em ordem de especificidade.
+ * Built-in strategies, ordered from most to least specific.
  *
- * Cobrem os padrões que aparecem em apps AdonisJS reais. Nenhuma lista fechada
- * dá conta de todos — um projeto com convenção própria registra a sua em
- * `config/function_points.ts` e ela entra antes das embutidas.
- *
- * Medição do spike contra uma app real (159 rotas):
- *   sem nenhum resolvedor .......... 20 transações com escrita detectada
- *   + actionObjectResolver ......... 45
- *   demais padrões ................. em aberto, ver docs/research/spike-findings.md
+ * They cover the patterns that appear in real AdonisJS applications. No closed
+ * list can cover them all — a project with its own convention registers it in
+ * `config/function_points.ts`, and it runs before these.
  */
 export const BUILTIN_CALL_RESOLVERS: CallResolver[] = [
   sameClassMethodResolver, //   5  await this.persistExpiration(invite)
-  actionObjectResolver, //  10  await new CreateUser().handle(payload)
-  jobDispatchResolver, //  15  await CreateUserJob.dispatch(payload)
-  staticServiceResolver, //  20  await UserService.create(payload)
+  actionObjectResolver, //     10  await new CreateUser().handle(payload)
+  jobDispatchResolver, //      15  await CreateUserJob.dispatch(payload)
+  staticServiceResolver, //    20  await UserService.create(payload)
   propertyServiceResolver, //  30  await this.users.create(payload)
-  moduleFunctionResolver, //  50  await createUser(payload)
+  moduleFunctionResolver, //   50  await createUser(payload)
 ]
 
 /**
- * A PRIMEIRA estratégia que reivindica uma chamada vence.
+ * The FIRST strategy that claims a call wins.
  *
- * Não é detalhe de implementação: formas sintaticamente idênticas têm
- * significados diferentes. `CreateUserJob.dispatch(p)` e
- * `UserService.create(p)` são ambas `Identificador.metodo(args)`, e só a
- * ordem separa uma da outra. Por isso as estratégias específicas declaram
- * `order` menor que as genéricas, e `module-function` fica por último —
- * ela casaria com quase tudo.
+ * This is not an implementation detail: syntactically identical shapes carry
+ * different meanings. `CreateUserJob.dispatch(p)`, `UserService.create(p)` and
+ * `User.find(p)` are all `Identifier.method(args)`, and only ordering tells
+ * them apart. Hence specific strategies declare a lower `order` than generic
+ * ones, and `module-function` comes last — it would match almost anything.
  */
 export function resolveCall(
   call: import('ts-morph').CallExpression,

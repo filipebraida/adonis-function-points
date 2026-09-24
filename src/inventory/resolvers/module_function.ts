@@ -5,10 +5,13 @@ import type { HandlerRef } from '../../types.js'
 import type { CallResolver, ResolverContext } from './types.js'
 
 /**
- * Padrão "função de módulo": sem classe nenhuma.
+ * "Module function" pattern: no class at all.
  *
  *     await createUser(payload)
  *     await syncWithProvider(order)
+ *
+ * Runs last: it matches any call to an imported identifier and would otherwise
+ * swallow the more precise patterns.
  */
 export const moduleFunctionResolver: CallResolver = {
   name: 'module-function',

@@ -162,7 +162,7 @@ test.group('diff: ruleset', () => {
       diffCounts(result([fn()], '1.0.0'), result([fn()], '1.1.0'))
       assert.fail('deveria ter lançado')
     } catch (error) {
-      assert.match((error as Error).message, /mede a mudança de regra/)
+      assert.match((error as Error).message, /measures the rule change/)
     }
   })
 

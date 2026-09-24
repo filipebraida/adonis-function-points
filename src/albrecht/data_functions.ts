@@ -4,10 +4,10 @@ import { complexityOf, pointsOf } from './tables.js'
 import type { ComplexityTable } from './tables.js'
 
 /**
- * Funções de dados: ALI e AIE.
+ * Data functions: ILF and EIF.
  *
- * A classificação não vem do código do model — vem de COMO as transações da
- * aplicação usam o repositório:
+ * The classification does not come from the model's own code — it comes from
+ * HOW the application's transactions use the store:
  *
  *   "If the Data Function is maintained by any of the application's
  *    Transactional Functions, the Data Function shall be determined to be an
@@ -15,20 +15,20 @@ import type { ComplexityTable } from './tables.js'
  *    application's Transactional Functions, the Data Function shall not be
  *    counted in the application."  — AFP §6.5.4
  *
- * Por isso este módulo recebe o uso, não só os repositórios.
+ * That is why this module takes usage, not just the stores.
  */
 
 export type StoreUsage = {
-  /** alguma transação da aplicação escreve neste repositório? */
+  /** does any transaction of the application write to this store? */
   written: boolean
-  /** alguma transação o alcança, lendo ou escrevendo? */
+  /** does any transaction reach it at all, reading or writing? */
   used: boolean
 }
 
 export type DataFunctionOptions = {
-  /** `constant` fixa RET em 1; `composition` deriva das relações de composição */
+  /** `constant` pins RET at 1; `composition` derives it from composition relations */
   retStrategy: 'constant' | 'composition'
-  /** repositórios mantidos por outro sistema, por decisão de fronteira */
+  /** stores maintained by another system, by boundary decision */
   externallyMaintained: Set<string>
   tables: Record<FunctionType, ComplexityTable>
   weights: Record<FunctionType, Record<Complexity, number>>
@@ -44,16 +44,15 @@ export function countDataFunctions(
   for (const store of stores) {
     const use = usage.get(store.name)
 
-    // AFP §6.5.4: repositório que nenhuma transação alcança não entra
+    // AFP §6.5.4: a store no transaction reaches is not counted
     if (!use?.used) continue
 
     /**
-     * DET exclui o identificador técnico.
+     * DETs exclude the technical identifier.
      *
-     * O IFPUG define DET como atributo "user recognizable"; uma chave
-     * auto-incremental não é reconhecida pelo usuário. É também o que a
-     * dissertação do Ligeiro fez, e o que mantém a contagem comparável com a
-     * manual.
+     * IFPUG defines a DET as a "user recognizable" attribute, and an
+     * auto-increment surrogate key is not something the user recognises.
+     * Counting it would inflate every data function by one.
      */
     const detAttributes = store.attributes.filter((attribute) => !attribute.isIdentifier)
     const det = detAttributes.length
@@ -76,17 +75,17 @@ export function countDataFunctions(
       points: pointsOf(type, complexity, options.weights),
       rationale: {
         rule: options.externallyMaintained.has(store.name)
-          ? 'afp:6.5.4 mantido externamente por configuração de fronteira -> AIE'
+          ? 'afp:6.5.4 externally maintained by boundary configuration -> EIF'
           : use.written
-            ? 'afp:6.5.4 mantido por transação da aplicação -> ALI'
-            : 'afp:6.5.4 usado mas não mantido -> AIE',
+            ? 'afp:6.5.4 maintained by an application transaction -> ILF'
+            : 'afp:6.5.4 used but not maintained -> EIF',
         detSources: detAttributes.map(
           (attribute) => `${store.columnSource}:${store.table ?? store.name}.${attribute.name}`
         ),
         refSources:
           options.retStrategy === 'composition'
-            ? ['1 (grupo principal)', ...store.subgroups.map((s) => `composição:${s}`)]
-            : ['1 (constante: subgrupo lógico não é derivável do código)'],
+            ? ['1 (main group)', ...store.subgroups.map((s) => `composition:${s}`)]
+            : ['1 (constant: a logical subgroup is not derivable from code)'],
       },
     })
   }

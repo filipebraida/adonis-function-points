@@ -6,14 +6,15 @@ import { complexityOf, pointsOf } from './tables.js'
 import type { ComplexityTable } from './tables.js'
 
 /**
- * Funções transacionais: EE e SE.
+ * Transactional functions: EI and EO.
  *
  *   "Transactions that modify data entities content shall be considered
  *    External Inputs (EI). […] Transactions that do not modify data entities
  *    content but only use them shall be considered as External Output."
  *   — AFP §6.5.3
  *
- * CE não existe aqui, e é decisão da norma, não simplificação nossa:
+ * There is no EQ here, and that is the standard's decision rather than a
+ * simplification of ours:
  *
  *   "Since the primary intent cannot be assessed by an automated function point
  *    counting tool, all outputs and inquiries shall be counted as external
@@ -21,14 +22,14 @@ import type { ComplexityTable } from './tables.js'
  */
 
 export type TransactionOptions = {
-  /** repositórios que entram na contagem; os demais não somam FTR */
+  /** stores that are counted; anything else contributes no FTR */
   countedStores: Map<string, CollectedDataStore>
   /**
-   * DET extra por mensagem de confirmação/erro.
+   * Extra DET for the confirmation or error message.
    *
-   * O manual do IFPUG conta 1; o AFP não. Segue o AFP por default, e fica
-   * configurável porque foi a divergência sistemática de −1 DET por transação
-   * medida na dissertação do Ligeiro.
+   * The IFPUG manual counts one; AFP does not. The default follows AFP, and it
+   * stays configurable because this is a known systematic divergence of −1 DET
+   * per transaction against manual counts.
    */
   messageDet: number
   tables: Record<FunctionType, ComplexityTable>
@@ -49,8 +50,9 @@ export function countTransactionalFunctions(
     const touched = behavior.touches.filter((store) => options.countedStores.has(store))
 
     /**
-     * counting-decisions §1: sem caminho até dado nenhum, não há transação a
-     * identificar. Cai da regra geral, sem caso especial para rota estática.
+     * No path down to any data function means there is no transaction to
+     * identify (AFP §6.5.3). This falls out of the general rule — no special
+     * case is needed for static routes.
      */
     if (touched.length === 0) continue
 
@@ -72,10 +74,10 @@ export function countTransactionalFunctions(
       scopeHash: scopeHashOf(behavior),
       rationale: {
         rule: behavior.writes
-          ? 'afp:6.5.3 modifica repositório de dados -> EE'
-          : 'afp:6.5.3 usa sem modificar -> SE (CE colapsado por 6.5.3)',
+          ? 'afp:6.5.3 modifies a data store -> EI'
+          : 'afp:6.5.3 uses without modifying -> EO (EQ collapsed per 6.5.3)',
         detSources: sources,
-        refSources: touched.map((store) => `alcança:${store}`),
+        refSources: touched.map((store) => `reaches:${store}`),
         trace: behavior.trace,
       },
     })
@@ -85,10 +87,10 @@ export function countTransactionalFunctions(
 }
 
 /**
- * Hash combinado do escopo de implementação, para o `fp:diff`.
+ * Combined hash of the implementation scope, consumed by `fp:diff`.
  *
- * Ordenado antes de combinar: a ordem de travessia pode variar sem que o código
- * tenha mudado, e um hash instável faria toda release virar "alteração".
+ * Sorted before combining: traversal order can vary without the code having
+ * changed, and an unstable hash would turn every release into a "change".
  */
 function scopeHashOf(behavior: Behavior): string {
   return behavior.scope
@@ -98,28 +100,25 @@ function scopeHashOf(behavior: Behavior): string {
 }
 
 /**
- * DETs de uma transação — counting-decisions §6 e §7.
+ * DETs of a transaction — AFP §7.3.
  *
  *   "Count only one DET for each unique field that is required to complete the
  *    External Input. […] Count only one DET for each unique field that is
  *    required to complete the Output Transaction. If a DET both enters and exits
- *    the boundary, count that DET only once."  — AFP §7.3
+ *    the boundary, count that DET only once."
  *
- * A distinção que importa é por TIPO de transação, não por ter entrada ou não:
+ * The distinction that matters is the transaction TYPE, not whether input
+ * exists:
  *
- *   EE  campos que o usuário informa — parâmetros de rota e validator. O que a
- *       transação lê para poder gravar não é DET de entrada.
- *   SE  o que o usuário informa MAIS o que a transação apresenta. Um relatório
- *       tem os dois: o período consultado e os campos exibidos.
+ *   EI  fields the user supplies — route parameters and validator fields.
+ *       What the transaction reads in order to write is not an input DET.
+ *   EO  what the user supplies PLUS what the transaction presents. A report has
+ *       both: the period queried and the fields displayed.
  *
- * A primeira versão deste código tratava saída como `else` da entrada, e por
- * isso contava 2 DETs num relatório que o gabarito conta com 9 — e 8 numa
- * exclusão que o gabarito conta com 2. O benchmark Vazquez expôs os dois.
- *
- * Sem `.select()` nem transformer visível, os campos de saída são a tabela
- * inteira, e isso **superestima**. É a troca que o AFP faz de propósito,
- * priorizando repetibilidade sobre fidelidade; a origem vai no `Rationale` para
- * o `fp:calibrate` medir o viés.
+ * With no `.select()` and no visible transformer, the output fields are the
+ * whole table, which **overestimates**. That is the trade AFP makes on purpose,
+ * favouring repeatability over fidelity; the origin is recorded in `Rationale`
+ * so `fp:calibrate` can measure the bias.
  */
 function detsFor(
   entry: CollectedEntryPoint,
@@ -146,7 +145,7 @@ function detsFor(
     add(name, `validator:${field}`)
   }
 
-  // saída: só transação que apresenta dado tem campo de saída
+  // output: only a transaction that presents data has output fields
   if (type === 'EO' || type === 'EQ') {
     for (const store of touched) {
       const columns = options.countedStores

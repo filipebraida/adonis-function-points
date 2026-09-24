@@ -45,7 +45,7 @@ test.group('calibração: leitura das amostras', () => {
   })
 
   test('recusa linha com PF ilegível em vez de ignorar', async ({ assert }) => {
-    assert.throws(() => parseSamples('funcao,pf\nPOST /books,abc\n'), /PF ilegível/)
+    assert.throws(() => parseSamples('funcao,pf\nPOST /books,abc\n'), /unreadable function points/)
   })
 
   test('ignora linhas vazias', async ({ assert }) => {
@@ -105,7 +105,7 @@ test.group('calibração: guardas contra número enganoso', () => {
 
     assert.isNotEmpty(calibration.warnings)
     assert.isTrue(
-      calibration.warnings.some((w) => /abaixo do mínimo/.test(w)),
+      calibration.warnings.some((w) => /below the minimum/.test(w)),
       'amostra de 10 funções tem poucos casos por tipo'
     )
   })
@@ -118,7 +118,7 @@ test.group('calibração: guardas contra número enganoso', () => {
     ])
 
     assert.deepEqual(calibration.unmatched, ['POST /inexistente'])
-    assert.isTrue(calibration.warnings.some((w) => /não casaram/.test(w)))
+    assert.isTrue(calibration.warnings.some((w) => /matched no counted function/.test(w)))
   })
 
   /**
@@ -133,7 +133,7 @@ test.group('calibração: guardas contra número enganoso', () => {
     )
 
     assert.isTrue(
-      calibration.warnings.some((w) => /calibrar contra si mesmo/.test(w)),
+      calibration.warnings.some((w) => /calibrating against itself/.test(w)),
       'bater 100% deveria levantar suspeita, não comemoração'
     )
   })

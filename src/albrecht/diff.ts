@@ -1,47 +1,49 @@
 import type { ChangeType, CountResult, CountedFunction, DiffEntry, DiffResult } from '../types.js'
 
 /**
- * Inclusão, alteração e exclusão entre duas contagens — o que vira fatura.
+ * Added, changed and removed functions between two counts — what becomes an
+ * invoice.
  *
- * Base normativa: **OMG Automated Enhancement Points 1.0**, a spec irmã do AFP,
- * feita para medir manutenção entre duas revisões.
+ * Normative base: **OMG Automated Enhancement Points 1.0**, the sibling of AFP,
+ * written to size maintenance between two revisions.
  *
  *   "Each Artifact shall be analyzed in both revisions to determine whether it
  *    is: Added — when it exists in revision ToRevision while it didn't exist in
  *    FromRevision. […] Modified — when it exists in both revisions but whose
  *    source code changed."  — AEP §6.3
  *
- * Duas decisões que tornam isto viável, de counting-decisions §5:
+ * Two decisions make this workable:
  *
- * 1. **Opera sobre duas contagens salvas**, nunca sobre dois checkouts. Bootar a
- *    versão antiga, com dependências possivelmente diferentes, é exatamente o
- *    tipo de problema que não vale resolver.
- * 2. **Recusa comparar rulesets diferentes.** Se as regras mudaram no meio, o
- *    diff somaria laranjas com maçãs — e o resultado iria para uma fatura.
+ * 1. **It operates on two saved counts**, never on two checkouts. Booting the
+ *    older revision, with possibly different dependencies, is the kind of
+ *    problem not worth solving.
+ * 2. **It refuses to compare different rule sets.** If the rules changed in
+ *    between, the difference measures the rule change, not the work — and the
+ *    result would go into an invoice.
  */
 
 export class IncomparableRulesetsError extends Error {
   constructor(from: string, to: string) {
     super(
-      `contagens de rulesets diferentes não são comparáveis: ${from} vs ${to}. ` +
-        `As regras mudaram entre as duas medições, então a diferença não mede ` +
-        `trabalho — mede a mudança de regra.`
+      `counts from different rule sets are not comparable: ${from} vs ${to}. ` +
+        `The rules changed between the two measurements, so the difference does ` +
+        `not measure work — it measures the rule change.`
     )
     this.name = 'IncomparableRulesetsError'
   }
 }
 
 /**
- * Fatores por tipo de mudança.
+ * Factors per change type.
  *
- * Os defaults `added` e `removed` são os âncoras explícitos da AEP §6.5:
- * transação adicionada vale 1, excluída vale 0,4.
+ * The `added` and `removed` defaults are the explicit anchors of AEP §6.5: an
+ * added transaction is worth 1, a deleted one 0.4.
  *
- * `changed` é 1 por default **e isso superestima**. A AEP grada de 0,25 a 1,75
- * pela Tabela 6.1, a partir da variação de Effort Complexity — que exige
- * complexidade ciclomática, que este pacote ainda não mede. Contar 1 é a escolha
- * conservadora no sentido de não inventar número, não no sentido de faturar
- * menos, e o resultado avisa sobre isso.
+ * `changed` defaults to 1 and **that overestimates**. AEP grades it from 0.25
+ * to 1.75 through Table 6.1, derived from Effort Complexity variation, which
+ * requires cyclomatic complexity that this package does not yet measure.
+ * Counting 1 is conservative in the sense of not inventing a number, not in the
+ * sense of billing less — and the result says so.
  */
 export type ChangeFactors = Record<ChangeType, number>
 
@@ -54,12 +56,12 @@ export const AEP_FACTORS: ChangeFactors = {
 
 export type DiffOptions = {
   factors?: Partial<ChangeFactors>
-  /** rótulos das duas medições, só para o relatório */
+  /** labels for the two measurements, for the report only */
   labels?: { from: string; to: string }
 }
 
 export type FunctionPointDiff = DiffResult & {
-  /** PF ponderado pelos fatores — é o que vira fatura */
+  /** function points weighted by the factors — this is what gets billed */
   billable: number
   factors: ChangeFactors
   warnings: string[]
@@ -103,15 +105,15 @@ export function diffCounts(
   const warnings: string[] = []
   if (entries.some((entry) => entry.change === 'changed') && factors.changed === 1) {
     warnings.push(
-      'fator de alteração fixo em 1: a AEP grada de 0,25 a 1,75 pela variação de ' +
-        'Effort Complexity, que exige complexidade ciclomática — ainda não medida. ' +
-        'Funções alteradas estão sendo cobradas pelo valor cheio.'
+      'change factor pinned at 1: AEP grades it from 0.25 to 1.75 through Effort ' +
+        'Complexity variation, which requires cyclomatic complexity — not measured ' +
+        'yet. Changed functions are being billed at full value.'
     )
   }
 
   return {
-    from: options.labels?.from ?? 'anterior',
-    to: options.labels?.to ?? 'atual',
+    from: options.labels?.from ?? 'previous',
+    to: options.labels?.to ?? 'current',
     entries: entries.sort(byChangeThenName),
     totals: totalsOf(entries),
     billable: entries.reduce(
@@ -124,13 +126,15 @@ export function diffCounts(
 }
 
 /**
- * O que conta como alteração.
+ * What counts as a change.
  *
- * Mudança no escopo de implementação (checksum de AST normalizado, §5) **ou** no
- * tamanho funcional. Formatação e comentário não entram: o hash já os ignora.
+ * A change in the implementation scope (checksum of the normalised AST) **or**
+ * in the functional size. Formatting and comments do not count: the hash
+ * already ignores them.
  *
- * Renomear a rota não aparece aqui porque a identidade é `(verbo, padrão)` — e
- * mover o controller de módulo também não, porque é implementação.
+ * Renaming a route does not show up here because identity is
+ * `(verb, pattern)` — and neither does moving a controller between modules,
+ * which is implementation.
  */
 function changedBetween(previous: CountedFunction, current: CountedFunction): boolean {
   if (previous.type !== current.type) return true

@@ -1,28 +1,27 @@
 import type { CountResult, FunctionType } from '../types.js'
 
 /**
- * Calibração: medir o viés do contador contra contagem manual.
+ * Calibration: measuring the counter's bias against manual counts.
  *
- * É a peça que transforma "5 a 15% de desvio" em número utilizável. A premissa
- * do projeto nunca foi exatidão contra um contador certificado — foi
- * **repetibilidade**, que permite calibrar:
+ * This is what turns a percentage of deviation into a usable number. The
+ * premise was never exactness against a certified counter — it was
+ * **repeatability**, which is what makes calibration possible: systematic error
+ * can be calibrated away, variance between human counters cannot.
  *
- *   erro sistemático se calibra; variância entre contadores, não.
- *
- * O AFP assume a mesma postura de propósito:
+ * AFP takes the same position on purpose:
  *
  *   "This specification prioritizes repeatability and consistency over
  *    consistency with the IFPUG CPM counting guidelines."  — AFP §6.1
  *
- * O que este módulo NÃO faz: aplicar o fator automaticamente. Calibrar é
- * decisão de quem assina o contrato, e um fator aplicado em silêncio faria a
- * contagem deixar de ser reproduzível a partir do código.
+ * What this module does NOT do: apply the factor. Calibrating is a decision for
+ * whoever signs the contract, and a factor applied silently would stop the
+ * count from being reproducible from the source.
  */
 
 export type CalibrationSample = {
-  /** identidade da função, como aparece na contagem */
+  /** function identity, as it appears in the count */
   function: string
-  /** PF apurados por contagem manual */
+  /** function points from the manual count */
   manual: number
 }
 
@@ -32,12 +31,13 @@ export type TypeCalibration = {
   manualPoints: number
   automaticPoints: number
   /**
-   * Fator que aproximaria o automático do manual: `manual / automático`.
+   * Factor bringing the automatic count towards the manual one:
+   * `manual / automatic`.
    *
-   * Maior que 1 significa que o contador **subestima** este tipo.
+   * Greater than 1 means the counter **underestimates** this type.
    */
   factor: number
-  /** desvio médio absoluto, em PF por função */
+  /** mean absolute deviation, in function points per function */
   meanAbsoluteDeviation: number
   exactMatches: number
 }
@@ -48,21 +48,20 @@ export type Calibration = {
     samples: number
     manualPoints: number
     automaticPoints: number
-    /** desvio relativo do total, com sinal: positivo = automático maior */
+    /** relative deviation of the total, signed: positive means automatic is larger */
     deviation: number
     exactMatches: number
   }
-  /** amostras que não casaram com nenhuma função contada */
+  /** samples that matched no counted function */
   unmatched: string[]
   warnings: string[]
 }
 
 /**
- * Amostra mínima por tipo para que um fator signifique algo.
+ * Minimum sample size per type for a factor to mean anything.
  *
- * Abaixo disso o "fator" é ruído de uma ou duas funções, e usá-lo para
- * corrigir contagem é pior que não corrigir. O número vem da recomendação
- * prática de calibrar contra 10 a 20 demandas.
+ * Below this, the "factor" is noise from one or two functions, and using it to
+ * correct a count is worse than not correcting at all.
  */
 const MIN_SAMPLES_PER_TYPE = 10
 
@@ -123,25 +122,25 @@ export function calibrate(result: CountResult, samples: CalibrationSample[]): Ca
   for (const calibration of byType) {
     if (calibration.samples < MIN_SAMPLES_PER_TYPE) {
       warnings.push(
-        `${calibration.type}: ${calibration.samples} amostras, abaixo do mínimo de ` +
-          `${MIN_SAMPLES_PER_TYPE}. O fator ${calibration.factor} é ruído de poucas ` +
-          `funções — não use para corrigir contagem.`
+        `${calibration.type}: ${calibration.samples} samples, below the minimum of ` +
+          `${MIN_SAMPLES_PER_TYPE}. The factor ${calibration.factor} is noise from a ` +
+          `handful of functions — do not use it to correct a count.`
       )
     }
   }
 
   if (unmatched.length > 0) {
     warnings.push(
-      `${unmatched.length} amostras não casaram com nenhuma função contada. ` +
-        `Confira a identidade: ela é "VERBO /padrão" com parâmetros como ":param".`
+      `${unmatched.length} samples matched no counted function. Check the identity: ` +
+        `it is "VERB /pattern" with parameters written as ":param".`
     )
   }
 
   const matched = samples.length - unmatched.length
   if (matched > 0 && exactTotal === matched) {
     warnings.push(
-      'todas as amostras bateram exatamente. Confira se a contagem manual não foi ' +
-        'derivada da automática — calibrar contra si mesmo não mede nada.'
+      'every sample matched exactly. Check that the manual count was not derived ' +
+        'from the automatic one — calibrating against itself measures nothing.'
     )
   }
 
@@ -162,10 +161,10 @@ export function calibrate(result: CountResult, samples: CalibrationSample[]): Ca
 const round = (value: number) => Math.round(value * 1000) / 1000
 
 /**
- * Lê amostras de CSV: `funcao,pf` com cabeçalho.
+ * Reads samples from CSV: `function,fp` with a header row.
  *
- * Formato deliberadamente pobre. O contador de métricas vai exportar de uma
- * planilha, e exigir JSON criaria atrito onde não precisa.
+ * Deliberately plain. A metrics analyst exports from a spreadsheet, and
+ * demanding JSON would add friction where none is needed.
  */
 export function parseSamples(csv: string): CalibrationSample[] {
   const samples: CalibrationSample[] = []
@@ -180,10 +179,10 @@ export function parseSamples(csv: string): CalibrationSample[] {
     const name = trimmed.slice(0, separator).trim().replace(/^"|"$/g, '')
     const manual = Number(trimmed.slice(separator + 1).trim())
 
-    // cabeçalho, ou linha com PF ilegível
+    // header row, or a line with an unreadable value
     if (!Number.isFinite(manual)) {
       if (index > 0 && name !== 'funcao' && name !== 'função') {
-        throw new Error(`linha ${index + 1}: PF ilegível em "${trimmed}"`)
+        throw new Error(`line ${index + 1}: unreadable function points in "${trimmed}"`)
       }
       continue
     }

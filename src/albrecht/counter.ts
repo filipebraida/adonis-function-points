@@ -11,21 +11,22 @@ import { countTransactionalFunctions } from './transactional_functions.js'
 import { isTechnical } from './technical_filter.js'
 
 /**
- * Monta a contagem a partir do inventário.
+ * Assembles the count from the inventory.
  *
- * A ordem importa e não é arbitrária: as funções de dados dependem de COMO as
- * transações usam cada repositório (AFP §6.5.4), e as transacionais dependem de
- * quais repositórios entraram na contagem. Então: uso primeiro, filtro técnico,
- * dados, transações.
+ * The order is not arbitrary: data functions depend on HOW transactions use
+ * each store (AFP §6.5.4), and transactional functions depend on which stores
+ * ended up counted. Hence: usage first, then the technical filter, then data,
+ * then transactions.
  */
 
 export const RULESET = 'afp'
 
 /**
- * Versão do conjunto de regras.
+ * Version of the rule set.
  *
- * Sai em todo relatório e o `fp:diff` recusa comparar contagens de versões
- * diferentes — senão somaria laranjas com maçãs.
+ * It appears in every report, and `fp:diff` refuses to compare counts produced
+ * by different versions — otherwise the difference would measure the rule
+ * change rather than the work.
  */
 export const RULESET_VERSION = '1.0.0'
 
@@ -33,7 +34,7 @@ export type CountInput = {
   app: AppContext
   stores: CollectedDataStore[]
   entryPoints: CollectedEntryPoint[]
-  /** comportamento por `EntryPoint.id`; ausente = sem handler */
+  /** behaviour keyed by `EntryPoint.id`; absent means no handler */
   behaviors: Map<string, Behavior>
 }
 
@@ -52,25 +53,25 @@ export type CountOptions = {
 export function count(input: CountInput, options: CountOptions = {}): CountResult {
   const warnings: string[] = []
 
-  // 1. como cada repositório é usado pelas transações
+  // 1. how each store is used by the transactions
   const usage = usageOf(input)
 
   const tables = { ...DEFAULT_TABLES, ...options.complexityTables }
   const weights = { ...DEFAULT_WEIGHTS, ...options.weights }
   const infrastructure = new Set(options.boundary?.infrastructure ?? [])
 
-  // 2. filtro de dados técnicos — AFP §6.5.2.1.1, mais a fronteira configurada
+  // 2. technical data filter — AFP §6.5.2.1.1, plus the configured boundary
   const countable = input.stores.filter((store) => {
     if (infrastructure.has(store.name) || infrastructure.has(store.table ?? '')) {
-      warnings.push(`fora da contagem por configuração de fronteira: ${store.name}`)
+      warnings.push(`excluded by boundary configuration: ${store.name}`)
       return false
     }
     const technical = isTechnical(store)
-    if (technical) warnings.push(`técnico, fora da contagem: ${store.name} (${technical})`)
+    if (technical) warnings.push(`technical, excluded: ${store.name} (${technical})`)
     return !technical
   })
 
-  // 3. funções de dados
+  // 3. data functions
   const dataFunctions = countDataFunctions(countable, usage, {
     retStrategy: options.retStrategy ?? 'constant',
     externallyMaintained: new Set(options.boundary?.externallyMaintained ?? []),
@@ -78,7 +79,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     weights,
   })
 
-  // 4. funções transacionais, sobre os repositórios que de fato contam
+  // 4. transactional functions, over the stores that actually count
   const countedStores = new Map(
     dataFunctions.map((fn) => [fn.name, countable.find((store) => store.name === fn.name)!])
   )
@@ -107,9 +108,9 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
 }
 
 /**
- * Uso de cada repositório pelas transações.
+ * How each store is used by the transactions.
  *
- * `written` decide ALI vs AIE; `used` decide se entra na contagem.
+ * `written` decides ILF vs EIF; `used` decides whether it is counted at all.
  */
 function usageOf(input: CountInput): Map<string, StoreUsage> {
   const usage = new Map<string, StoreUsage>()
@@ -122,7 +123,7 @@ function usageOf(input: CountInput): Map<string, StoreUsage> {
       const current = usage.get(store) ?? { written: false, used: false }
       usage.set(store, {
         used: true,
-        // basta UMA transação escrever para o repositório ser mantido
+        // a single writing transaction is enough for the store to be maintained
         written: current.written || behavior.writes,
       })
     }
@@ -155,11 +156,11 @@ function totalsOf(functions: CountedFunction[]): CountResult['totals'] {
 }
 
 /**
- * Confiança da contagem.
+ * Confidence of the count.
  *
- * O AFP exige que o que faltou apareça no relatório (§6.5.3). Um total com
- * muitas chamadas não resolvidas não deveria virar fatura, e quem lê tem que
- * poder ver isso sem ir procurar.
+ * AFP §6.5.3 requires whatever could not be traced to appear in the report. A
+ * total resting on many unresolved calls should not become an invoice, and the
+ * reader must see that without having to go looking.
  */
 function confidenceOf(input: CountInput, warnings: string[]): CountResult['confidence'] {
   let unresolvedCalls = 0

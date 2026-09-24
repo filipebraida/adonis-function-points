@@ -5,7 +5,7 @@ import type { HandlerRef } from '../../types.js'
 import type { CallResolver, ResolverContext } from './types.js'
 
 /**
- * Padrão "dependência injetada": a chamada sai de uma propriedade da classe.
+ * "Injected dependency" pattern: the call leaves through a class property.
  *
  *     @inject()
  *     class InvoiceController {
@@ -13,14 +13,12 @@ import type { CallResolver, ResolverContext } from './types.js'
  *       async queue() { await this.billing.enqueue(intake) }
  *     }
  *
- * É o padrão oficial do AdonisJS, e medido numa app de produção respondia por
- * quase todas as transações de escrita que o grafo não alcançava: 68 rotas
- * paravam no primeiro passo com `this.algumServiço.metodo()`.
+ * This is the official AdonisJS pattern, and in applications that use it, it is
+ * frequently the only path from a route down to a write.
  *
- * **Não precisa de type checker.** Uma análise anterior supôs que precisaria, e
- * estava errada: o `@inject()` só funciona com a anotação de tipo explícita —
- * é dela que o container tira o que injetar. Então o tipo está sempre no AST,
- * como identificador importado.
+ * **No type checker required.** `@inject()` only works with an explicit type
+ * annotation — that annotation is how the container knows what to inject — so
+ * the type is always in the AST as an imported identifier.
  */
 export const propertyServiceResolver: CallResolver = {
   name: 'property-service',

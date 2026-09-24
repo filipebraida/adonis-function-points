@@ -1,25 +1,22 @@
 import type { Complexity, FunctionType } from '../types.js'
 
 /**
- * Tabelas de complexidade do IFPUG CPM.
+ * IFPUG CPM complexity tables.
  *
- * São configuráveis de propósito. O estudo de caso do Ligeiro (Pinel, 2012)
- * mostrou que uma diferença de 1 DET — tipicamente a mensagem de confirmação,
- * que nenhuma ferramenta estática enxerga — é suficiente para cruzar a
- * fronteira baixa/média e mudar o valor da função. Calibrar as faixas para a
- * stack analisada é mais honesto que fingir que o viés não existe.
- *
- * Ver docs/research/spike-findings.md.
+ * Configurable on purpose. A single DET of difference — typically the
+ * confirmation message, which no static analyser can see — is enough to cross
+ * the low/average band and change a function's value. Calibrating the bands
+ * against manual counts is more honest than pretending the bias is absent.
  */
 
 export type ComplexityTable = {
-  /** limites superiores das faixas de RET/FTR: [a, b] => <=a | <=b | resto */
+  /** upper bounds of the RET/FTR bands: [a, b] => <=a | <=b | rest */
   refBands: [number, number]
-  /** limites superiores das faixas de DET */
+  /** upper bounds of the DET bands */
   detBands: [number, number]
 }
 
-/** grade comum: [faixaRef][faixaDet] -> complexidade */
+/** shared grid: [ref band][DET band] -> complexity */
 const GRID: Complexity[][] = [
   ['low', 'low', 'average'],
   ['low', 'average', 'high'],

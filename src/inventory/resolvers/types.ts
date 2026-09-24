@@ -3,76 +3,76 @@ import type { CallExpression, Node, SourceFile } from 'ts-morph'
 import type { DataStore, EntryPoint, HandlerRef, Provenance } from '../../types.js'
 
 /**
- * AdonisJS não impõe um padrão de organização. A mesma transação pode estar
- * escrita de formas muito diferentes:
+ * AdonisJS does not impose a code organisation. The same transaction can be
+ * written in very different ways:
  *
- *   controller gordo   await User.create(payload)
- *   action object      await new CreateUser().handle(payload)
- *   service estático   await UserService.create(payload)
- *   service injetado   await this.users.create(payload)
- *   repository         await this.repo.persist(user)
- *   job                await CreateUserJob.dispatch(payload)
- *   query builder      await db.table('users').insert(payload)
+ *   fat controller      await User.create(payload)
+ *   action object       await new CreateUser().handle(payload)
+ *   static service      await UserService.create(payload)
+ *   injected service    await this.users.create(payload)
+ *   repository          await this.repo.persist(user)
+ *   job                 await CreateUserJob.dispatch(payload)
+ *   query builder       await db.table('users').insert(payload)
  *
- * Nenhuma lista fechada cobre isso. Por isso o rastreamento é montado a partir
- * de estratégias registráveis, e o que nenhuma delas resolve é REPORTADO como
- * não resolvido — nunca silenciosamente tratado como leitura.
+ * No closed list covers that. Tracing is therefore assembled from registrable
+ * strategies, and whatever none of them resolves is REPORTED — never silently
+ * treated as a read.
  *
- * Esse é o contrato mais importante do pacote: preferimos dizer "não sei"
- * a produzir um número que parece certo.
+ * That is the most important contract in the package: saying "I don't know" is
+ * preferable to producing a number that looks right.
  */
 
 export type ResolverContext = {
-  /** arquivo onde está o call site */
+  /** file containing the call site */
   file: SourceFile
-  /** profundidade atual no grafo de chamadas */
+  /** current depth in the call graph */
   depth: number
-  /** imports do arquivo: identificador local -> caminho absoluto resolvido */
+  /** file imports: local identifier -> resolved absolute path */
   imports: Map<string, string>
   /**
-   * Dependências injetadas visíveis neste corpo: nome da propriedade ->
-   * arquivo da classe. Ex.: `billing` -> `.../billing_service.ts`.
+   * Injected dependencies visible in this body: property name -> class file.
+   * For example `billing` -> `.../billing_service.ts`.
    *
-   * Não exige type checker: o `@inject()` do AdonisJS **obriga** a anotação
-   * explícita do tipo para o container resolver a dependência, então
-   * `constructor(protected billing: BillingService)` sempre traz o tipo
-   * como identificador — importado como qualquer outro.
+   * No type checker needed: AdonisJS `@inject()` **requires** an explicit type
+   * annotation for the container to resolve the dependency, so
+   * `constructor(protected billing: BillingService)` always carries the
+   * type as an identifier — imported like any other.
    */
   injected: Map<string, string>
   /**
-   * DataStores conhecidos, por nome do símbolo (ex.: 'User').
+   * Known data stores, keyed by symbol name (e.g. 'User').
    *
-   * INVARIANTE DE ORDEM: os DataStores são coletados ANTES de qualquer
-   * análise de handler. Sem isso, `UserService.create()` e `User.create()`
-   * são indistinguíveis pela forma — e um resolvedor acabaria percorrendo o
-   * model como se fosse código de negócio.
+   * ORDERING INVARIANT: data stores are collected BEFORE any handler analysis.
+   * Without that, `UserService.create()` and `User.create()` are
+   * indistinguishable by shape, and a resolver would walk into the model as if
+   * it were business code.
    */
   dataStoresBySymbol: Map<string, DataStore>
-  /** resolve um specifier do AdonisJS (`#collect/models/invite`) para caminho */
+  /** resolves an AdonisJS specifier (`#collect/models/invite`) to a path */
   resolveSpecifier(specifier: string): string | null
-  /** carrega um arquivo no projeto, se existir */
+  /** loads a file into the project, if it exists */
   sourceFile(absPath: string): SourceFile | null
 }
 
 /**
- * Segue um call site até o próximo corpo a analisar.
+ * Follows a call site to the next body to analyse.
  *
- * Retorna [] quando a estratégia não reconhece a chamada — isso NÃO é erro,
- * outra estratégia pode reconhecê-la. Só quando nenhuma reconhece é que a
- * chamada entra em `unresolved`.
+ * Returns `[]` when the strategy does not recognise the call — that is not an
+ * error, another strategy may recognise it. Only when none does should the call
+ * land in `unresolved`.
  */
 export interface CallResolver {
   readonly name: string
-  /** menor roda primeiro; estratégias específicas antes das genéricas */
+  /** lower runs first; specific strategies before generic ones */
   readonly order?: number
   resolve(call: CallExpression, ctx: ResolverContext): HandlerRef[]
 }
 
 /**
- * Decide se um call site toca um repositório de dados, e como.
+ * Decides whether a call site touches a data store, and how.
  *
- * Separado do CallResolver de propósito: trocar o ORM (Lucid -> outro) muda
- * o detector, não o grafo de chamadas.
+ * Deliberately separate from `CallResolver`: swapping the ORM changes the
+ * detector, not the call graph.
  */
 export interface PersistenceDetector {
   readonly name: string
@@ -82,17 +82,18 @@ export interface PersistenceDetector {
 
 export type PersistenceAccess = {
   mode: 'read' | 'write'
-  /** id do DataStore, quando identificável */
+  /** data store id, when identifiable */
   store?: string
-  /** símbolo usado no código, para diagnóstico quando `store` é desconhecido */
+  /** symbol used in the code, for diagnostics when `store` is unknown */
   symbol?: string
   provenance: Provenance
 }
 
 /**
- * De onde saem os repositórios lógicos de dados (candidatos a ALI/AIE).
- * Padrão: models do Lucid + migrations. Outra fonte (Prisma, schema SQL puro)
- * entra como outro coletor.
+ * Where logical data stores come from (ILF/EIF candidates).
+ *
+ * Default: Lucid models plus the generated schema. Another source (Prisma, raw
+ * SQL schema) plugs in as another collector.
  */
 export interface DataStoreCollector {
   readonly name: string
@@ -100,11 +101,11 @@ export interface DataStoreCollector {
 }
 
 /**
- * De onde saem os pontos de entrada (candidatos a EE/SE/CE).
+ * Where entry points come from (EI/EO/EQ candidates).
  *
- * Transação não é sinônimo de rota HTTP: um comando ace que importa uma
- * planilha, ou um job agendado que sincroniza com um sistema externo, são
- * funções transacionais pelo IFPUG. Cada um é um coletor.
+ * A transaction is not a synonym for an HTTP route: an ace command that imports
+ * a spreadsheet, or a scheduled job that syncs with an external system, are
+ * transactional functions under IFPUG. Each is a collector.
  */
 export interface EntryPointCollector {
   readonly name: string
@@ -112,12 +113,12 @@ export interface EntryPointCollector {
 }
 
 export type CollectorContext = {
-  /** raiz da aplicação analisada */
+  /** root of the analysed application */
   appRoot: string
   sourceFiles(glob: string): SourceFile[]
   sourceFile(absPath: string): SourceFile | null
   resolveSpecifier(specifier: string): string | null
-  /** nó -> {file, line} para procedência */
+  /** node -> {file, line}, for provenance */
   provenanceOf(node: Node, by: string): Provenance
 }
 

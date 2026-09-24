@@ -7,20 +7,20 @@ import type { CallResolver, ResolverContext } from './types.js'
 const DISPATCH_METHODS = new Set(['dispatch', 'dispatchLater', 'enqueue', 'later'])
 
 /**
- * Padrão "job": a escrita acontece de forma assíncrona.
+ * "Job" pattern: the write happens asynchronously.
  *
  *     await CreateUserJob.dispatch({ userId })
  *
- * Roda ANTES de `static-service` de propósito: a forma sintática é idêntica
- * (`Identificador.metodo(args)`) e a genérica engoliria o job. A distinção não
- * é sintática, é semântica — e importa porque a decisão de contagem é
- * diferente.
+ * Runs before `static-service` on purpose: the syntactic shape is identical
+ * (`Identifier.method(args)`) and the generic strategy would swallow the job.
+ * The distinction is semantic, and it matters because the counting decision
+ * differs.
  *
- * DECISÃO DE CONTAGEM (ver docs/design/resolvers.md): o job despachado por um
- * handler é seguido como parte da MESMA função transacional, porque o IFPUG
- * conta pelo que o usuário reconhece — ele clica e o efeito acontece, mesmo
- * que a execução seja assíncrona. Job AGENDADO, que ninguém dispara, é outra
- * coisa: é ponto de entrada próprio e sai de um EntryPointCollector.
+ * COUNTING DECISION: a job dispatched by a handler is followed as part of the
+ * SAME transactional function, because IFPUG counts what the user recognises —
+ * they click and the effect happens, even if execution is asynchronous. A
+ * SCHEDULED job, which nobody dispatches, is a different thing: it is an entry
+ * point of its own and comes from an `EntryPointCollector`.
  */
 export const jobDispatchResolver: CallResolver = {
   name: 'job-dispatch',
@@ -40,8 +40,8 @@ export const jobDispatchResolver: CallResolver = {
     const file = ctx.imports.get(symbol)
     if (!file) return []
 
-    // `dispatch` enfileira; quem executa é `handle`. Quando a classe define
-    // `handle`, é o corpo dela que interessa.
+    // `dispatch` enqueues; `handle` executes. When the class declares `handle`,
+    // that is the body that matters.
     const declared = ctx.sourceFile(file)
     const hasHandle = declared?.getClasses().some((c) => c.getMethod('handle'))
 

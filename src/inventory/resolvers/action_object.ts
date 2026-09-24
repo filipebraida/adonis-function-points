@@ -1,22 +1,20 @@
 import { SyntaxKind } from 'ts-morph'
-import type { CallExpression } from 'ts-morph'
+import type { CallExpression, Node } from 'ts-morph'
 
 import type { HandlerRef } from '../../types.js'
 import type { CallResolver, ResolverContext } from './types.js'
 
 /**
- * Padrão "action object": a transação delega para um objeto de ação
- * instanciado na hora.
+ * "Action object" pattern: the transaction delegates to an action instantiated
+ * at the call site.
  *
  *     await new ExpireInvite().handle({ invite })
+ *
  *     const mark = new MarkContentChanged()
  *     await mark.handle({ documentId })
  *
- * Foi o padrão dominante na app medida no spike: habilitá-lo levou a detecção
- * de escrita de 20 para 45 das 159 transações.
- *
- * A segunda forma (instância guardada numa variável local) exige seguir a
- * declaração da variável até o `new` — é o que `classOfReceiver` faz.
+ * The second form keeps the instance in a local variable, so the declaration
+ * has to be followed back to the `new` — that is what `classOfReceiver` does.
  */
 export const actionObjectResolver: CallResolver = {
   name: 'action-object',
@@ -38,12 +36,12 @@ export const actionObjectResolver: CallResolver = {
 }
 
 /**
- * Descobre a classe por trás do receptor de uma chamada.
+ * Finds the class behind a call receiver.
  *
- *   new Foo().handle()     -> 'Foo'
- *   foo.handle()  onde  const foo = new Foo()   -> 'Foo'
+ *   new Foo().handle()                    -> 'Foo'
+ *   foo.handle()  where  const foo = new Foo()  -> 'Foo'
  */
-function classOfReceiver(receiver: import('ts-morph').Node): string | null {
+function classOfReceiver(receiver: Node): string | null {
   if (receiver.isKind(SyntaxKind.NewExpression)) {
     const target = receiver.getExpression()
     return target.isKind(SyntaxKind.Identifier) ? target.getText() : null

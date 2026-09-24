@@ -5,20 +5,19 @@ import type { HandlerRef } from '../../types.js'
 import type { CallResolver, ResolverContext } from './types.js'
 
 /**
- * Padrão "método da própria classe": `this.metodoPrivado()`.
+ * "Same class method" pattern: `this.privateMethod()`.
  *
  *     async expire(uuid: string) {
  *       const invite = await this.findByUuid(uuid)
  *       await this.persistExpiration(invite)
  *     }
  *
- * Foi o padrão dominante entre as rotas que não alcançavam dado nenhum numa app
- * de produção: o método público delega a privados da mesma classe, e é lá que a
- * escrita acontece.
+ * A public method delegating to private ones of the same class is where writes
+ * often live. No other strategy covers it — `property-service` requires
+ * `this.dependency.method()`, with two levels of access.
  *
- * Nenhum resolvedor o cobria — `property-service` exige `this.prop.metodo()`,
- * com dois níveis de acesso. Roda antes dele porque é mais específico: o
- * receptor é exatamente `this`.
+ * Runs before `property-service` because it is more specific: the receiver is
+ * exactly `this`.
  */
 export const sameClassMethodResolver: CallResolver = {
   name: 'same-class-method',
@@ -33,8 +32,12 @@ export const sameClassMethodResolver: CallResolver = {
     const owner = call.getFirstAncestorByKind(SyntaxKind.ClassDeclaration)
     if (!owner) return []
 
-    // só reivindica se o método existir mesmo na classe; senão é `this.dep.x()`
-    // ou propriedade injetada, e outra estratégia decide
+    /**
+     * Only claim the call if the method really exists on the class. Otherwise
+     * `this.someFunctionProperty()` would be claimed, the body lookup would
+     * fail, and the report would blame inheritance from a package — sending the
+     * reader to the wrong place.
+     */
     if (!owner.getMethod(member) && !owner.getStaticMethod(member)) return []
 
     return [{ file: ctx.file.getFilePath(), member }]

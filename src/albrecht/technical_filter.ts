@@ -1,30 +1,30 @@
 import type { CollectedDataStore } from '../inventory/sources/data_stores.js'
 
 /**
- * Filtro de dados temporários e técnicos — AFP §6.5.2.1.1.
+ * Temporary and technical data filter — AFP §6.5.2.1.1.
  *
  *   "Database tables identified as temporary or technical shall be marked as
  *    such to be presented in the final report, and shall be ignored in the rest
  *    of this process."
  *
- * Devolve o motivo quando a tabela é técnica, e `null` quando não é — porque o
- * relatório tem que dizer POR QUE excluiu, não só que excluiu.
+ * Returns the reason when a table is technical, `null` otherwise: the report
+ * must say WHY something was excluded, not merely that it was.
  */
 
 /**
- * Convenções de nome, com os defaults do próprio spec (§6.5.2.1.3).
+ * Naming conventions, with the defaults given by the spec itself (§6.5.2.1.3).
  *
- * São parâmetros de entrada na norma, então ficam sobrescrevíveis pela
- * configuração de fronteira.
+ * The standard treats these as user-provided inputs, so they stay overridable
+ * through the boundary configuration.
  */
 export const DEFAULT_TECHNICAL_PATTERNS: { label: string; pattern: RegExp }[] = [
   {
-    label: 'entidade temporária',
+    label: 'temporary entity',
     pattern: /^(.+temp|.*session.*|.*error.*|.*search.*|.*login.*|.*logon.*|.*filter.*)$/i,
   },
-  { label: 'entidade de status', pattern: /^(.+status)$/i },
-  { label: 'entidade de lookup', pattern: /^(lkp_.+|.+types?|.+_t)$/i },
-  { label: 'entidade de template', pattern: /^(.*template.*)$/i },
+  { label: 'status entity', pattern: /^(.+status)$/i },
+  { label: 'lookup entity', pattern: /^(lkp_.+|.+types?|.+_t)$/i },
+  { label: 'template entity', pattern: /^(.*template.*)$/i },
 ]
 
 export function isTechnical(

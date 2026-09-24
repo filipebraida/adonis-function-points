@@ -5,15 +5,15 @@ import type { HandlerRef } from '../../types.js'
 import type { CallResolver, ResolverContext } from './types.js'
 
 /**
- * Padrão "service estático": método de classe chamado sem instanciar.
+ * "Static service" pattern: a class method called without instantiating.
  *
  *     await UserService.create(payload)
  *     await OrderService.finalize(order)
  *
- * Cuidado: `Order.findByOrFail(...)` tem exatamente a mesma FORMA sintática.
- * A diferença é semântica — model é repositório de dados, não corpo a
- * percorrer, e quem cuida dele é o PersistenceDetector. Por isso este
- * resolvedor depende de `ctx.dataStoresBySymbol` já estar populado.
+ * Careful: `Order.findByOrFail(...)` has exactly the same syntactic shape. The
+ * difference is semantic — a model is a data store, not a body to walk into,
+ * and the `PersistenceDetector` handles it. Hence this resolver depends on
+ * `ctx.dataStoresBySymbol` already being populated.
  */
 export const staticServiceResolver: CallResolver = {
   name: 'static-service',
@@ -28,7 +28,7 @@ export const staticServiceResolver: CallResolver = {
 
     const symbol = receiver.getText()
 
-    // repositórios de dados não são corpos a percorrer
+    // data stores are not bodies to walk into
     if (ctx.dataStoresBySymbol.has(symbol)) return []
 
     const file = ctx.imports.get(symbol)
