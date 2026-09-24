@@ -160,13 +160,21 @@ Entraram no filtro da fase 1, e valem 6 pontos de cobertura.
 | app | antes | depois    |
 | --- | ----- | --------- |
 | A   | —     | 79,7%     |
-| B   | —     | 84,7%     |
-| C   | 53,2% | **79,3%** |
+| B   | —     | 85,9%     |
+| C   | 53,2% | **83,5%** |
 | D   | —     | 91,4%     |
 
-**A meta de 0,85 não foi alcançada em duas das quatro**, e isso é resultado, não
-falha: a projeção original prometia 86,2% com um filtro que silenciava
-`get`/`set`/`has`/`find` — cobertura comprada esconderia lacuna.
+Os últimos pontos vieram de três falhas do próprio filtro, achadas **rodando**
+contra produção e não por raciocínio: numa cadeia
+`validator.validate(p).catch(…)` o método reportado é `catch`, de Promise, e não
+`validate`; um `Map` recebido por parâmetro de construtor não era reconhecido,
+porque só propriedades de classe eram lidas; e `this.logger?.error` escapava,
+porque serviço de framework só era reconhecido como identificador nu.
+
+**A meta de 0,85 foi alcançada em duas das quatro** (B 85,9%, D 91,4%), e a app
+C ficou a 1,5 ponto. A projeção original prometia 86,2% com um filtro que
+silenciava `get`/`set`/`has`/`find` — cobertura comprada esconderia lacuna, e
+não compensa.
 
 O que sobra na app C são 109 pendências, e a leitura honesta é que **o limite
 de 0,85 talvez seja o número errado para uma aplicação com 172 funções**. Um
