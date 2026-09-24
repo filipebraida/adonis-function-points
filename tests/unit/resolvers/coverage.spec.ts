@@ -27,6 +27,7 @@ const EXPECTED_STRATEGY: Record<string, string> = {
   job_dispatch: 'job-dispatch',
   static_service: 'static-service',
   property_service: 'property-service',
+  default_injection: 'property-service',
   module_function: 'module-function',
 }
 

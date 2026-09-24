@@ -37,6 +37,7 @@ test.group('graph: reaches the data in every code pattern', () => {
     'job_dispatch',
     'typed_input',
     'property_service',
+    'default_injection',
     'same_class_method',
   ]
 
@@ -48,6 +49,33 @@ test.group('graph: reaches the data in every code pattern', () => {
       assert.isTrue(behavior.writes, `${pattern} did not detect the write`)
     })
   }
+
+  /**
+   * Injection without the container: the dependency arrives as a default value
+   * and carries no type annotation at all, so reading `getTypeNode()` saw
+   * nothing. The cost was not a gap in coverage but a wrong classification —
+   * the write inside the service stayed invisible and the transaction counted
+   * as an EO instead of an EI.
+   */
+  test('a dependency injected by default value is followed', async ({ assert }) => {
+    const behavior = await analyze('default_injection')
+
+    assert.isTrue(behavior.writes, 'the write lives inside the service')
+    assert.include(behavior.touches, 'Invite')
+    assert.isEmpty(behavior.unresolved)
+
+    const service = behavior.trace.find((step) => posix(step.file).includes('services/'))
+    assert.exists(service)
+    assert.equal(service!.by, 'property-service')
+  })
+
+  test('an annotated dependency and a default-value one agree', async ({ assert }) => {
+    const annotated = await analyze('property_service')
+    const byDefault = await analyze('default_injection')
+
+    assert.equal(byDefault.writes, annotated.writes)
+    assert.deepEqual(byDefault.touches, annotated.touches)
+  })
 
   /**
    * Resolving this does NOT require the TypeScript type checker: AdonisJS

@@ -71,7 +71,7 @@ Quantas transações ficam completamente limpas a cada fase, na app C:
 | ------------------------------------ | ------------------ | ----- |
 | hoje                                 | 53,2%              | —     |
 | fase 1 — filtro de ruído             | **59,0% (medido)** | +11   |
-| fase 2 — injeção por valor default   | ~64% (projetado)   | +9    |
+| fase 2 — injeção por valor default   | **63,8% (medido)** | +9    |
 | fase 3 — fronteira de `node_modules` | ~81% (projetado)   | +31   |
 
 **A fase 1 está entregue, e 59,0% é medido, não projetado.** A projeção original
@@ -109,7 +109,7 @@ O risco desta fase é silenciar demais, que é o defeito que este pacote existe
 para não cometer. Mitigação: a lista é de formas _conhecidas_, nunca um
 `catch-all`; o que não casar continua sendo reportado.
 
-## Fase 2 — injeção por valor default
+## Fase 2 — injeção por valor default ✅
 
 ```ts
 constructor(private billing = new BillingService()) {}
@@ -121,8 +121,14 @@ injeção sem container. O `injectedFor()` lê só `getTypeNode()`, que aqui é
 é exatamente o que o `action-object` já sabe ler.
 
 Esta fase **pode mudar a contagem**, e legitimamente: seguir o service pode
-revelar escrita que hoje não é vista, virando EE o que era SE. O efeito tem que
-ser medido nas quatro apps, não presumido.
+revelar escrita que hoje não é vista, virando EE o que era SE.
+
+**Medido: não mudou.** Os quatro totais seguem em 954, 807, 768 e 257. A
+fixture `default_injection` prova que a reclassificação é real — sem o fix, a
+transação dela conta como SE porque a escrita dentro do service fica invisível
+— mas nenhuma das quatro aplicações tinha esse caso. A cobertura da app C subiu
+de 59,0% para 63,8%, e as outras três não mudaram: o padrão só existe numa
+delas.
 
 ## Fase 3 — fronteira de `node_modules` (decisão §4)
 

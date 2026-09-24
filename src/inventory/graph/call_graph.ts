@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto'
 import { Node, Project, SyntaxKind } from 'ts-morph'
-import type { CallExpression, ClassDeclaration, SourceFile } from 'ts-morph'
+import type {
+  CallExpression,
+  ClassDeclaration,
+  ParameterDeclaration,
+  PropertyDeclaration,
+  SourceFile,
+} from 'ts-morph'
 
 import type { AppContext } from '../app_context.js'
 import type { CollectedDataStore } from '../sources/data_stores.js'
@@ -605,14 +611,39 @@ export function injectedFor(
   }
 
   for (const parameter of owner.getConstructors()[0]?.getParameters() ?? []) {
-    register(parameter.getName(), parameter.getTypeNode()?.getText())
+    register(parameter.getName(), dependencyTypeOf(parameter))
   }
 
   for (const property of owner.getProperties()) {
-    register(property.getName(), property.getTypeNode()?.getText())
+    register(property.getName(), dependencyTypeOf(property))
   }
 
   return injected
+}
+
+/**
+ * The declared type of a dependency, or the class its default value builds.
+ *
+ *     constructor(private invites: InviteService) {}        annotation
+ *     constructor(private invites = new InviteService()) {} default value
+ *
+ * The second is injection without the container, and it carries no type
+ * annotation at all — the type is inferred from the initialiser. Reading only
+ * `getTypeNode()` saw nothing there, and the consequence was not a gap in
+ * coverage but a wrong classification: the write inside the service stayed
+ * invisible, so the transaction counted as an EO instead of an EI.
+ */
+function dependencyTypeOf(node: ParameterDeclaration | PropertyDeclaration): string | undefined {
+  const declared = node.getTypeNode()?.getText()
+  if (declared) return declared
+
+  const initializer = node.getInitializer()
+  if (initializer && Node.isNewExpression(initializer)) {
+    const target = initializer.getExpression()
+    if (Node.isIdentifier(target)) return target.getText()
+  }
+
+  return undefined
 }
 
 /** type identifier -> application file where it is declared */
