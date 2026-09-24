@@ -231,10 +231,27 @@ export type CountResult = {
 /** Maintenance type, for enhancement-project counting. */
 export type ChangeType = 'added' | 'changed' | 'removed' | 'unchanged'
 
+/**
+ * Why a function counts as changed.
+ *
+ * The three causes used to collapse into one boolean, so a pure refactor and a
+ * genuine growth in functional size were indistinguishable in the report and
+ * priced identically. AEP does not ask for that collapse — it treats a type
+ * change separately and grades modification by effort — and a factory pricing
+ * a month of work needs to see which of the three it is paying for.
+ *
+ *   type            reclassified: ILF <-> EIF, EI <-> EO
+ *   size            DET or FTR moved, so the functional size really changed
+ *   implementation  same size, different code — refactoring
+ */
+export type ChangeReason = 'type' | 'size' | 'implementation'
+
 export type DiffEntry = {
   function: CountedFunction
   change: ChangeType
   previous?: CountedFunction
+  /** present only when `change` is 'changed' */
+  reason?: ChangeReason
 }
 
 export type DiffResult = {
@@ -242,4 +259,6 @@ export type DiffResult = {
   to: string
   entries: DiffEntry[]
   totals: Record<ChangeType, { count: number; points: number }>
+  /** the `changed` total split by cause — where an invoice actually comes from */
+  changedByReason: Record<ChangeReason, { count: number; points: number }>
 }

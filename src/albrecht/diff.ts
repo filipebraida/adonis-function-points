@@ -1,4 +1,11 @@
-import type { ChangeType, CountResult, CountedFunction, DiffEntry, DiffResult } from '../types.js'
+import type {
+  ChangeReason,
+  ChangeType,
+  CountResult,
+  CountedFunction,
+  DiffEntry,
+  DiffResult,
+} from '../types.js'
 
 /**
  * Added, changed and removed functions between two counts — what becomes an
@@ -116,10 +123,12 @@ export function diffCounts(
       entries.push({ function: fn, change: 'added' })
       continue
     }
+    const reason = reasonBetween(previous, fn)
     entries.push({
       function: fn,
-      change: changedBetween(previous, fn) ? 'changed' : 'unchanged',
+      change: reason ? 'changed' : 'unchanged',
       previous,
+      ...(reason ? { reason } : {}),
     })
   }
 
@@ -179,6 +188,7 @@ export function diffCounts(
     to: options.labels?.to ?? 'current',
     entries: entries.sort(byChangeThenName),
     totals: totalsOf(entries),
+    changedByReason: changedByReasonOf(entries),
     billable: entries.reduce(
       (total, entry) => total + entry.function.points * factors[entry.change],
       0
@@ -199,10 +209,41 @@ export function diffCounts(
  * `(verb, pattern)` — and neither does moving a controller between modules,
  * which is implementation.
  */
-function changedBetween(previous: CountedFunction, current: CountedFunction): boolean {
-  if (previous.type !== current.type) return true
-  if (previous.det !== current.det || previous.refs !== current.refs) return true
-  return (previous.scopeHash ?? '') !== (current.scopeHash ?? '')
+/**
+ * Why the function changed, or null when it did not.
+ *
+ * Reported by the most consequential cause: a reclassification usually moves
+ * the size too, and naming the type is the fact that explains the rest. The
+ * rendered line carries the DET and FTR movement, so nothing is hidden behind
+ * the label.
+ */
+function reasonBetween(previous: CountedFunction, current: CountedFunction): ChangeReason | null {
+  if (previous.type !== current.type) return 'type'
+  if (previous.det !== current.det || previous.refs !== current.refs) return 'size'
+  if ((previous.scopeHash ?? '') !== (current.scopeHash ?? '')) return 'implementation'
+  return null
+}
+
+/**
+ * Where an invoice actually comes from.
+ *
+ * `changed` is usually the largest line, and until this split it said nothing
+ * about whether it was paying for growth or for refactoring.
+ */
+function changedByReasonOf(entries: DiffEntry[]): DiffResult['changedByReason'] {
+  const byReason: DiffResult['changedByReason'] = {
+    type: { count: 0, points: 0 },
+    size: { count: 0, points: 0 },
+    implementation: { count: 0, points: 0 },
+  }
+
+  for (const entry of entries) {
+    if (entry.change !== 'changed' || !entry.reason) continue
+    byReason[entry.reason].count++
+    byReason[entry.reason].points += entry.function.points
+  }
+
+  return byReason
 }
 
 const ORDER: Record<ChangeType, number> = { added: 0, changed: 1, removed: 2, unchanged: 3 }

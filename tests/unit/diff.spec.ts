@@ -102,6 +102,74 @@ test.group('diff: change classification', () => {
   })
 })
 
+/**
+ * The three causes used to collapse into one boolean, so a pure refactor and a
+ * genuine growth in functional size were indistinguishable in the report and
+ * priced identically. On a real month of work, 45 of 74 changed functions turn
+ * out to be implementation-only — 44% of the invoice — which is a policy
+ * decision nobody could make while the report hid it.
+ */
+test.group('diff: why a function changed', () => {
+  test('a reclassification is a type change', ({ assert }) => {
+    const diff = diffCounts(result([fn({ type: 'EO' })]), result([fn({ type: 'EI' })]))
+
+    assert.equal(entryFor(diff, 'POST /books')!.reason, 'type')
+  })
+
+  test('a moved DET or FTR is a size change', ({ assert }) => {
+    const byDet = diffCounts(result([fn()]), result([fn({ det: 9 })]))
+    const byFtr = diffCounts(result([fn()]), result([fn({ refs: 3 })]))
+
+    assert.equal(entryFor(byDet, 'POST /books')!.reason, 'size')
+    assert.equal(entryFor(byFtr, 'POST /books')!.reason, 'size')
+  })
+
+  test('same size with different code is implementation only', ({ assert }) => {
+    const diff = diffCounts(result([fn()]), result([fn({ scopeHash: 'h2' })]))
+
+    assert.equal(entryFor(diff, 'POST /books')!.reason, 'implementation')
+  })
+
+  test('an unchanged function carries no reason', ({ assert }) => {
+    const diff = diffCounts(result([fn()]), result([fn()]))
+
+    assert.isUndefined(entryFor(diff, 'POST /books')!.reason)
+  })
+
+  /** type wins: a reclassification usually moves the size too, and explains it */
+  test('the most consequential cause is the one reported', ({ assert }) => {
+    const diff = diffCounts(result([fn({ type: 'EO' })]), result([fn({ type: 'EI', det: 9 })]))
+
+    assert.equal(entryFor(diff, 'POST /books')!.reason, 'type')
+  })
+
+  test('the changed total is split by cause', ({ assert }) => {
+    const diff = diffCounts(
+      result([
+        fn({ id: 'a', name: 'a', type: 'EO' }),
+        fn({ id: 'b', name: 'b' }),
+        fn({ id: 'c', name: 'c' }),
+      ]),
+      result([
+        fn({ id: 'a', name: 'a', type: 'EI' }),
+        fn({ id: 'b', name: 'b', det: 9 }),
+        fn({ id: 'c', name: 'c', scopeHash: 'h2' }),
+      ])
+    )
+
+    assert.equal(diff.changedByReason.type.count, 1)
+    assert.equal(diff.changedByReason.size.count, 1)
+    assert.equal(diff.changedByReason.implementation.count, 1)
+    assert.equal(
+      diff.changedByReason.type.points +
+        diff.changedByReason.size.points +
+        diff.changedByReason.implementation.points,
+      diff.totals.changed.points,
+      'the split has to close with the total it explains'
+    )
+  })
+})
+
 test.group('diff: factors and billing', () => {
   /** AEP §6.5: added is worth 1, deleted is worth 0.4. */
   test('uses the AEP anchors by default', async ({ assert }) => {

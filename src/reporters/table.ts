@@ -1,4 +1,4 @@
-import type { CountResult, CountedFunction } from '../types.js'
+import type { CountResult, CountedFunction, DiffEntry } from '../types.js'
 import type { FunctionPointDiff } from '../albrecht/diff.js'
 
 /**
@@ -95,6 +95,28 @@ export function renderExplain(fn: CountedFunction): string {
 }
 
 /** `fp:diff`: added, changed and removed — what becomes an invoice */
+/**
+ * What moved, for a size change. Shown beside the label so the reason is never
+ * a claim the reader has to take on trust.
+ */
+function movementOf(entry: DiffEntry): string {
+  if (entry.reason === 'type' && entry.previous) {
+    return `   ${entry.previous.type} -> ${entry.function.type}`
+  }
+
+  if (entry.reason !== 'size' || !entry.previous) return ''
+
+  const parts: string[] = []
+  if (entry.previous.det !== entry.function.det) {
+    parts.push(`DET ${entry.previous.det} -> ${entry.function.det}`)
+  }
+  if (entry.previous.refs !== entry.function.refs) {
+    parts.push(`FTR ${entry.previous.refs} -> ${entry.function.refs}`)
+  }
+
+  return parts.length > 0 ? `   ${parts.join(', ')}` : ''
+}
+
 export function renderDiff(diff: FunctionPointDiff): string {
   const lines: string[] = []
 
@@ -108,6 +130,20 @@ export function renderDiff(diff: FunctionPointDiff): string {
       `${pad(change, 11)}${padStart(total.count, 4)} functions` +
         `${padStart(total.points, 6)} FP  × ${factor}`
     )
+
+    /**
+     * `changed` is usually the largest line on the invoice, and on its own it
+     * does not say whether it is paying for growth or for refactoring.
+     */
+    if (change === 'changed') {
+      for (const [reason, split] of Object.entries(diff.changedByReason)) {
+        if (split.count === 0) continue
+        lines.push(
+          `  ${pad(reason, 16)}${padStart(split.count, 3)} functions` +
+            `${padStart(split.points, 6)} FP`
+        )
+      }
+    }
   }
 
   lines.push('')
@@ -117,9 +153,10 @@ export function renderDiff(diff: FunctionPointDiff): string {
   if (mudou.length > 0) {
     lines.push('')
     for (const entry of mudou) {
+      const label = entry.reason ? `${entry.change} (${entry.reason})` : entry.change
       lines.push(
-        `  ${pad(entry.change, 10)} ${pad(entry.function.name.slice(0, 44), 45)}` +
-          `${padStart(entry.function.points, 4)} PF`
+        `  ${pad(label, 26)} ${pad(entry.function.name.slice(0, 40), 41)}` +
+          `${padStart(entry.function.points, 4)} PF${movementOf(entry)}`
       )
     }
   }

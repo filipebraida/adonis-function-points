@@ -141,6 +141,32 @@ test.group('report: diff', () => {
     assert.include(text.slice(0, cut), 'unchanged')
   })
 
+  test('the report says why each function changed, and the split closes', async ({ assert }) => {
+    const { count } = await analyze(appFixturePath('minimal_flat'))
+    const resized = {
+      ...count,
+      functions: count.functions.map((fn) => ({ ...fn, scopeHash: 'other' })),
+    }
+
+    const text = renderDiff(diffCounts(count, resized))
+
+    assert.include(text, 'changed (implementation)')
+    assert.include(text, 'implementation', 'the summary has to carry the split too')
+  })
+
+  test('a size change shows what moved, so the label is not a claim', async ({ assert }) => {
+    const { count } = await analyze(appFixturePath('minimal_flat'))
+    const grown = {
+      ...count,
+      functions: count.functions.map((fn) => ({ ...fn, det: fn.det + 4 })),
+    }
+
+    const text = renderDiff(diffCounts(count, grown))
+
+    assert.include(text, 'changed (size)')
+    assert.match(text, /DET \d+ -> \d+/)
+  })
+
   test('the warning about the modification factor appears in the text', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('minimal_flat'))
     const modified = {

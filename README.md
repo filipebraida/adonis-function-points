@@ -323,9 +323,25 @@ Inherited from the AFP standard itself, not from this implementation:
 - **VAF is not calculated.** The 14 general system characteristics require human
   judgement. AFP fixes VAF = 1, and the unadjusted count is what public
   contracts in Brazil use anyway.
-- **The modification factor in `fp:diff` is 1.** AEP grades it from 0.25 to 1.75
-  using Effort Complexity, which requires cyclomatic complexity. Counting 1
-  overestimates, and the report says so.
+- **The modification factor in `fp:diff` is 1.** AEP grades it from 0.25 to
+  1.75 using Effort Complexity, which requires cyclomatic complexity. A flat 1
+  does not discriminate — it prices a one-line fix and a rewrite the same — and
+  the report says so.
+
+  What it does discriminate is **why** a function changed, which is usually the
+  larger question:
+
+  ```
+  changed      74 functions   318 FP  × 1
+    type              1 functions     3 FP     reclassified, e.g. EO -> EI
+    size             28 functions   141 FP     DET or FTR moved
+    implementation   45 functions   174 FP     same size, different code
+  ```
+
+  On a real month of work that is 44% of the invoice coming from refactoring.
+  Whether that should be billed at full value is a contract decision, not a
+  counting one — but it has to be visible before anyone can make it.
+
 - **Only HTTP routes are collected as entry points.** An ace command that
   imports a spreadsheet and a scheduled job are transactional functions under
   IFPUG; they are out of v1.
