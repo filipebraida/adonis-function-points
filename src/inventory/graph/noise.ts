@@ -65,6 +65,11 @@ const NEVER_DATA_METHODS = new Set([
   'toJSON',
   // VineJS
   'validate',
+  // Promise: `validator.validate(p).catch(…)` reports the OUTER call, so the
+  // method seen is `catch`, not `validate`
+  'catch',
+  'then',
+  'finally',
   // BaseTransformer helpers, called from inside the `toObject` the tracer now
   // reaches: following transformers is what exposed them
   'pick',
@@ -106,6 +111,19 @@ export function isNoise(call: CallExpression, owner?: ClassDeclaration): boolean
 
   if (Node.isIdentifier(receiver) && FRAMEWORK_SERVICES.has(receiver.getText())) return true
 
+  /**
+   * `this.logger?.error(…)`: the same services also arrive as class properties,
+   * injected or assigned, and then the receiver is a property access rather
+   * than a bare identifier.
+   */
+  if (
+    Node.isPropertyAccessExpression(receiver) &&
+    Node.isThisExpression(receiver.getExpression()) &&
+    FRAMEWORK_SERVICES.has(receiver.getName())
+  ) {
+    return true
+  }
+
   return isNativeReceiver(receiver, owner)
 }
 
@@ -126,7 +144,18 @@ function isNativeReceiver(receiver: Node, owner?: ClassDeclaration): boolean {
 }
 
 function isNativeProperty(owner: ClassDeclaration, name: string): boolean {
-  const property = owner.getProperty(name)
+  /**
+   * Both shapes declare a field: a class property, and a constructor parameter
+   * property. Reading only the first missed every `Map` handed in through the
+   * constructor, which is how a transformer usually receives its lookups.
+   */
+  const property =
+    owner.getProperty(name) ??
+    owner
+      .getConstructors()[0]
+      ?.getParameters()
+      .find((parameter) => parameter.getName() === name)
+
   if (!property) return false
 
   const typeNode = property.getTypeNode()?.getText()

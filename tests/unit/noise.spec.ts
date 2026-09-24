@@ -38,6 +38,36 @@ test.group('noise: what must not count against coverage', () => {
     )
   })
 
+  /**
+   * Three shapes that the first version of the filter missed, each found by
+   * running against a production application rather than reasoned about.
+   */
+  test('a Map handed in through the constructor counts as native too', async ({ assert }) => {
+    const { inventory } = await analyseNoisy()
+
+    assert.isEmpty(
+      unresolvedOf(inventory, 'notes.store').filter((u) => u.expression.includes('lookups')),
+      'reading only class properties missed every Map passed to the constructor'
+    )
+  })
+
+  test('a framework service held as a field is not reported', async ({ assert }) => {
+    const { inventory } = await analyseNoisy()
+
+    assert.isEmpty(
+      unresolvedOf(inventory, 'notes.store').filter((u) => u.expression.includes('logger'))
+    )
+  })
+
+  test('a Promise method at the end of a chain is not reported', async ({ assert }) => {
+    const { inventory } = await analyseNoisy()
+
+    assert.isEmpty(
+      unresolvedOf(inventory, 'notes.store').filter((u) => u.expression.includes('catch')),
+      'the reported expression is the whole chain, so the method seen is `catch`'
+    )
+  })
+
   test('the noisy transaction ends fully covered', async ({ assert }) => {
     const { inventory } = await analyseNoisy()
 

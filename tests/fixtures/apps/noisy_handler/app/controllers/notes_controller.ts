@@ -9,6 +9,16 @@ export default class NotesController {
   private audit = new AuditService()
 
   /**
+   * The same shapes arrive through the constructor. A `Map` handed in this way
+   * is how a transformer usually receives its lookups, and reading only class
+   * properties missed every one of them.
+   */
+  constructor(
+    private lookups = new Map<number, string>(),
+    private logger = { error: (_m: string) => {} }
+  ) {}
+
+  /**
    * One real data access, surrounded by calls that cannot be data:
    * a framework service, luxon, an array method and a Map.
    */
@@ -19,6 +29,12 @@ export default class NotesController {
     const stamp = DateTime.now().toISO()
     const tags = ['a', 'b'].includes(prefix)
     this.names.get(note.id)
+    this.lookups.get(note.id)
+    this.logger?.error('done')
+
+    // the OUTER call here is `catch`, a Promise method: the reported expression
+    // is the whole chain, so the method seen is not `create`
+    await Note.create({ body: 'second' }).catch(() => undefined)
 
     return { note, stamp, tags }
   }
