@@ -89,8 +89,24 @@ table an ILF maintained by the application.
 Ignoring hooks undercounts FTR and can leave a table classified as an EIF when
 it is really an ILF.
 
-> **Not in v1.** Hooks are decided but not yet followed by the graph. Recorded
-> in `implementation-plan.md` under "After v1".
+### Which accesses fire a hook
+
+Implementing this surfaced a distinction the rule alone does not state. Lucid
+fires instance hooks for `document.delete()` and does NOT fire them for
+`Document.query().where(…).delete()` — a bulk operation changes rows without
+instantiating a model. Both land on the same method name.
+
+Following hooks for the bulk form would invent an FTR, and **counting more than
+is there is worse than counting less**: an invented FTR moves a complexity band
+and goes onto an invoice. The signal used is a call anywhere in the receiver
+chain, which errs towards not following — `(await Document.find(id))!.delete()`
+is read as bulk. `truncate`, `increment`, `decrement` and the pivot operations
+fire nothing either.
+
+A second consequence, and this one favours the rule: `save()` fires the save
+pair AND the create-or-update pair, and which of the two runs is not knowable
+statically. Following both is not a compromise — AFP §6.5.3 requires treating
+multiple optional paths as part of the same transaction.
 
 ---
 

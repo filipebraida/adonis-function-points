@@ -4,8 +4,8 @@ import type { CallExpression, ClassDeclaration, SourceFile } from 'ts-morph'
 
 import type { AppContext } from '../app_context.js'
 import type { CollectedDataStore } from '../sources/data_stores.js'
-import { detectAccess, rootSymbolOf } from '../detectors/lucid.js'
-import type { RelationMap, StoreSymbols } from '../detectors/lucid.js'
+import { detectAccess, hooksFiredBy, rootSymbolOf } from '../detectors/lucid.js'
+import type { PersistenceAccess, RelationMap, StoreSymbols } from '../detectors/lucid.js'
 import { BUILTIN_CALL_RESOLVERS, resolveCall } from '../resolvers/index.js'
 import type { CallResolver, ResolverContext } from '../resolvers/types.js'
 import type { HandlerRef, TraceStep, UnresolvedCall } from '../../types.js'
@@ -230,6 +230,39 @@ export function createAnalyzer(
    * depth. Without this cache a shared service is re-analysed once per route
    * that reaches it, and the cost grows with routes × depth.
    */
+  /**
+   * Hook methods of a model, by the decorators an access fires.
+   *
+   * The model file comes from the store's own provenance, so this asks the
+   * inventory rather than guessing a path. Cached per store and method because
+   * a transaction can touch the same model many times.
+   */
+  const hookCache = new Map<string, HandlerRef[]>()
+
+  const hookRefsFor = (access: PersistenceAccess): HandlerRef[] => {
+    const decorators = hooksFiredBy(access)
+    if (decorators.length === 0) return []
+
+    const key = `${access.store}#${access.method}`
+    const cached = hookCache.get(key)
+    if (cached) return cached
+
+    const store = storesByName.get(access.store)
+    const modelFile = store ? sourceFile(store.provenance.file) : null
+    const wanted = new Set(decorators)
+
+    const refs: HandlerRef[] = []
+    for (const cls of modelFile?.getClasses() ?? []) {
+      for (const method of cls.getMethods()) {
+        const fires = method.getDecorators().some((decorator) => wanted.has(decorator.getName()))
+        if (fires) refs.push({ file: store!.provenance.file, member: method.getName() })
+      }
+    }
+
+    hookCache.set(key, refs)
+    return refs
+  }
+
   const factsCache = new Map<string, BodyFacts | null>()
 
   const factsFor = (ref: HandlerRef): BodyFacts | null => {
@@ -267,6 +300,14 @@ export function createAnalyzer(
         accesses.push({ store: access.store, write: access.mode === 'write' })
         // a table reached through a relation is read, never written by this access
         if (access.viaRelation) accesses.push({ store: access.viaRelation, write: false })
+
+        /**
+         * counting-decisions §3: a hook belongs to the transaction that fired
+         * it. It crosses no boundary — it fires inside one that already did —
+         * so its accesses are this transaction's, and AFP §6.5.3 requires
+         * aggregating every path reached.
+         */
+        for (const hook of hookRefsFor(access)) followUps.push({ ref: hook, by: 'model-hook' })
         continue
       }
 

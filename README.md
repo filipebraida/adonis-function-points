@@ -337,7 +337,7 @@ tested outside the sample that produced it).
 
 ```bash
 pnpm install
-pnpm test              # lint + 231 tests, from source
+pnpm test              # lint + 242 tests, from source
 pnpm run typecheck
 pnpm run compile && pnpm run test:package   # the packed tarball, installed and used
 ```

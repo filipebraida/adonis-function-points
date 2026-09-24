@@ -4,18 +4,19 @@ Catalogue of the organisation patterns that appear in AdonisJS applications and
 the state of each one. The list is open by construction — see
 `src/inventory/resolvers/types.ts`.
 
-| pattern              | example                                                            | strategy                             | state                                                             |
-| -------------------- | ------------------------------------------------------------------ | ------------------------------------ | ----------------------------------------------------------------- |
-| fat controller       | `await User.create(payload)`                                       | Lucid detector                       | **done**                                                          |
-| same-class method    | `await this.persistExpiration(x)`                                  | `same-class-method`                  | **done**                                                          |
-| action object        | `await new CreateUser().handle(p)`                                 | `action-object`                      | **done**                                                          |
-| action in a variable | `const a = new CreateUser(); a.handle()`                           | `action-object`                      | **done**                                                          |
-| static service       | `await UserService.create(p)`                                      | `static-service`                     | **done**                                                          |
-| injected service     | `constructor(private users: UserService)` + `this.users.create(p)` | `property-service`                   | **done** — resolved from the type annotation, **no type checker** |
-| module function      | `await createUser(p)`                                              | `module-function`                    | **done**                                                          |
-| job                  | `await CreateUserJob.dispatch(p)`                                  | `job-dispatch`                       | **done**                                                          |
-| Kysely repository    | `this.repo.create(p)` → `db.insertInto('users')`                   | `property-service` + Kysely detector | after v1 — Kysely is detected and reported as unsupported         |
-| query builder        | `db.table('users').insert(p)`                                      | its own detector                     | after v1                                                          |
+| pattern              | example                                                            | strategy                              | state                                                             |
+| -------------------- | ------------------------------------------------------------------ | ------------------------------------- | ----------------------------------------------------------------- |
+| fat controller       | `await User.create(payload)`                                       | Lucid detector                        | **done**                                                          |
+| same-class method    | `await this.persistExpiration(x)`                                  | `same-class-method`                   | **done**                                                          |
+| action object        | `await new CreateUser().handle(p)`                                 | `action-object`                       | **done**                                                          |
+| action in a variable | `const a = new CreateUser(); a.handle()`                           | `action-object`                       | **done**                                                          |
+| static service       | `await UserService.create(p)`                                      | `static-service`                      | **done**                                                          |
+| injected service     | `constructor(private users: UserService)` + `this.users.create(p)` | `property-service`                    | **done** — resolved from the type annotation, **no type checker** |
+| module function      | `await createUser(p)`                                              | `module-function`                     | **done**                                                          |
+| job                  | `await CreateUserJob.dispatch(p)`                                  | `job-dispatch`                        | **done**                                                          |
+| Kysely repository    | `this.repo.create(p)` → `db.insertInto('users')`                   | `property-service` + Kysely detector  | after v1 — Kysely is detected and reported as unsupported         |
+| query builder        | `db.table('users').insert(p)`                                      | its own detector                      | after v1                                                          |
+| model hook           | `@beforeDelete static removePages(doc)`                            | `model-hook`, from the Lucid detector | **done** — followed for an instance operation, not a bulk one     |
 
 ## First to claim it, wins
 

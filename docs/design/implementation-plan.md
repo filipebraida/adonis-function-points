@@ -484,8 +484,13 @@ vira alvo, não medida.
 
 ## Depois do v1
 
-- **Hooks de model** (§3) e **fronteira de `node_modules`** (§4), decididos e
-  não implementados.
+- **Fronteira de `node_modules`** (§4), decidida e não implementada.
+
+- **Hooks de model (§3): implementado depois do v1.** O resultado confirmou a
+  medição abaixo — os totais das quatro apps não mudaram em nenhum PF, e só o
+  FTR médio de uma delas subiu de 2,17 para 2,18, sem cruzar faixa. A fixture
+  `model_hooks` prova o caso que importa, onde a tabela da cascata é escrita só
+  pelo hook e sem isso sumiria da contagem pela §6.5.4.
 
   **Medido antes de priorizar (set/2026).** Nas 4 apps: 10 hooks no total, e uma
   delas não tem nenhum. Do total, 7 não tocam dado — 3 são `refresh()` da própria
