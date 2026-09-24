@@ -342,6 +342,14 @@ Inherited from the AFP standard itself, not from this implementation:
   Whether that should be billed at full value is a contract decision, not a
   counting one — but it has to be visible before anyone can make it.
 
+- **Schema-driven applications undercount their input.** When the fields a user
+  fills live in a JSON column whose schema is stored in the database, there is
+  nothing for static analysis to read: each opaque column counts as 1 DET.
+  Measured on a production application, the effect is about 2% of the total —
+  data functions are unaffected, and only the form-submission transaction loses
+  complexity. See counting-decisions §8, which also explains why inflating the
+  DET count to compensate would be worse than the undercount.
+
 - **Only HTTP routes are collected as entry points.** An ace command that
   imports a spreadsheet and a scheduled job are transactional functions under
   IFPUG; they are out of v1.

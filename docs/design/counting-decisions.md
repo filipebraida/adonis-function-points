@@ -354,6 +354,79 @@ first occurrence.
 
 ---
 
+## 8. Schema-driven applications
+
+Some applications store what the user fills in as data rather than as code. A
+form definition lives in a JSON column, the filled document lives in another,
+and the fields the user recognises exist only as rows in the database:
+
+```ts
+@column() declare definition: object          // a JSON Schema describing a form
+@column() declare filled: Record<string, any> // the document the user filled in
+```
+
+**Decision: each opaque column counts as 1 DET, and the divergence is recorded
+rather than corrected.**
+
+The schema is runtime data. There is no file to parse, no type to read, and no
+amount of static analysis reaches it — this is a boundary of the automated
+approach, not a gap in the implementation. A human counter would open the form
+and count its fields.
+
+AFP chooses this trade explicitly:
+
+> "This specification prioritizes repeatability and consistency over consistency
+> with the IFPUG CPM counting guidelines." — AFP §6.1
+
+So the count is wrong in the same direction every time, by an amount that can be
+measured, rather than right in a way nobody can reproduce.
+
+### Measured, so the size of the divergence is known
+
+On a production application built this way:
+
+|                          |                                       |
+| ------------------------ | ------------------------------------- |
+| opaque columns           | 9 of 336                              |
+| effect on data functions | **none**                              |
+| effect on transactions   | one form submission, ~2% of the total |
+
+**Data functions are immune, and that is arithmetic, not luck.** With RET = 1 —
+which is the default strategy, because a logical subgroup is not derivable from
+code — the IFPUG grid stays at _low_ up to 50 DETs. A table already counting 44
+DETs pays the same 7 points as one counting 4, so fields hidden inside a JSON
+column would have to be numerous enough to cross 51 before anything moved.
+
+**Transactions that READ the document are also mostly immune**, for the opposite
+reason: they already count _high_, because an output's DETs come from the whole
+table read (§6) and these tables are wide.
+
+What is genuinely undercounted is the transaction where the user **submits** the
+form: it shows 2 DETs — a route parameter and a payload — where a human counter
+would see the form's fields, taking it from low to high complexity.
+
+### What not to do about it
+
+**Do not inflate DETs to compensate.** A guessed field count is not
+reproducible, and reproducibility is the only reason this number is defensible.
+An estimate applied silently would also break `fp:diff`: the same document would
+count differently between two runs for no reason visible in the code.
+
+The two honest routes are to calibrate — `fp:calibrate` against a manual count
+measures exactly this bias, per function type — or to price schema-driven work
+by another rule in the contract. Both are decisions for whoever signs it.
+
+### A related finding, and not the same thing
+
+The same application shows 53 of 98 input transactions with exactly 1 DET, which
+looks like the same problem and mostly is not. Their names are `approve`,
+`clear`, `mark-ready`, `transfer` — workflow triggers that legitimately carry no
+input beyond the route parameter. A workflow-heavy application really does have
+many small transactions, and counting them small is correct.
+
+Distinguishing the two matters: the first is a known limitation to calibrate,
+the second is the measurement working.
+
 ## The total is more defensible than any single function
 
 Worth stating plainly, because it shapes how the output should be used.
