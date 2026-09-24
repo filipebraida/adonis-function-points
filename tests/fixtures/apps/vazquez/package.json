@@ -1,0 +1,9 @@
+{
+  "name": "vazquez-benchmark",
+  "type": "module",
+  "dependencies": { "@adonisjs/core": "^7.5.0", "@adonisjs/lucid": "^22.4.2" },
+  "imports": {
+    "#ponto/*": "./app/ponto/*.js",
+    "#start/*": "./start/*.js"
+  }
+}

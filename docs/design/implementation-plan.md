@@ -55,7 +55,7 @@ tests/fixtures/
 │   ├── minimal_nogen/       v7 SEM gerados versionados: prova o fallback por AST
 │   ├── minimal_kysely/      placeholder pulado no v1; só vira prova da costura
 │   │                        quando for despulado com um segundo ORM de verdade
-│   └── vazquez/             benchmark público, gabarito 56 PF
+│   └── vazquez/             benchmark público, gabarito 46 PF
 ├── patterns/                onde mora a lógica            [7 fixtures, feito]
 ├── models/                  direct · generated_schema · composed_mixin  [a criar]
 └── edges/                   static_route · vendor_route · model_hook ·
@@ -332,14 +332,13 @@ do que parecia. A regra de processo está se pagando.
 ## Fase 6 — validação
 
 - **invariante de ouro**: as três fixtures com contagem idêntica
-- **benchmark Vazquez**: gabarito de 56 PF, tolerância declarada. O Ligeiro
-  chegou a 52 (~7%) com divergências sistemáticas; o teste registra a tolerância
-  e o motivo de cada divergência em vez de escondê-las.
+- **benchmark Vazquez**: gabarito de **46 PF**, tolerância declarada. O Ligeiro
+  chegou a 52 (**+13%**) com divergências sistemáticas; o teste registra a
+  tolerância e o motivo de cada divergência em vez de escondê-las.
   **A fixture é escrita a partir da especificação dos casos de uso e congelada
-  em commit próprio antes de o contador existir**, com as escolhas de
-  transcrição documentadas (quais campos viram validator, o que vira transformer).
-  Sem isso, a independência do benchmark é ilusória: nada impediria afinar a
-  fixture até bater 56.
+  em commit próprio**, com as escolhas de transcrição documentadas. Sem isso, a
+  independência do benchmark é ilusória: nada impediria afinar a fixture até
+  bater o número.
 - **fumaça em app real**, fora da suíte: cobertura e ordem de grandeza
 
 ## Fase 7 — superfície de uso

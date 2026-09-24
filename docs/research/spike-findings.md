@@ -113,8 +113,17 @@ isso produziria um número que parece certo e está errado.
 
 ## Divergências esperadas contra contagem manual
 
-Do estudo de caso do Ligeiro (Pinel, 2012): **52 PF automático vs 56 PF manual,
-~7% de desvio**, com divergências sistemáticas:
+Do estudo de caso do Ligeiro (Pinel, 2012): **52 PF automático vs 46 PF de
+referência manual — +13%**, com divergências sistemáticas:
+
+> **Correção.** Este documento afirmava "52 vs 56, ~7% de desvio". Errado nos
+> dois números, e na direção. A extração do PDF interleava o número da página
+> entre os dois totais da Tabela 6.5, e eu li o da página como se fosse o
+> gabarito. O texto da própria dissertação desfaz a dúvida: *"tendo o processo
+> automático obtido o maior valor"* — Ligeiro (52) é o maior, então a
+> referência é menor. Somando a coluna de Vazquez na Tabela 6.7 à mão: 46. A
+> Tabela 6.7 tem o mesmo padrão de interleaving (`Total 43 / [61] / Total 46`),
+> o que confirma a leitura.
 
 - mensagens de erro/confirmação contam 1 DET na contagem manual e são invisíveis
   para análise estática — em um caso isso cruzou a faixa de complexidade
@@ -131,4 +140,4 @@ Erro sistemático se calibra. É a justificativa do `fp:calibrate`.
 - OMG *Automated Function Points* 1.0 / ISO-IEC 19515 — regras normativas
 - Pinel, R. E. A. *Análise de Pontos de Função em Sistemas Desenvolvidos Usando
   MDA*. COPPE/UFRJ, 2012 — ferramenta Ligeiro, estudo de caso de referência
-- Vazquez, Simões, Albert (2011) — contagem manual usada como gabarito (56 PF)
+- Vazquez, Simões, Albert (2011) — contagem manual usada como gabarito (**46 PF**)
