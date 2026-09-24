@@ -2,6 +2,7 @@ import { test } from '@japa/runner'
 
 import { discoverApp } from '../../src/inventory/app_context.js'
 import { collectDataStores } from '../../src/inventory/sources/data_stores.js'
+import { collectEntryPoints } from '../../src/inventory/sources/routes_ast.js'
 import { appFixturePath } from '../helpers.js'
 
 /**
@@ -106,9 +107,36 @@ test.group('invariante de ouro: a forma não muda a contagem', () => {
     assert.include(referencia, 'authorId,createdAt,id,isbn,publishedYear,title')
   })
 
-  test('Fase 3 — as três apps produzem os mesmos pontos de entrada', ({ assert }) => {
-    assert.isTrue(true)
-  }).skip(true, 'aguarda sources/route_registry')
+  test('Fase 3 — as três apps produzem os mesmos pontos de entrada', async ({ assert }) => {
+    const resultados = await Promise.all(
+      APPS.map(async (name) => collectEntryPoints(await discoverApp(appFixturePath(name))))
+    )
+
+    /**
+     * Compara por IDENTIDADE — verbo mais padrão normalizado. É o que
+     * counting-decisions §5 define como estável entre versões, e é justamente
+     * o que não pode depender de como a rota foi escrita.
+     */
+    const assinatura = (result: (typeof resultados)[number]) =>
+      result.entryPoints
+        .map((entry) => entry.identity)
+        .sort()
+        .join(' | ')
+
+    const [referencia, ...outras] = resultados.map(assinatura)
+
+    for (const [index, outra] of outras.entries()) {
+      assert.equal(outra, referencia, `${APPS[index + 1]} divergiu de ${APPS[0]}`)
+    }
+
+    assert.equal(referencia, 'DELETE /books/:param | GET /books | POST /books')
+
+    // e as três resolvem o handler das três transações
+    for (const result of resultados) {
+      assert.isEmpty(result.unresolved)
+      for (const entry of result.entryPoints) assert.isNotNull(entry.handler)
+    }
+  })
 
   test('Fase 5 — as três apps produzem contagem idêntica', ({ assert }) => {
     assert.isTrue(true)

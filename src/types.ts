@@ -71,6 +71,14 @@ export type HandlerRef = {
   file: string
   /** método da classe; ausente em handler de ação única */
   member?: string
+  /**
+   * Linha do corpo, para handler que não tem nome: closure inline declarada na
+   * própria rota (`router.get('/', ({ response }) => …)`).
+   *
+   * Aparece em 3 das 5 aplicações de produção levantadas, e o corpo dela é
+   * código de negócio como qualquer outro — precisa ser percorrido pelo grafo.
+   */
+  line?: number
 }
 
 /** O que o código alcançável a partir de um EntryPoint efetivamente faz. */

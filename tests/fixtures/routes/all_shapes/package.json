@@ -1,0 +1,11 @@
+{
+  "name": "routes-all-shapes",
+  "type": "module",
+  "dependencies": { "@adonisjs/core": "^7.5.0", "@adonisjs/lucid": "^22.4.2" },
+  "imports": {
+    "#catalog/*": "./app/catalog/*.js",
+    "#admin/*": "./app/admin/*.js",
+    "#start/*": "./start/*.js",
+    "#generated/*": "./.adonisjs/server/*.js"
+  }
+}

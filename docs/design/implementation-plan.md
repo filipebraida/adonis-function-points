@@ -18,8 +18,8 @@ fixture Kysely fica pulada como sentinela delas.
 
 | | |
 |---|---|
-| feito | scaffold; **Fases 1 e 2 completas** (`AppContext` + `collectDataStores`); tabelas IFPUG; 5 resolvedores de chamada; 72 testes |
-| falta | Fases 3–8: pontos de entrada, grafo, contagem |
+| feito | scaffold; **Fase 1**, **Fase 2** e **Fase 3a** (rotas → `EntryPoint`); tabelas IFPUG; 5 resolvedores de chamada; 88 testes |
+| falta | Fase 3b (DETs de entrada), Fases 4–8 |
 
 ## Método: exemplo primeiro
 
@@ -130,43 +130,42 @@ coluna que ela acrescenta só existe na classe retornada pela função.
 
 ## Fase 3 — pontos de entrada
 
-**Ordem de construção: AST primeiro, runtime depois.** As fixtures não bootam,
-e a invariante de ouro depende de `minimal_nogen`, que só existe por AST. O
-parser de `routes.ts` é o que se constrói e se testa primeiro — chamá-lo de
-"fallback" descreve a precedência em produção, não a sequência de trabalho.
+### 3a — parser de rotas ✅
 
-**Em produção, runtime é a fonte primária.** O core 7 já boota a app sem banco
-para gerar tipos de rota (`node ace codegen`); o `fp:inventory` faz o mesmo e lê
-`router.toJSON()`, que devolve `{ pattern, name, handler, methods, middleware }`.
-Precondições: app bootável, `environment: 'web'` (sem isso os preloads de rota
-não carregam) e env presente. Faltando qualquer uma, o parser assume e o
-relatório diz qual fonte foi usada.
+Entregue: `collectEntryPoints` lê os arquivos de rota descobertos na Fase 1 e
+produz `EntryPoint` com verbo, padrão, nome, handler resolvido e **identidade**
+(`verbo` + padrão com parâmetros anonimizados, counting-decisions §5).
 
-**Regra de conflito, decidida:** quando os dois estão disponíveis e divergem,
-**runtime vence** — é o router real — e cada divergência é listada no relatório
-como `route-source-mismatch`, porque significa ou rota registrada por código que
-o parser não entende, ou parser com bug. As duas coisas interessam.
+Cobre: rota de uma linha e multi-linha; grupo com prefixo e `.as()`, inclusive
+aninhado; `.resource()` com `.only()` / `.except()` / `.apiOnly()`; controller
+por lazy import e por mapa gerado indexado pelo caminho pontuado; `router.on()`
+sem handler; e closure inline como handler.
 
-**O teste de runtime é um só**, de integração, contra `tests/app/` — uma app
-AdonisJS 7 mínima e bootável, com `config/`, providers e sqlite. Roda num grupo
-separado da suíte unitária, porque é lento.
+Validado contra 5 aplicações de produção, usando o registry gerado pelo Tuyau
+como **gabarito independente**. As únicas rotas do registry que o parser não
+encontra são `/uploads/*` (pacote Drive) e `/__transmit/*`
+(`transmit.registerRoutes()`) — exatamente as rotas de terceiros que a decisão
+§2 manda não contar. **Zero falso positivo e zero pendência** em todas. Entre 4
+e 79 ms por aplicação.
 
-Exemplos primeiro:
+Dois achados que só a app real revelou:
 
-- runtime e AST produzem **os mesmos `EntryPoint`** na mesma fixture — os dois
-  caminhos têm que concordar
-- fallback por AST: rota multi-linha, `.resource()` com `.only()`/`.apiOnly()`,
-  controller por lazy import **ou** por mapa gerado
-- `controllers_map` resolve pelo caminho pontuado; fixture com nome colidindo
-  entre módulos prova que resolve o certo
-- `EntryPoint.identity` = `(verbo, padrão normalizado)` (§5); fixture com a mesma
-  rota sob `.as()` diferente prova que a identidade não depende do nome
-- DETs de entrada pela tabela de tipos compostos (§7); com Tuyau presente,
-  registry e validator **têm que dar o mesmo número**
-- `router.on(...).renderInertia(...)` vira `EntryPoint` sem handler, para a
-  Fase 4 decidir
+- **Ler a cadeia por regex no texto do statement é errado.** O texto de um grupo
+  externo contém os grupos aninhados, e o `.prefix()` do interno aparece antes
+  do próprio — produzia `/trash/trash/books` no lugar de `/admin/trash/books`.
+  A leitura passou a ser estrutural: sobe a cadeia de chamadas daquela chamada.
+  Vale igual para `.as()`, `.only()` e `.apiOnly()`.
+- **Closure inline é handler, não pendência.** `router.get('/', ({ response }) =>
+  …)` aparece em 3 das 5 apps. Tratá-la como "controller não resolvido" perderia
+  a transação e reportaria o motivo errado. `HandlerRef` ganhou `line` para
+  apontar o corpo, que a Fase 4 vai percorrer.
 
-**Pronto quando:** as três fixtures produzem o mesmo conjunto de `EntryPoint`.
+### 3b — DETs de entrada
+
+Falta: contar os campos declarados nos validators pela tabela de tipos
+compostos (§7), e ligá-los à transação. O vínculo exige ler o handler
+(`request.validateUsing(x)`), então é a ponte natural para a Fase 4. Com Tuyau
+presente, registry e validator têm que dar o mesmo número.
 
 ## Fase 4 — o grafo *(a fase cara)*
 
