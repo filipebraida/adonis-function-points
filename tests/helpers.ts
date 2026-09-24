@@ -5,6 +5,7 @@ import path from 'node:path'
 
 import { discoverApp } from '../src/inventory/app_context.js'
 import { collectDataStores } from '../src/inventory/sources/data_stores.js'
+import { injectedFor } from '../src/inventory/graph/call_graph.js'
 import type { CollectedDataStore } from '../src/inventory/sources/data_stores.js'
 import type { ResolverContext } from '../src/inventory/resolvers/types.js'
 
@@ -84,6 +85,8 @@ export async function loadFixture(name: string) {
         file,
         depth,
         imports: importsOf(file),
+        // mesma função do pipeline: helper que reimplementa é teste enganoso
+        injected: injectedFor(file.getClasses()[0], file, app),
         dataStoresBySymbol,
         resolveSpecifier: app.resolveSpecifier,
         sourceFile,

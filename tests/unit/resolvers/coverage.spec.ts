@@ -12,10 +12,13 @@ import { fixturePath, loadFixture } from '../../helpers.js'
  * alguém adiciona uma fixture sem o resolvedor correspondente, ele falha.
  */
 
-/** padrões cujo resolvedor ainda não existe — ver docs/design/resolvers.md */
-const LACUNAS_CONHECIDAS = new Set([
-  'property_service', // exige type checker para resolver o tipo da propriedade
-])
+/**
+ * Padrões cujo resolvedor ainda não existe — ver docs/design/resolvers.md.
+ *
+ * Vazia hoje. `property_service` saiu daqui quando se descobriu que o
+ * `@inject()` obriga a anotação de tipo, então não precisa de type checker.
+ */
+const LACUNAS_CONHECIDAS = new Set<string>()
 
 /** qual estratégia DEVE reivindicar cada padrão — a ordem é parte do contrato */
 const ESTRATEGIA_ESPERADA: Record<string, string> = {
@@ -23,6 +26,7 @@ const ESTRATEGIA_ESPERADA: Record<string, string> = {
   action_variable: 'action-object',
   job_dispatch: 'job-dispatch',
   static_service: 'static-service',
+  property_service: 'property-service',
   module_function: 'module-function',
 }
 

@@ -18,8 +18,8 @@ fixture Kysely fica pulada como sentinela delas.
 
 | | |
 |---|---|
-| feito | scaffold; **Fase 1**, **Fase 2**, **Fase 3a** e **Fase 4a** (grafo sintático); tabelas IFPUG; 5 resolvedores; 110 testes |
-| falta | Fase 3b (DETs de entrada), **Fase 4b** (cobertura e desempenho), Fases 5–8 |
+| feito | scaffold; **Fases 1, 2, 3a, 4a e 4b**; tabelas IFPUG; 5 resolvedores, nenhuma lacuna declarada; 113 testes |
+| falta | Fase 3b (DETs de entrada), Fases 5–8 |
 
 ## Método: exemplo primeiro
 
@@ -207,18 +207,58 @@ Dois defeitos corrigidos no caminho, e o segundo é de princípio:
   oposto do princípio do pacote. Agora reporta símbolo importado da aplicação
   também, e o número de pendências subiu porque passou a ser verdadeiro.
 
-### 4b — fechar cobertura e desempenho
+### 4b — cobertura e desempenho ✅
 
-1. **Investigar a lacuna restante** em `app C` rota a rota, com o mesmo
-   método que achou o caso do tipo nomeado: rastrear uma rota conhecida, ver
-   onde o grafo para, transformar em fixture.
-2. **`property_service` / `@inject()`** — lacuna declarada em teste. Exige o
-   type checker; medir o custo no mesmo dia em que entrar.
-3. **Orçamento de desempenho.** 42 s numa app de 161 rotas, contra teto
-   proposto de 60 s para a análise inteira. Caches de corpo e de símbolos por
-   arquivo, e reaproveitar a análise entre rotas que compartilham handler.
-4. **Hooks de model** (§3) e **fronteira de `node_modules`** (§4) — ainda não
-   implementados.
+**Cobertura.** O diagnóstico rota a rota mostrou que a lacuna não era difusa:
+das 68 rotas de escrita não detectadas em `app C`, quase todas paravam no
+**primeiro passo**, com `this.algumServiço.metodo()`.
+
+E a suposição registrada sobre esse caso estava errada. A revisão anterior
+afirmou que `property_service` exigiria o type checker e multiplicaria o custo
+da análise. Não exige: o `@inject()` do AdonisJS **só funciona com a anotação de
+tipo explícita**, então `constructor(protected billing: BillingService)`
+traz o tipo como identificador importado — resolvível pelo mesmo mecanismo de
+import já existente.
+
+| app | EE antes | EE depois | rotas com verbo de escrita |
+|---|---|---|---|
+| app C | 40 | **84** | 107 |
+| app B | 68 | 68 | 85 |
+| app A | 57 | 57 | 70 |
+| app D | 26 | 26 | 29 |
+
+A lista de lacunas conhecidas ficou **vazia**.
+
+**Desempenho.** De 56 s para 2,2 s na maior app — 25×.
+
+A causa não era o caminhamento do AST (um cache de fatos por corpo não mudou
+nada). Era interleaving: **adicionar arquivo ao projeto depois de consultar o
+checker invalida o programa do TypeScript**, e a consulta seguinte o
+reconstrói. Custava ~344 ms por rota, uniformemente. Carregando todos os
+arquivos antes da primeira análise, a primeira rota paga 2,2 s e as demais 1 ms.
+
+| app | antes | depois |
+|---|---|---|
+| app C | 56 s | 2,2 s |
+| app B | 47 s | 1,5 s |
+| app A | 32 s | 1,0 s |
+| app D | 3,5 s | 0,4 s |
+
+Regressão registrada em teste, e ela **mede a causa, não o tempo** — tempo seria
+instável em CI. A primeira versão do teste não tinha dentes: comparava o número
+de arquivos entre duas análises, que o cache de fatos mantém igual de qualquer
+forma. Corrigido para comparar antes da primeira análise.
+
+### Ainda em aberto na Fase 4
+
+- **Hooks de model** (§3) e **fronteira de `node_modules`** (§4) — não
+  implementados.
+- **`sem dado`**: 22 a 32 rotas por app não alcançam repositório nenhum.
+  Pela decisão §1 não seriam funções transacionais, mas o número é alto demais
+  para ser só rota estática — investigar antes da Fase 5.
+- A distância entre EE detectado e rotas com verbo de escrita (84 de 107 em
+  `app C`) é parcialmente legítima: `POST .../export` que só lê é SE, não
+  EE. Quanto exatamente, só a calibração da Fase 6 dirá.
 
 ## Fase 5 — `albrecht`: as regras
 

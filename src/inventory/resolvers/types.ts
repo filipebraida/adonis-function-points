@@ -30,6 +30,16 @@ export type ResolverContext = {
   /** imports do arquivo: identificador local -> caminho absoluto resolvido */
   imports: Map<string, string>
   /**
+   * Dependências injetadas visíveis neste corpo: nome da propriedade ->
+   * arquivo da classe. Ex.: `billing` -> `.../billing_service.ts`.
+   *
+   * Não exige type checker: o `@inject()` do AdonisJS **obriga** a anotação
+   * explícita do tipo para o container resolver a dependência, então
+   * `constructor(protected billing: BillingService)` sempre traz o tipo
+   * como identificador — importado como qualquer outro.
+   */
+  injected: Map<string, string>
+  /**
    * DataStores conhecidos, por nome do símbolo (ex.: 'User').
    *
    * INVARIANTE DE ORDEM: os DataStores são coletados ANTES de qualquer

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { Node, Project, SyntaxKind } from 'ts-morph'
-import type { CallExpression, SourceFile } from 'ts-morph'
+import type { CallExpression, ClassDeclaration, SourceFile } from 'ts-morph'
 
 import type { AppContext } from '../app_context.js'
 import type { CollectedDataStore } from '../sources/data_stores.js'
@@ -43,6 +43,14 @@ export type Behavior = {
   unresolved: UnresolvedCall[]
 }
 
+/** fatos de um corpo, independentes de quem o chamou */
+type BodyFacts = {
+  accesses: { store: string; write: boolean }[]
+  followUps: { ref: HandlerRef; by: string }[]
+  unresolved: UnresolvedCall[]
+  bodyHash: string
+}
+
 export type GraphOptions = {
   /** quanto seguir a partir do handler; o default vem da configuração */
   maxDepth?: number
@@ -69,13 +77,28 @@ export function createAnalyzer(
     compilerOptions: { allowJs: false },
   })
 
+  /**
+   * Todos os arquivos entram de uma vez.
+   *
+   * Adicionar arquivo no meio da análise invalida o programa do TypeScript, e a
+   * próxima consulta ao checker o reconstrói — com 161 rotas isso custava ~344
+   * ms por rota, uniformemente. Carregar tudo antes troca N reconstruções por
+   * uma.
+   */
+  for (const root of app.scanRoots) {
+    project.addSourceFilesAtPaths(`${root}/**/*.ts`)
+  }
+
   const storesByName = new Map(stores.map((store) => [store.name, store]))
   const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH
 
   const files = new Map<string, SourceFile | null>()
   const sourceFile = (absPath: string): SourceFile | null => {
     if (!files.has(absPath)) {
-      files.set(absPath, project.addSourceFileAtPathIfExists(absPath) ?? null)
+      files.set(
+        absPath,
+        project.getSourceFile(absPath) ?? project.addSourceFileAtPathIfExists(absPath) ?? null
+      )
     }
     return files.get(absPath) ?? null
   }
@@ -92,7 +115,84 @@ export function createAnalyzer(
     return cached
   }
 
-  return { analyze: (handler: HandlerRef) => run(handler) }
+  /**
+   * Fatos de um corpo: o que ele acessa e para onde ele chama.
+   *
+   * São INDEPENDENTES de quem chamou — só a decisão de seguir depende da
+   * profundidade. Sem este cache, um service compartilhado é reanalisado uma
+   * vez por rota que chega nele, e o custo cresce com rotas × profundidade.
+   */
+  const factsCache = new Map<string, BodyFacts | null>()
+
+  const factsFor = (ref: HandlerRef): BodyFacts | null => {
+    const key = `${ref.file}#${ref.member ?? ref.line ?? '*'}`
+    if (factsCache.has(key)) return factsCache.get(key) ?? null
+
+    const facts = computeFacts(ref)
+    factsCache.set(key, facts)
+    return facts
+  }
+
+  function computeFacts(ref: HandlerRef): BodyFacts | null {
+    const file = sourceFile(ref.file)
+    if (!file) return null
+
+    const body = findBody(file, ref)
+    if (!body) return null
+
+    const imports = importsFor(file)
+    const injected = injectedFor(
+      body.getFirstAncestorByKind(SyntaxKind.ClassDeclaration),
+      file,
+      app
+    )
+    const symbols = storeSymbolsFor(body, file, app, storesByName)
+
+    const accesses: { store: string; write: boolean }[] = []
+    const followUps: { ref: HandlerRef; by: string }[] = []
+    const unresolved: UnresolvedCall[] = []
+
+    for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const access = detectAccess(call, symbols)
+      if (access) {
+        accesses.push({ store: access.store, write: access.mode === 'write' })
+        continue
+      }
+
+      const context: ResolverContext = {
+        file,
+        depth: 0,
+        imports,
+        injected,
+        dataStoresBySymbol: storesByName,
+        resolveSpecifier: app.resolveSpecifier,
+        sourceFile,
+      }
+
+      const resolved = resolveCall(call, context)
+      if (resolved) {
+        for (const next of resolved.refs) followUps.push({ ref: next, by: resolved.by })
+        continue
+      }
+
+      if (isWorthReporting(call, symbols, imports)) {
+        unresolved.push({
+          file: ref.file,
+          line: call.getStartLineNumber(),
+          expression: call.getExpression().getText().replace(/\s+/g, ''),
+          reason: 'chamada que nenhuma estratégia soube seguir',
+        })
+      }
+    }
+
+    return { accesses, followUps, unresolved, bodyHash: hashOf(body) }
+  }
+
+  return {
+    analyze: (handler: HandlerRef) => run(handler),
+    /** quantos arquivos o projeto carregou — usado para provar que não cresce */
+    fileCount: () => project.getSourceFiles().length,
+  }
 
   function run(handler: HandlerRef): Behavior {
     const touches = new Set<string>()
@@ -108,55 +208,19 @@ export function createAnalyzer(
       if (visited.has(key) || depth > maxDepth) return
       visited.add(key)
 
-      const file = sourceFile(ref.file)
-      if (!file) return
-
-      const body = findBody(file, ref)
-      if (!body) return
-
-      const imports = importsFor(file)
-      const symbols = storeSymbolsFor(body, file, app, storesByName)
+      const facts = factsFor(ref)
+      if (!facts) return
 
       let bodyWrites = false
-      const followUps: { ref: HandlerRef; by: string }[] = []
-
-      for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-        const access = detectAccess(call, symbols)
-        if (access) {
-          touches.add(access.store)
-          if (access.mode === 'write') {
-            bodyWrites = true
-            writes = true
-          }
-          continue
-        }
-
-        if (depth >= maxDepth) continue
-
-        const context: ResolverContext = {
-          file,
-          depth,
-          imports,
-          dataStoresBySymbol: storesByName,
-          resolveSpecifier: app.resolveSpecifier,
-          sourceFile,
-        }
-
-        const resolved = resolveCall(call, context)
-        if (resolved) {
-          for (const next of resolved.refs) followUps.push({ ref: next, by: resolved.by })
-          continue
-        }
-
-        if (isWorthReporting(call, symbols, imports)) {
-          unresolved.push({
-            file: ref.file,
-            line: call.getStartLineNumber(),
-            expression: call.getExpression().getText().replace(/\s+/g, ''),
-            reason: 'chamada que nenhuma estratégia soube seguir',
-          })
+      for (const access of facts.accesses) {
+        touches.add(access.store)
+        if (access.write) {
+          bodyWrites = true
+          writes = true
         }
       }
+
+      unresolved.push(...facts.unresolved)
 
       trace.push({
         file: ref.file,
@@ -165,9 +229,11 @@ export function createAnalyzer(
         by: ref.member ?? 'entry',
         writes: bodyWrites,
       })
-      scope.push({ file: ref.file, member: ref.member, bodyHash: hashOf(body) })
+      scope.push({ file: ref.file, member: ref.member, bodyHash: facts.bodyHash })
 
-      for (const followUp of followUps) {
+      if (depth >= maxDepth) return
+
+      for (const followUp of facts.followUps) {
         const before = trace.length
         visit(followUp.ref, depth + 1)
         // registra quem resolveu o passo que acabou de entrar
@@ -331,6 +397,62 @@ function storeSymbolsFor(
   }
 
   return symbols
+}
+
+/**
+ * Dependências injetadas visíveis no corpo: nome da propriedade -> arquivo.
+ *
+ * Duas formas, ambas com o tipo anotado explicitamente — o `@inject()` não
+ * funciona sem isso:
+ *
+ *   constructor(protected billing: BillingService) {}
+ *   private declare billing: BillingService
+ *
+ * Como o tipo é um identificador importado, resolve pelo mesmo caminho de
+ * qualquer import. Não precisa de type checker.
+ */
+export function injectedFor(
+  owner: ClassDeclaration | undefined,
+  file: SourceFile,
+  app: AppContext
+): Map<string, string> {
+  const injected = new Map<string, string>()
+  if (!owner) return injected
+
+  const register = (property: string, typeName: string | undefined) => {
+    if (!typeName) return
+    const target = resolveTypeToFile(typeName, file, app)
+    if (target) injected.set(property, target)
+  }
+
+  for (const parameter of owner.getConstructors()[0]?.getParameters() ?? []) {
+    register(parameter.getName(), parameter.getTypeNode()?.getText())
+  }
+
+  for (const property of owner.getProperties()) {
+    register(property.getName(), property.getTypeNode()?.getText())
+  }
+
+  return injected
+}
+
+/** identificador de tipo -> arquivo da aplicação onde ele é declarado */
+function resolveTypeToFile(typeName: string, file: SourceFile, app: AppContext): string | null {
+  const bare = typeName.replace(/<.*/, '').trim()
+
+  for (const declaration of file.getImportDeclarations()) {
+    const specifier = declaration.getModuleSpecifierValue()
+
+    if (declaration.getDefaultImport()?.getText() === bare) {
+      return app.resolveSpecifier(specifier)
+    }
+    for (const named of declaration.getNamedImports()) {
+      const binding = named.getAliasNode()?.getText() ?? named.getName()
+      if (binding === bare) return app.resolveSpecifier(specifier)
+    }
+  }
+
+  return null
 }
 
 /**

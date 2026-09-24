@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import { discoverApp } from '../../src/inventory/app_context.js'
 import { collectDataStores } from '../../src/inventory/sources/data_stores.js'
-import { analyzeHandler } from '../../src/inventory/graph/call_graph.js'
+import { analyzeHandler, createAnalyzer } from '../../src/inventory/graph/call_graph.js'
 import type { HandlerRef } from '../../src/types.js'
 import { fixturePath } from '../helpers.js'
 
@@ -36,6 +36,7 @@ test.group('grafo: alcança o dado em cada padrão de código', () => {
     'module_function',
     'job_dispatch',
     'typed_input',
+    'property_service',
   ]
 
   for (const pattern of RESOLVIDOS) {
@@ -48,19 +49,23 @@ test.group('grafo: alcança o dado em cada padrão de código', () => {
   }
 
   /**
-   * LACUNA CONHECIDA da Fase 4a: `constructor(private users: InviteService)`
-   * exige o type checker para resolver o tipo do parâmetro, e ligá-lo custa a
-   * ordem de grandeza da análise inteira. Entra na 4b, medido.
+   * Era declarado como lacuna, sob a suposição de que exigiria o type checker.
+   * A suposição estava errada: o `@inject()` do AdonisJS só funciona com a
+   * anotação de tipo explícita, então o tipo está sempre no AST como
+   * identificador importado.
    *
-   * O que NÃO é aceitável é silenciar: a chamada precisa aparecer em
-   * `unresolved`, senão a transação vira SE sem ninguém saber.
+   * Importava muito: numa app de produção, 68 rotas de escrita paravam no
+   * primeiro passo com `this.algumServiço.metodo()`.
    */
-  test('"property_service" é lacuna declarada, e aparece na cobertura', async ({ assert }) => {
+  test('dependência injetada resolve pela anotação, sem type checker', async ({ assert }) => {
     const behavior = await analyze('property_service')
 
-    assert.isFalse(behavior.writes, 'se passou a resolver, tire da lista de lacunas')
-    assert.isNotEmpty(behavior.unresolved, 'lacuna silenciosa é pior que lacuna')
-    assert.match(behavior.unresolved[0].expression, /this\./)
+    assert.isTrue(behavior.writes)
+    assert.isEmpty(behavior.unresolved, 'não deveria sobrar pendência')
+
+    const servico = behavior.trace.find((step) => step.file.includes('services/'))
+    assert.exists(servico, 'não percorreu o service injetado')
+    assert.equal(servico!.by, 'property-service')
   })
 })
 
@@ -176,6 +181,41 @@ test.group('grafo: rastro e procedência', () => {
   test('escopo e rastro cobrem os mesmos corpos', async ({ assert }) => {
     const behavior = await analyze('action_object')
     assert.lengthOf(behavior.scope, behavior.trace.length)
+  })
+})
+
+test.group('grafo: custo', () => {
+  /**
+   * Adicionar arquivo ao projeto DEPOIS de consultar o checker invalida o
+   * programa do TypeScript, e a consulta seguinte o reconstrói. Numa app de
+   * 161 rotas isso custava ~344 ms por rota, uniformemente — 56 s no total.
+   * Carregando tudo antes, caiu para 1 ms por rota.
+   *
+   * Este teste não mede tempo (seria instável em CI). Mede a causa: depois da
+   * primeira análise, nenhum arquivo novo entra no projeto.
+   */
+  test('nenhum arquivo entra no projeto depois da primeira análise', async ({ assert }) => {
+    const root = fixturePath('patterns', 'action_object')
+    const app = await discoverApp(root)
+    const { stores } = await collectDataStores(app)
+
+    const analyzer = createAnalyzer(app, stores)
+    const handler = {
+      file: path.join(root, 'app/collect/controllers/expire_invite_controller.ts'),
+      member: 'handle',
+    }
+
+    const antes = analyzer.fileCount()
+    assert.isAbove(antes, 0, 'o projeto deveria nascer carregado')
+
+    analyzer.analyze(handler)
+
+    assert.equal(
+      analyzer.fileCount(),
+      antes,
+      'arquivo entrou no projeto durante a análise: isso invalida o programa do ' +
+        'TypeScript e a próxima consulta ao checker o reconstrói'
+    )
   })
 })
 
