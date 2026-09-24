@@ -37,6 +37,7 @@ test.group('grafo: alcança o dado em cada padrão de código', () => {
     'job_dispatch',
     'typed_input',
     'property_service',
+    'same_class_method',
   ]
 
   for (const pattern of RESOLVIDOS) {
@@ -181,6 +182,60 @@ test.group('grafo: rastro e procedência', () => {
   test('escopo e rastro cobrem os mesmos corpos', async ({ assert }) => {
     const behavior = await analyze('action_object')
     assert.lengthOf(behavior.scope, behavior.trace.length)
+  })
+})
+
+test.group('grafo: método da própria classe e fronteira de pacote', () => {
+  /**
+   * `this.metodoPrivado()` foi o padrão dominante entre as rotas que não
+   * alcançavam dado nenhum numa app de produção. Nenhum resolvedor o cobria:
+   * `property-service` exige `this.prop.metodo()`, com dois níveis.
+   */
+  test('escrita em método privado da mesma classe é alcançada', async ({ assert }) => {
+    const behavior = await analyze('same_class_method')
+
+    assert.isTrue(behavior.writes)
+    assert.include(behavior.touches, 'Invite')
+
+    const privado = behavior.trace.find((step) => step.member === 'persistExpiration')
+    assert.exists(privado, 'não percorreu o método privado')
+    assert.equal(privado!.by, 'same-class-method')
+  })
+
+  /**
+   * `this.audit()` é propriedade que guarda função, não método da classe.
+   *
+   * Sem a guarda, `same-class-method` a reivindicaria, `findBody` falharia e o
+   * relatório diria "herdado de classe de pacote" — mentira. A razão errada
+   * manda o usuário procurar no lugar errado, e o relatório existe para ser
+   * acionável.
+   */
+  test('propriedade-função não é reivindicada como método da classe', async ({ assert }) => {
+    const behavior = await analyze('same_class_method')
+    const pendencia = behavior.unresolved.find((u) => u.expression.includes('audit'))
+
+    assert.exists(pendencia, 'a chamada deveria aparecer como pendência')
+    assert.notMatch(
+      pendencia!.reason,
+      /classe de pacote/i,
+      'razão errada: não é herança de pacote, é propriedade-função'
+    )
+  })
+
+  /**
+   * `InviteTransformer.transform()` resolve para o arquivo da aplicação, mas o
+   * método é herdado de classe de PACOTE — não existe ali.
+   *
+   * Antes isso era descartado em silêncio: o resolvedor produzia a referência,
+   * `findBody` falhava e ninguém sabia. Silêncio é o pior defeito possível
+   * aqui; tem que virar pendência com o motivo certo.
+   */
+  test('método herdado de pacote vira pendência, não silêncio', async ({ assert }) => {
+    const behavior = await analyze('same_class_method')
+    const pendencia = behavior.unresolved.find((u) => u.expression.includes('transform'))
+
+    assert.exists(pendencia, 'corpo não encontrado foi descartado em silêncio')
+    assert.match(pendencia!.reason, /corpo não encontrado/i)
   })
 })
 

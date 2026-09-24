@@ -1,6 +1,7 @@
 import type { CallResolver, ResolverRegistry } from './types.js'
 
 import { actionObjectResolver } from './action_object.js'
+import { sameClassMethodResolver } from './same_class_method.js'
 import { jobDispatchResolver } from './job_dispatch.js'
 import { moduleFunctionResolver } from './module_function.js'
 import { propertyServiceResolver } from './property_service.js'
@@ -21,6 +22,7 @@ export * from './types.js'
  *   demais padrões ................. em aberto, ver docs/research/spike-findings.md
  */
 export const BUILTIN_CALL_RESOLVERS: CallResolver[] = [
+  sameClassMethodResolver, //   5  await this.persistExpiration(invite)
   actionObjectResolver, //  10  await new CreateUser().handle(payload)
   jobDispatchResolver, //  15  await CreateUserJob.dispatch(payload)
   staticServiceResolver, //  20  await UserService.create(payload)

@@ -18,7 +18,7 @@ fixture Kysely fica pulada como sentinela delas.
 
 | | |
 |---|---|
-| feito | scaffold; **Fases 1, 2, 3a, 4a e 4b**; tabelas IFPUG; 5 resolvedores, nenhuma lacuna declarada; 113 testes |
+| feito | scaffold; **Fases 1, 2, 3a, 4a, 4b e 4c**; tabelas IFPUG; 6 resolvedores, nenhuma lacuna declarada; 118 testes |
 | falta | Fase 3b (DETs de entrada), Fases 5–8 |
 
 ## Método: exemplo primeiro
@@ -249,14 +249,39 @@ instável em CI. A primeira versão do teste não tinha dentes: comparava o núm
 de arquivos entre duas análises, que o cache de fatos mantém igual de qualquer
 forma. Corrigido para comparar antes da primeira análise.
 
+### 4c — rotas sem dado investigadas ✅
+
+As 24 rotas de `app C` que não alcançavam repositório nenhum foram
+examinadas uma a uma. Metade era **comportamento correto**: `/health`,
+`/metrics`, `router.on()` estático, e telas de formulário (`GET /login`,
+`/users/create`, `/settings/password`) que não recuperam dado — pelo AFP não
+são funções transacionais.
+
+A outra metade era uma lacuna com padrão único: **`this.metodoPrivado()`**, o
+método público delegando a privados da mesma classe, onde a escrita acontece.
+Nenhum resolvedor cobria — `property-service` exige `this.prop.metodo()`, dois
+níveis.
+
+| app | EE antes da 4c | depois | verbo de escrita |
+|---|---|---|---|
+| app C | 84 | **91** | 107 |
+| app B | 68 | **77** | 85 |
+| app A | 57 | **61** | 70 |
+| app D | 26 | 26 | 29 |
+
+Detecção entre 85% e 91% das rotas com verbo de escrita. FTR médio também subiu
+(1,47 → 1,66 em `app C`), o que muda complexidade.
+
+E um defeito de princípio corrigido: quando o resolvedor acertava o arquivo mas
+`findBody` não achava o corpo — método herdado de classe de pacote, como
+`Transformer.transform()` de `BaseTransformer` — a informação era **descartada em
+silêncio**. Agora vira pendência com o motivo certo.
+
 ### Ainda em aberto na Fase 4
 
 - **Hooks de model** (§3) e **fronteira de `node_modules`** (§4) — não
   implementados.
-- **`sem dado`**: 22 a 32 rotas por app não alcançam repositório nenhum.
-  Pela decisão §1 não seriam funções transacionais, mas o número é alto demais
-  para ser só rota estática — investigar antes da Fase 5.
-- A distância entre EE detectado e rotas com verbo de escrita (84 de 107 em
+- A distância entre EE detectado e rotas com verbo de escrita (91 de 107 em
   `app C`) é parcialmente legítima: `POST .../export` que só lê é SE, não
   EE. Quanto exatamente, só a calibração da Fase 6 dirá.
 

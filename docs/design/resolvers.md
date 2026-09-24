@@ -6,7 +6,8 @@ cada um. A lista é aberta por construção — ver
 
 | padrão | exemplo | estratégia | estado |
 |---|---|---|---|
-| controller gordo | `await User.create(payload)` | detector Lucid direto | a fazer |
+| controller gordo | `await User.create(payload)` | detector Lucid | **feito** |
+| método da própria classe | `await this.persistExpiration(x)` | `same-class-method` | **feito** |
 | action object | `await new CreateUser().handle(p)` | `action-object` | **feito** |
 | action em variável | `const a = new CreateUser(); a.handle()` | `action-object` | **feito** |
 | service estático | `await UserService.create(p)` | `static-service` | **feito** |

@@ -30,7 +30,14 @@ const ESTRATEGIA_ESPERADA: Record<string, string> = {
   module_function: 'module-function',
 }
 
-/** o fat controller escreve no próprio handler: é caso do detector, não de resolvedor */
+/**
+ * Padrões cuja chamada característica NÃO está no controller.
+ *
+ * `fat_controller` escreve no próprio handler: é caso do detector de
+ * persistência, não de resolvedor. `same_class_method` e `typed_input` têm a
+ * chamada característica dentro do service ou da action — no controller usam
+ * outra forma, e afirmar o contrário aqui seria um teste mentindo.
+ */
 const SEM_RESOLVEDOR_POR_DESIGN = new Set(['fat_controller'])
 
 const patterns = fs

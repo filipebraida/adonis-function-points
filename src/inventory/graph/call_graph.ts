@@ -43,6 +43,9 @@ export type Behavior = {
   unresolved: UnresolvedCall[]
 }
 
+/** nome do arquivo, para identificar a pendência sem despejar o caminho todo */
+const pathOf = (file: string) => file.split('/').pop()?.replace(/\.ts$/, '') ?? file
+
 /** fatos de um corpo, independentes de quem o chamou */
 type BodyFacts = {
   accesses: { store: string; write: boolean }[]
@@ -209,7 +212,24 @@ export function createAnalyzer(
       visited.add(key)
 
       const facts = factsFor(ref)
-      if (!facts) return
+      if (!facts) {
+        /**
+         * O resolvedor acertou o arquivo, mas o corpo não está lá — método
+         * herdado de classe de pacote, por exemplo (`Transformer.transform()`
+         * vem de `BaseTransformer`).
+         *
+         * Descartar em silêncio é o pior defeito possível: a transação perde um
+         * caminho e ninguém sabe.
+         */
+        unresolved.push({
+          file: ref.file,
+          line: ref.line ?? 0,
+          expression: `${pathOf(ref.file)}.${ref.member ?? 'handle'}`,
+          reason:
+            'corpo não encontrado no arquivo resolvido: provavelmente herdado de classe de pacote',
+        })
+        return
+      }
 
       let bodyWrites = false
       for (const access of facts.accesses) {
