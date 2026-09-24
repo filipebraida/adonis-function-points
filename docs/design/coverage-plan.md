@@ -63,21 +63,31 @@ de fronteira**. São todas do rastreador.
 
 A classificação é por forma da expressão, então é aproximada nas bordas.
 
-## Projeção
+## Projeção, e o que já foi medido
 
-Quantas transações ficam completamente limpas a cada fase:
+Quantas transações ficam completamente limpas a cada fase, na app C:
 
-|                                      | cobertura | ganho          |
-| ------------------------------------ | --------- | -------------- |
-| hoje                                 | 53,2%     | —              |
-| fase 1 — filtro de ruído             | 64,9%     | +22 transações |
-| fase 2 — injeção por valor default   | 69,7%     | +9             |
-| fase 3 — fronteira de `node_modules` | **86,2%** | +31            |
+|                                      | cobertura          | ganho |
+| ------------------------------------ | ------------------ | ----- |
+| hoje                                 | 53,2%              | —     |
+| fase 1 — filtro de ruído             | **59,0% (medido)** | +11   |
+| fase 2 — injeção por valor default   | ~64% (projetado)   | +9    |
+| fase 3 — fronteira de `node_modules` | ~81% (projetado)   | +31   |
+
+**A fase 1 está entregue, e 59,0% é medido, não projetado.** A projeção original
+dizia 64,9% com um filtro que silenciava também `get`, `set`, `has` e `find` —
+métodos de `Map` e de repositório igualmente. Silenciá-los compraria cobertura
+escondendo lacuna, que é o defeito que o pacote existe para não cometer. O
+filtro conservador rende menos e é o certo; as projeções das fases 2 e 3 foram
+reduzidas na mesma proporção.
+
+Nas outras três aplicações a fase 1 deixou a cobertura em 69,9%, 68,7% e 72,4%.
+A app C é a mais difícil das quatro, o que a torna o alvo certo para medir.
 
 As três juntas passam de 0,85, que é onde o portão começa a valer. **Nenhuma
 delas sozinha chega lá** — e a fase 3, a mais cara, é também a que mais rende.
 
-## Fase 1 — o filtro de pendência
+## Fase 1 — o filtro de pendência ✅
 
 O que nunca deveria ser reportado:
 
@@ -90,8 +100,10 @@ O que nunca deveria ser reportado:
 
 **Invariante desta fase: nenhum ponto de função pode se mover.** Pendência não
 entra na contagem, só na cobertura — então se o total mudar, o filtro removeu
-algo que era acesso a dado de verdade. As quatro apps de produção são a
-verificação, e o benchmark Vazquez tem que continuar em 46.
+algo que era acesso a dado de verdade.
+
+**Verificada:** as quatro aplicações voltaram com os totais idênticos — 954,
+807, 768, 257 — e o benchmark Vazquez seguiu em 46 PF.
 
 O risco desta fase é silenciar demais, que é o defeito que este pacote existe
 para não cometer. Mitigação: a lista é de formas _conhecidas_, nunca um

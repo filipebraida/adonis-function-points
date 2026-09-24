@@ -7,6 +7,7 @@ import type { CollectedDataStore } from '../sources/data_stores.js'
 import { detectAccess, hooksFiredBy, rootSymbolOf } from '../detectors/lucid.js'
 import type { PersistenceAccess, RelationMap, StoreSymbols } from '../detectors/lucid.js'
 import { BUILTIN_CALL_RESOLVERS, resolveCall } from '../resolvers/index.js'
+import { isNoise, isNoiseMember } from './noise.js'
 import type { CallResolver, ResolverContext } from '../resolvers/types.js'
 import type { HandlerRef, TraceStep, UnresolvedCall } from '../../types.js'
 
@@ -282,11 +283,9 @@ export function createAnalyzer(
     if (!body) return null
 
     const imports = importsFor(file)
-    const injected = injectedFor(
-      body.getFirstAncestorByKind(SyntaxKind.ClassDeclaration),
-      file,
-      app
-    )
+    /** the class this body belongs to: how `this.something` resolves */
+    const owner = body.getFirstAncestorByKind(SyntaxKind.ClassDeclaration)
+    const injected = injectedFor(owner, file, app)
     const symbols = storeSymbolsFor(body, file, app, storesByName)
 
     const accesses: { store: string; write: boolean }[] = []
@@ -327,7 +326,7 @@ export function createAnalyzer(
         continue
       }
 
-      if (isWorthReporting(call, symbols, imports)) {
+      if (isWorthReporting(call, symbols, imports) && !isNoise(call, owner)) {
         unresolved.push({
           file: ref.file,
           line: call.getStartLineNumber(),
@@ -371,12 +370,14 @@ export function createAnalyzer(
          * Dropping it silently is the worst possible defect: the transaction
          * loses a path and nobody knows.
          */
-        unresolved.push({
-          file: ref.file,
-          line: ref.line ?? 0,
-          expression: `${pathOf(ref.file)}.${ref.member ?? 'handle'}`,
-          reason: 'body not found in the resolved file: probably inherited from a package class',
-        })
+        if (!isNoiseMember(ref.file, ref.member)) {
+          unresolved.push({
+            file: ref.file,
+            line: ref.line ?? 0,
+            expression: `${pathOf(ref.file)}.${ref.member ?? 'handle'}`,
+            reason: 'body not found in the resolved file: probably inherited from a package class',
+          })
+        }
         return
       }
 
