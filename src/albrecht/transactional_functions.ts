@@ -54,7 +54,7 @@ export function countTransactionalFunctions(
     const type: FunctionType = behavior.writes ? 'EI' : 'EO'
     const refs = touched.length
 
-    const { det, sources } = detsFor(entry, behavior, touched, options)
+    const { det, sources } = detsFor(entry, behavior, touched, type, options)
     const complexity = complexityOf(type, refs, det)
 
     counted.push({
@@ -83,44 +83,64 @@ export function countTransactionalFunctions(
 /**
  * DETs de uma transação — counting-decisions §6 e §7.
  *
- * Entrada: parâmetros da rota, um DET cada. Saída: campos dos repositórios
- * lidos. Sem `.select()` nem transformer visível, conta a tabela inteira e
- * **superestima** — troca que o AFP faz de propósito, priorizando
- * repetibilidade sobre fidelidade. A origem vai no `Rationale` para o
- * `fp:calibrate` medir o viés.
+ *   "Count only one DET for each unique field that is required to complete the
+ *    External Input. […] Count only one DET for each unique field that is
+ *    required to complete the Output Transaction. If a DET both enters and exits
+ *    the boundary, count that DET only once."  — AFP §7.3
+ *
+ * A distinção que importa é por TIPO de transação, não por ter entrada ou não:
+ *
+ *   EE  campos que o usuário informa — parâmetros de rota e validator. O que a
+ *       transação lê para poder gravar não é DET de entrada.
+ *   SE  o que o usuário informa MAIS o que a transação apresenta. Um relatório
+ *       tem os dois: o período consultado e os campos exibidos.
+ *
+ * A primeira versão deste código tratava saída como `else` da entrada, e por
+ * isso contava 2 DETs num relatório que o gabarito conta com 9 — e 8 numa
+ * exclusão que o gabarito conta com 2. O benchmark Vazquez expôs os dois.
+ *
+ * Sem `.select()` nem transformer visível, os campos de saída são a tabela
+ * inteira, e isso **superestima**. É a troca que o AFP faz de propósito,
+ * priorizando repetibilidade sobre fidelidade; a origem vai no `Rationale` para
+ * o `fp:calibrate` medir o viés.
  */
 function detsFor(
   entry: CollectedEntryPoint,
   behavior: Behavior,
   touched: string[],
+  type: FunctionType,
   options: TransactionOptions
 ): { det: number; sources: string[] } {
   const sources: string[] = []
-  let det = 0
+  const counted = new Set<string>()
 
-  const params = entry.signature.match(/:[A-Za-z_][\w]*/g) ?? []
-  for (const param of params) {
-    det++
-    sources.push(`param:${param}`)
+  const add = (field: string, source: string) => {
+    if (counted.has(field)) return
+    counted.add(field)
+    sources.push(source)
+  }
+
+  for (const param of entry.signature.match(/:[A-Za-z_][\w]*/g) ?? []) {
+    add(param.slice(1), `param:${param}`)
   }
 
   for (const field of behavior.inputFields) {
-    det++
-    sources.push(`validator:${field}`)
+    const name = field.split('.').pop()!
+    add(name, `validator:${field}`)
   }
 
-  // saída: campos dos repositórios lidos, quando não há entrada declarada
-  if (behavior.inputFields.length === 0) {
+  // saída: só transação que apresenta dado tem campo de saída
+  if (type === 'EO' || type === 'EQ') {
     for (const store of touched) {
       const columns = options.countedStores
         .get(store)!
         .attributes.filter((attribute) => !attribute.isIdentifier)
-      det += columns.length
-      sources.push(`all-columns:${store}(${columns.length})`)
+
+      for (const column of columns) add(`${store}.${column.name}`, `output:${store}.${column.name}`)
     }
   }
 
-  det += options.messageDet
+  let det = counted.size + options.messageDet
   if (options.messageDet > 0) sources.push('message:1')
 
   return { det: Math.max(det, 1), sources }

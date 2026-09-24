@@ -18,8 +18,8 @@ fixture Kysely fica pulada como sentinela delas.
 
 | | |
 |---|---|
-| feito | scaffold; **Fases 1 a 5** — inventário e contagem de ponta a ponta; 6 resolvedores, nenhuma lacuna declarada; 136 testes |
-| falta | Fase 6 (validação/benchmark), 7 (comandos), 8 (métricas) |
+| feito | scaffold; **Fases 1 a 6** — contagem validada contra benchmark externo; 6 resolvedores; 143 testes, nenhum pulado |
+| falta | Fase 7 (comandos), Fase 8 (métricas estatísticas) |
 
 ## Método: exemplo primeiro
 
@@ -329,17 +329,65 @@ técnica e rota sem dado. Seis mutações agora falham.
 É a terceira vez que "mutação passou verde" aponta um teste que afirmava menos
 do que parecia. A regra de processo está se pagando.
 
-## Fase 6 — validação
+## Fase 6 — validação ✅
 
-- **invariante de ouro**: as três fixtures com contagem idêntica
-- **benchmark Vazquez**: gabarito de **46 PF**, tolerância declarada. O Ligeiro
-  chegou a 52 (**+13%**) com divergências sistemáticas; o teste registra a
-  tolerância e o motivo de cada divergência em vez de escondê-las.
-  **A fixture é escrita a partir da especificação dos casos de uso e congelada
-  em commit próprio**, com as escolhas de transcrição documentadas. Sem isso, a
-  independência do benchmark é ilusória: nada impediria afinar a fixture até
-  bater o número.
-- **fumaça em app real**, fora da suíte: cobertura e ordem de grandeza
+### Benchmark Vazquez: 46 PF contra 46 PF de gabarito
+
+A fixture e o gabarito foram **congelados em commit próprio antes** de o contador
+rodar sobre eles, com as escolhas de transcrição documentadas em
+`fixtures/apps/vazquez/REFERENCIA.md`. Sem isso a independência seria ilusória.
+
+| | total | vs gabarito |
+|---|---|---|
+| Vazquez et al., manual publicada | 46 | — |
+| **este pacote** | **46** | **0%** |
+| Ligeiro, automático sobre MDArte | 52 | +13% |
+| manual pelas regras do Ligeiro | 43 | −6,5% |
+
+**8 das 10 funções batem exatamente**, incluindo as três funções de dados com
+tipo, DET, RET e pontos idênticos.
+
+**O total exato é em parte cancelamento, e isso está registrado no teste.** As
+duas divergências são +1 e −1, e as duas foram **previstas por escrito antes de
+rodar**:
+
+- `Consulta Apontamento Diário` é CE no gabarito; o AFP §6.5.3 manda colapsar CE
+  em SE, e SE pesa mais na mesma faixa. **+1 PF.**
+- `Apontamento c/ Justificativa`: o manual do IFPUG conta 1 DET de mensagem ao
+  usuário, o AFP não. **−1 PF.**
+
+É a confirmação externa do que o spike havia observado: **o total é mais estável
+que a classificação individual.** Quem for defender a contagem função por função
+precisa saber disso.
+
+### Duas correções que o benchmark forçou
+
+**O gabarito estava errado nos documentos.** Vinham escritos 56 PF e desvio de
+~7%. A extração do PDF interleava o número da página entre os dois totais da
+Tabela 6.5, e o número da página foi lido como gabarito. O texto da dissertação
+desfaz a dúvida — *"tendo o processo automático obtido o maior valor"*, e o
+automático é 52, logo a referência é menor. Somando a coluna à mão: 46.
+
+**A regra de DET estava errada, e só o benchmark expôs.** Os DETs de saída eram
+um `else` dos de entrada, então um relatório com filtro de período contava 2
+DETs onde o gabarito conta 9, e uma exclusão contava 8 onde o gabarito conta 2.
+O AFP §7.3 manda contar todo campo necessário para completar a transação, com a
+distinção por TIPO: EE conta o que o usuário informa; SE conta o que ele informa
+**mais** o que a transação apresenta.
+
+O efeito nas apps de produção foi grande — e nenhuma fixture o teria pego:
+
+| app | antes | depois |
+|---|---|---|
+| app A | 910 | 954 |
+| app B | 829 | 807 |
+| app C | 778 | 714 |
+| app D | 259 | 257 |
+
+### Fumaça em app real
+
+Cinco aplicações de produção contadas de 0,4 a 3,2 s cada, sem pendência de
+rastreamento bloqueante. Os números estão em `spike-findings.md`.
 
 ## Fase 7 — superfície de uso
 
