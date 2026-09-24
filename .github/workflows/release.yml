@@ -1,0 +1,76 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+
+  publish:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify tag matches package.json version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "Tag $REF_NAME does not match package.json version $PKG_VERSION" >&2
+            exit 1
+          fi
+
+      - name: Determine npm dist-tag
+        id: tag
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" == *-alpha* ]]; then
+            echo "npm_tag=alpha" >> "$GITHUB_OUTPUT"
+          elif [[ "$VERSION" == *-beta* ]]; then
+            echo "npm_tag=beta" >> "$GITHUB_OUTPUT"
+          elif [[ "$VERSION" == *-rc* ]]; then
+            echo "npm_tag=rc" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish to npm via Trusted Publishing
+        env:
+          NPM_TAG: ${{ steps.tag.outputs.npm_tag }}
+        run: npm publish --access public --provenance --tag "$NPM_TAG"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          NPM_TAG: ${{ steps.tag.outputs.npm_tag }}
+        run: |
+          PRERELEASE=""
+          if [ "$NPM_TAG" != "latest" ]; then
+            PRERELEASE="--prerelease"
+          fi
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            $PRERELEASE

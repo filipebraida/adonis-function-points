@@ -336,10 +336,16 @@ tested outside the sample that produced it).
 ## Contributing
 
 ```bash
-npm install
-npm test          # lint + 231 tests
-npm run typecheck
+pnpm install
+pnpm test              # lint + 231 tests, from source
+pnpm run typecheck
+pnpm run compile && pnpm run test:package   # the packed tarball, installed and used
 ```
+
+`test:package` is separate on purpose: the suite runs from source through
+ts-exec and never loads `build/`, which is the only thing a user gets. A
+release once had every `exports` path pointing at a file the build did not
+emit, with the whole suite green.
 
 Two house rules worth knowing before opening a PR:
 

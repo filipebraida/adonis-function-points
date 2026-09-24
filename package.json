@@ -48,7 +48,8 @@
     "postcompile": "npm run copy:templates",
     "build": "npm run compile",
     "version": "npm run build",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test:package": "node --import=@poppinss/ts-exec scripts/smoke_package.ts"
   },
   "keywords": [
     "adonisjs",
@@ -127,5 +128,6 @@
   "prettier": "@adonisjs/prettier-config",
   "bin": {
     "adonis-function-points": "bin/cli.js"
-  }
+  },
+  "packageManager": "pnpm@12.5.1"
 }
