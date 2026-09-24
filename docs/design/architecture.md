@@ -1,243 +1,245 @@
-# Arquitetura
+# Architecture
 
-Revisada após o levantamento de 6 aplicações AdonisJS de produção
-([`../research/adonisjs-variation.md`](../research/adonisjs-variation.md)). A
-versão anterior procurava artefatos por convenção de pasta e teria contado zero
-em duas das seis apps.
+Revised after surveying 6 production AdonisJS applications
+([`../research/adonisjs-variation.md`](../research/adonisjs-variation.md)). The
+earlier version looked for artefacts by folder convention and would have
+counted zero in two of the six apps.
 
-## A tese
+## The thesis
 
-**O grafo transação → funções de dados é a espinha da contagem. Todo o resto é
-filtro de borda.**
+**The transaction → data function graph is the backbone of the count.
+Everything else is boundary filtering.**
 
-Isso não é preferência de desenho — caiu do AFP. Três das quatro decisões de
-borda em [`counting-decisions.md`](counting-decisions.md) se resolvem pela mesma
-regra: rota estática não conta porque não alcança dado; rota de pacote terceiro
-idem; hook de model conta porque está no caminho; tabela órfã não conta porque
-ninguém a alcança.
+This is not a design preference — it falls out of AFP. Three of the four
+boundary decisions in [`counting-decisions.md`](counting-decisions.md) are
+settled by the same rule: a static route does not count because it reaches no
+data; a third-party package route likewise; a model hook counts because it is
+on the path; an orphan table does not count because nobody reaches it.
 
-Consequência prática: a qualidade do pacote é a qualidade desse rastreamento. É
-onde o esforço vai.
+Practical consequence: the quality of this package is the quality of that
+tracing. That is where the effort goes.
 
-## Escopo do v1: AdonisJS 7 + Lucid 22
+## v1 scope: AdonisJS 7 + Lucid 22
 
-Decisão do autor após a validação externa: **o v1 mira core 7 com Lucid 22**.
-Não é limitação de desenho — as costuras são gerais e a fixture Kysely fica como
-sentinela — é sequência: um backend de ponta a ponta antes do segundo. Das 10
-apps levantadas, 9 usam Lucid.
+The author's decision after the external validation: **v1 targets core 7 with
+Lucid 22**. It is not a limitation of the design — the seams are general and
+the Kysely fixture stays as a sentinel — it is sequencing: one backend end to
+end before the second. Of the 10 applications surveyed, 9 use Lucid.
 
-Fora do v1, detectado e reportado, nunca contado errado:
+Outside v1, detected and reported, never counted wrong:
 
-| detectado | comportamento |
-|---|---|
-| core 6 / Lucid 21 | "não suportado no v1" — sem schema gerado, sem codegen |
-| ORM ≠ Lucid (Kysely…) | "ORM não suportado"; costura provada pela fixture pulada |
-| core 5 | `layout: unknown`, 0 aliases — fora de escopo |
+| detected              | behaviour                                                      |
+| --------------------- | -------------------------------------------------------------- |
+| core 6 / Lucid 21     | "not supported in v1" — no generated schema, no codegen        |
+| ORM ≠ Lucid (Kysely…) | "ORM not supported"; the seam is proved by the skipped fixture |
+| core 5                | `layout: unknown`, 0 aliases — out of scope                    |
 
-O que o escopo v7 devolve ao jogo — com as precondições reais, lidas no código
-do framework:
+What the v7 scope brings back into play — with the real preconditions, read in
+the framework's own source:
 
-| artefato | como obter | precondição |
-|---|---|---|
-| rotas → handler | **runtime**: bootar a app (`environment: 'web'`, para os preloads de rota carregarem) e ler `router.toJSON()` — é exatamente o que `node ace codegen` faz | app bootável: deps instaladas, env presente; **sem banco** |
-| `database/schema.ts` | versionado, ou `node ace schema:generate` | o gerador **introspecta o banco vivo** — sem conexão, tem que estar versionado |
-| DETs de entrada | validator por AST; registry do Tuyau quando existir | — |
-| grafo de chamadas | AST | — |
+| artefact             | how to obtain it                                                                                                                               | precondition                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| routes → handler     | **runtime**: boot the app (`environment: 'web'`, so the route preloads load) and read `router.toJSON()` — exactly what `node ace codegen` does | a bootable app: dependencies installed, env present; **no database**                        |
+| `database/schema.ts` | versioned, or `node ace schema:generate`                                                                                                       | the generator **introspects the live database** — with no connection it has to be versioned |
+| input DETs           | validator by AST; Tuyau registry when present                                                                                                  | —                                                                                           |
+| call graph           | AST                                                                                                                                            | —                                                                                           |
 
-## Ordem das fontes
+## Source order
 
-**Revisada após a validação externa**
+**Revised after the external validation**
 ([`../research/external-validation.md`](../research/external-validation.md)):
-a ordem original ("gerado primeiro") só vale para AdonisJS 7 + Lucid 22 + Tuyau.
-Os starter kits oficiais estão em core 6.18 / Lucid 21.6, sem nenhum gerado.
+the original order ("generated first") only holds for AdonisJS 7 + Lucid 22 +
+Tuyau. The official starter kits are on core 6.18 / Lucid 21.6, with none of
+the generated artefacts.
 
-No escopo v7, por fato:
+Within the v7 scope, per fact:
 
-| fato | fonte primária | fallback | confiabilidade |
-|---|---|---|---|
-| rotas, verbos, handler | **runtime** (`router.toJSON()` após boot sem banco) | parser de `routes.ts` via `preloads` | exata / heurística |
-| funções de dados, colunas | **`database/schema.ts`** (Lucid 22) | model por AST seguindo herança | canônica / heurística |
-| DETs de entrada | registry **Tuyau**, se houver | validator por AST | canônica / boa |
-| grafo, escrita, FTR | **AST** | — | heurística controlada |
-| agrupamento | convenção de pasta | — | metadado |
+| fact                    | primary source                            | fallback                                     | reliability                                     |
+| ----------------------- | ----------------------------------------- | -------------------------------------------- | ----------------------------------------------- |
+| routes, verbs, handler  | **AST** of the files listed in `preloads` | —                                            | heuristic, validated against the Tuyau registry |
+| data functions, columns | **`database/schema.ts`** (Lucid 22)       | model by AST following the inheritance chain | canonical / heuristic                           |
+| input DETs              | validator by AST                          | —                                            | good                                            |
+| graph, writes, FTR      | **AST**                                   | —                                            | controlled heuristic                            |
+| grouping                | folder convention                         | —                                            | metadata                                        |
 
-**Runtime entrou no v1, só para rotas.** O core 7 prova que bootar sem banco é
-o padrão do próprio framework (`codegen` faz isso). Nada de runtime para dados:
-`schema:generate` precisa do banco, então o arquivo versionado é a fonte.
+> **Not in v1.** Reading the routes from the runtime (`router.toJSON()` after a
+> database-free boot) and cross-checking the input DETs against the Tuyau
+> registry. Both are decided and recorded here because they shape the source
+> order; neither is implemented. Core 7 proves a database-free boot is the
+> framework's own pattern (`codegen` does it). No runtime for data, ever:
+> `schema:generate` needs the database, so the versioned file is the source.
 
-O relatório diz **qual fonte produziu cada fato**. Uma contagem feita só por
-AST e outra com schema gerado não são equivalentes, e o número tem que carregar
-essa proveniência.
+The report says **which source produced each fact**. A count made purely from
+the AST and one made with the generated schema are not equivalent, and the
+number has to carry that provenance.
 
-**Convenção de pasta nunca é usada para encontrar coisa.** Um pacote que procura
-models em `app/**/models/` conta zero numa das apps levantadas, onde 35 arquivos
-de model não estendem `BaseModel` do Lucid — e é por isso que o parser de model
-por AST tem que **seguir a cadeia de herança** (`extends compose(Base, Mixin)`),
-não olhar só o arquivo.
+**Folder convention is never used to find anything.** A package that looks for
+models in `app/**/models/` counts zero in one of the surveyed apps, where 35
+model files do not extend Lucid's `BaseModel` — which is why the AST model
+parser has to **follow the inheritance chain** (`extends compose(Base, Mixin)`)
+rather than look at the file alone.
 
-### Os artefatos gerados, e quem os gera
+### The generated artefacts, and who generates them
 
-| artefato | gerador | desde |
-|---|---|---|
-| `database/schema.ts` — `*Schema` com `$columns` canônico | `@adonisjs/lucid` oficial, `migration:run` (padrão) ou `schema:generate` | Lucid 22 |
-| `.adonisjs/server/controllers.ts`, `routes.d.ts` (nome + params, **sem body**) | `@adonisjs/core` `codegen` | core 7 |
-| `.adonisjs/client/registry/schema.d.ts` — rotas **com tipos de body/query** | `@tuyau/core`, terceiro, opcional | — |
+| artefact                                                                      | generator                                                                  | since    |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- | -------- |
+| `database/schema.ts` — `*Schema` with a canonical `$columns`                  | official `@adonisjs/lucid`, `migration:run` (default) or `schema:generate` | Lucid 22 |
+| `.adonisjs/server/controllers.ts`, `routes.d.ts` (name + params, **no body**) | `@adonisjs/core` `codegen`                                                 | core 7   |
+| `.adonisjs/client/registry/schema.d.ts` — routes **with body/query types**    | `@tuyau/core`, third-party, optional                                       | —        |
 
-Quando presentes, resolvem sozinhos duas variações caras: estilos heterogêneos
-de model, e colunas que **pacotes** acrescentam via migration própria. Em v7 o
-pacote deve oferecer regenerar antes de contar, em vez de confiar em arquivo
-possivelmente obsoleto.
+When present, they settle two expensive variations on their own: heterogeneous
+model styles, and columns that **packages** add through their own migrations.
 
-### Lucid não é dado
+### Lucid is not a given
 
-O `romainlanz.com` (core team) usa **Kysely + kysely-codegen**, sem Lucid: o
-schema gerado é `types/db.ts` (`interface Articles { … }` por tabela), as
-migrations usam a DSL do Kysely, e a escrita é `.insertInto()/.updateTable()/
-.deleteFrom()`.
+`romainlanz.com` (core team) uses **Kysely + kysely-codegen**, without Lucid:
+the generated schema is `types/db.ts` (`interface Articles { … }` per table),
+the migrations use Kysely's DSL, and writes are
+`.insertInto()/.updateTable()/.deleteFrom()`.
 
-O v1 suporta **apenas Lucid**: Kysely é detectado e reportado como não
-suportado, com a fixture sentinela pulada no lugar. A costura para um segundo
-ORM existe — a detecção de persistência está isolada em
-`src/inventory/detectors/` — mas ainda não é ponto de extensão público, porque
-nada no pipeline consome um detector registrado. Ver "Extensibilidade".
+v1 supports **Lucid only**: Kysely is detected and reported as unsupported,
+with the sentinel fixture skipped in its place. The seam for a second ORM
+exists — persistence detection is isolated in `src/inventory/detectors/` — but
+it is not a public extension point yet, because nothing in the pipeline
+consumes a registered detector. See "Extensibility".
 
-### A raiz de varredura não é `app/`
+### The scan root is not `app/`
 
-Na mesma app, os repositórios — onde mora 100% da escrita — ficam em
-`src/<módulo>/repositories/`, fora de `app/`. A raiz de varredura é **o
-conjunto de diretórios alcançáveis pelos aliases do `package.json`**
-(`app/`, `src/`, `shared/`, `types/`…), e módulos podem ser aninhados
-(`app/admin/taxonomies/`). `moduleOf()` devolve o caminho de módulo completo,
-não o primeiro segmento.
+In one application the repositories — where all of the writes live — sit under
+`src/<module>/repositories/`, outside `app/`. The scan root is **the set of
+directories reachable through the `package.json` aliases** (`app/`, `src/`,
+`shared/`, `types/`…), and modules can be nested (`app/admin/taxonomies/`).
+`moduleOf()` returns the full module path, not the first segment.
 
-## Camadas
+## Layers
 
 ```
-src/inventory/   fatos crus — NÃO conhece APF
-src/albrecht/    regras IFPUG/AFP sobre o inventário
+src/inventory/   raw facts — knows NOTHING about FPA
+src/albrecht/    IFPUG/AFP rules over the inventory
 ```
 
-**Regra inegociável:** `src/inventory/**` nunca importa de `src/albrecht/**`. O
-inventário não sabe o que é um ALI. É isso que permite extrair a camada para um
-pacote próprio se as métricas estatísticas crescerem.
+**Non-negotiable rule:** `src/inventory/**` never imports from
+`src/albrecht/**`. The inventory does not know what an ILF is. That is what
+would allow the layer to be extracted into its own package if the statistical
+metrics grow.
 
 ```
 src/
-├── types.ts                  modelo de domínio compartilhado
+├── types.ts                  shared domain model
 ├── pipeline.ts               analyze(root, options) -> { inventory, count }
 ├── define_config.ts          FunctionPointsConfig
 ├── inventory/
-│   ├── app_context.ts        descobre a app: imports do package.json,
-│   │                         artefatos gerados, layout, raízes de varredura
-│   ├── sources/              fatos, por ARTEFATO (não por pasta)
-│   │   ├── data_stores.ts        models seguindo a cadeia de herança;
-│   │   │                         schema gerado quando existe
-│   │   └── routes_ast.ts         rotas dos preloads, lazy import ou mapa
+│   ├── app_context.ts        discovers the app: package.json imports,
+│   │                         generated artefacts, layout, scan roots
+│   ├── sources/              facts, per ARTEFACT (not per folder)
+│   │   ├── data_stores.ts        models following the inheritance chain;
+│   │   │                         the generated schema when present
+│   │   └── routes_ast.ts         routes from the preloads, lazy import or map
 │   ├── graph/
-│   │   └── call_graph.ts     transação -> dados, em nível de MÉTODO;
-│   │                         DETs de entrada pelos validators; cobertura
-│   ├── resolvers/            como seguir cada padrão de código
-│   └── detectors/lucid.ts    o que é leitura/escrita
+│   │   └── call_graph.ts     transaction -> data, at METHOD level;
+│   │                         input DETs from the validators; coverage
+│   ├── resolvers/            how to follow each code pattern
+│   └── detectors/lucid.ts    what is a read and what is a write
 ├── albrecht/
-│   ├── tables.ts             tabelas de complexidade IFPUG
-│   ├── data_functions.ts     ALI vs AIE, DET/RET
-│   ├── transactional_functions.ts   EE vs SE, DET/FTR
-│   ├── technical_filter.ts   AFP 6.5.2.1.1 + origem da escrita
-│   ├── counter.ts            a contagem
-│   ├── diff.ts               inclusão / alteração / exclusão (AEP)
-│   └── calibration.ts        viés contra contagem manual
-├── metrics/structure.ts      acoplamento, densidade, conformidade
-└── reporters/table.ts        os relatórios de `fp:*`
+│   ├── tables.ts             IFPUG complexity tables
+│   ├── data_functions.ts     ILF vs EIF, DET/RET
+│   ├── transactional_functions.ts   EI vs EO, DET/FTR
+│   ├── technical_filter.ts   AFP 6.5.2.1.1 + origin of the write
+│   ├── counter.ts            the count
+│   ├── diff.ts               additions / modifications / deletions (AEP)
+│   └── calibration.ts        bias against a manual count
+├── metrics/structure.ts      coupling, density, conformance
+└── reporters/table.ts        the `fp:*` reports
 ```
 
-## Descoberta no lugar de configuração
+## Discovery in place of configuration
 
-`AppContext` descobre o que precisa em vez de perguntar:
+`AppContext` discovers what it needs rather than asking:
 
-- **aliases `#`** — lidos do `imports` do `package.json`, nunca deduzidos:
-  existem duas convenções incompatíveis em uso (`#models/*` por tipo,
-  `#collect/*` por módulo);
-- **artefatos gerados** — localizados pelo cabeçalho de geração e pela forma das
-  classes, não pelo caminho;
-- **layout** — detectado, e usado só para agrupar relatório.
+- **`#` aliases** — read from `imports` in package.json, never deduced: two
+  incompatible conventions are in use (`#models/*` by type, `#collect/*` by
+  module);
+- **generated artefacts** — located by the generation header and the shape of
+  the classes, not by path;
+- **layout** — detected, and used only to group the report.
 
-Sobra como configuração apenas o que é **decisão de negócio**, que nenhuma
-heurística deveria tomar: a fronteira da aplicação, quais repositórios são
-mantidos externamente (AIE), e overrides com justificativa obrigatória.
+What remains as configuration is only what is a **business decision** no
+heuristic should make: the application boundary, which stores are maintained
+externally (EIF), and overrides with a mandatory justification.
 
-## Extensibilidade é requisito
+## Extensibility is a requirement
 
-AdonisJS não impõe organização. Medido nas 6 apps, a escrita se espalha assim:
+AdonisJS imposes no organisation. Measured across the 6 applications, writes
+are spread like this:
 
 | app | controllers | services | actions | queries | jobs | models |
-|---|---|---|---|---|---|---|
-| A | 0 | 3 | 15 | 0 | 0 | 3 |
-| B | 14 | 16 | 92 | 0 | 0 | 0 |
-| C | 27 | 154 | 131 | 8 | 63 | 5 |
-| D | 0 | 1 | 135 | 0 | 1 | 1 |
+| --- | ----------- | -------- | ------- | ------- | ---- | ------ |
+| A   | 0           | 3        | 15      | 0       | 0    | 3      |
+| B   | 14          | 16       | 92      | 0       | 0    | 0      |
+| C   | 27          | 154      | 131     | 8       | 63   | 5      |
+| D   | 0           | 1        | 135     | 0       | 1    | 1      |
 
-Nenhuma usa menos de 4 tipos de artefato. O rastreamento não pode privilegiar
-nenhum — segue o grafo onde ele for, e o tipo de artefato é só metadado.
+None uses fewer than 4 artefact kinds. Tracing cannot privilege any of them —
+it follows the graph wherever it goes, and the artefact kind is only metadata.
 
-**Um** ponto de extensão público, em `src/inventory/resolvers/types.ts`:
+**One** public extension point, in `src/inventory/resolvers/types.ts`:
 
-- **`CallResolver`** — como seguir de um call site ao próximo corpo. Inclui
-  resolução **por tipo do parâmetro do construtor** (`@inject()` com
-  `constructor(private q: GetArticleQuery)`), que em apps com DI é o *único*
-  caminho da rota à escrita.
+- **`CallResolver`** — how to follow from a call site to the next body. It
+  includes resolution **by constructor parameter type** (`@inject()` with
+  `constructor(private q: GetArticleQuery)`), which in applications using DI is
+  the _only_ path from the route to the write.
 
-Estratégias do usuário rodam **antes** das embutidas. **A primeira que
-reivindica, vence** — formas sintaticamente idênticas têm significados
-diferentes (`Job.dispatch(p)`, `Service.create(p)` e `Model.find(p)` são todas
-`Identificador.metodo(args)`), e só a ordem as separa.
+User strategies run **before** the built-in ones. **The first to claim a call
+wins** — syntactically identical shapes carry different meanings
+(`Job.dispatch(p)`, `Service.create(p)` and `Model.find(p)` are all
+`Identifier.method(args)`), and only the order separates them.
 
-Coletor de repositórios, coletor de pontos de entrada e detector de persistência
-continuam sendo **costuras internas** — cada um mora num módulo próprio e pode
-virar ponto de extensão quando houver um segundo caso real. Enquanto o pipeline
-não consumir um registrado, a interface não é exportada: tipo público que o
-código não honra é a mesma promessa vazia que configuração sem efeito.
+Store collection, entry point collection and persistence detection remain
+**internal seams** — each lives in its own module and can become an extension
+point when there is a second real case. While the pipeline does not consume a
+registered one, the interface is not exported: a public type the code does not
+honour is the same empty promise as configuration with no effect.
 
-### Transação não é sinônimo de rota HTTP
+### A transaction is not a synonym for an HTTP route
 
-Comando ace que importa planilha e job agendado que sincroniza com sistema
-externo são funções transacionais pelo IFPUG. No v1 só rotas HTTP são coletadas;
-é a costura de coleta de pontos de entrada que abre esse caminho.
+An ace command that imports a spreadsheet and a scheduled job that syncs with
+an external system are transactional functions under IFPUG. In v1 only HTTP
+routes are collected; the entry point collection seam is what opens that path.
 
-## Rastreabilidade é requisito
+## Traceability is a requirement
 
-Toda função contada carrega `Rationale`: regra aplicada, origem de cada DET e
-FTR, caminho no grafo, e overrides com justificativa obrigatória. É o que
-`fp:explain` imprime. Se PF vira fatura, alguém vai contestar um número, e um
-número sem procedência é indefensável.
+Every counted function carries a `Rationale`: the rule applied, the origin of
+each DET and FTR, the path through the graph, and overrides with a mandatory
+justification. It is what `fp:explain` prints. If function points get invoiced,
+someone will dispute a number, and a number without provenance is indefensible.
 
-O ruleset é versionado e sai em todo relatório: contagens só são comparáveis se
-as regras não mudaram no meio.
+The ruleset is versioned and appears in every report: counts are only
+comparable if the rules did not change in between.
 
-## Dizer "não sei" é melhor que errar em silêncio
+## Saying "I don't know" beats being wrong in silence
 
-Chamada que nenhum resolvedor segue entra em `unresolved` e conta na cobertura.
-Abaixo de `minCoverage`, a contagem **falha**.
+A call no resolver follows enters `unresolved` and counts against coverage.
+Below `minCoverage`, the count **fails**.
 
-O AFP não trata isso como opcional:
+AFP does not treat this as optional:
 
 > "If the transaction execution depends on code that is unknown or unavailable
 > to the automated tool, the code end point shall be cataloged and listed in the
 > generated report in order to detect and quantify the missing patterns and
 > libraries." — AFP §6.5.3
 
-Isso importa ainda mais depois da decisão sobre rotas estáticas: "não alcançou
-dado nenhum" significa *ou* que a rota é legitimamente estática, *ou* que o
-rastreador falhou. As duas têm que ser distinguíveis no relatório.
+This matters all the more given the decision about static routes: "reached no
+data at all" means _either_ that the route is legitimately static, _or_ that
+the tracer failed. The two have to be distinguishable in the report.
 
-## Documentos irmãos
+## Sibling documents
 
+- [`counting-decisions.md`](counting-decisions.md) — the edge cases, with the
+  AFP rule that backs each one
+- [`resolvers.md`](resolvers.md) — the catalogue of code patterns
+- [`implementation-plan.md`](implementation-plan.md) — the plan, test-driven
+  (dated record)
+- [`../research/adonisjs-variation.md`](../research/adonisjs-variation.md) —
+  what varies between applications and what does not (dated record)
 - [`../research/external-validation.md`](../research/external-validation.md) —
-  a tese testada fora da amostra: quem gera cada artefato e a matriz de suporte
-- [`../research/adonisjs-variation.md`](../research/adonisjs-variation.md) — o
-  que varia entre apps e o que não varia
-- [`../research/spike-findings.md`](../research/spike-findings.md) — medições do
-  spike e armadilhas já pagas
-- [`counting-decisions.md`](counting-decisions.md) — casos de borda, com a regra
-  do AFP que sustenta cada um
-- [`resolvers.md`](resolvers.md) — catálogo de padrões de código
-- [`implementation-plan.md`](implementation-plan.md) — o plano, guiado por testes
+  the thesis tested outside its sample (dated record)

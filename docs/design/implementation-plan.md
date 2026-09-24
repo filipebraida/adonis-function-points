@@ -1,5 +1,10 @@
 # Plano de implementação
 
+> **Registro datado — setembro/2026.** Este documento descreve o que foi medido e
+> decidido naquele momento, não o comportamento atual do pacote. Conclusões
+> daqui podem ter sido revistas depois; a referência viva é
+> [`architecture.md`](architecture.md).
+
 Reescrito do zero depois de três rodadas de emenda, que deixaram o documento com
 contradições reais — `minimal_v6` listada ao mesmo tempo como fora de escopo e
 como fixture ativa, `canRegenerate` sobrevivendo à descoberta de que
@@ -16,10 +21,10 @@ fixture Kysely fica pulada como sentinela delas.
 
 ## Estado atual
 
-| | |
-|---|---|
+|       |                                                              |
+| ----- | ------------------------------------------------------------ |
 | feito | **Fases 1 a 8** — o plano inteiro; 210 testes, nenhum pulado |
-| falta | nada do plano original; ver "Depois do v1" |
+| falta | nada do plano original; ver "Depois do v1"                   |
 
 ## Método: exemplo primeiro
 
@@ -156,7 +161,7 @@ Dois achados que só a app real revelou:
   A leitura passou a ser estrutural: sobe a cadeia de chamadas daquela chamada.
   Vale igual para `.as()`, `.only()` e `.apiOnly()`.
 - **Closure inline é handler, não pendência.** `router.get('/', ({ response }) =>
-  …)` aparece em 3 das 5 apps. Tratá-la como "controller não resolvido" perderia
+…)` aparece em 3 das 5 apps. Tratá-la como "controller não resolvido" perderia
   a transação e reportaria o motivo errado. `HandlerRef` ganhou `line` para
   apontar o corpo, que a Fase 4 vai percorrer.
 
@@ -169,7 +174,7 @@ que fez desta a ponte natural para a Fase 4 — está implementado em
 pendência, nunca chute. O cruzamento com o registry do Tuyau fica para depois do
 v1.
 
-## Fase 4 — o grafo *(a fase cara)*
+## Fase 4 — o grafo _(a fase cara)_
 
 ### 4a — grafo sintático ✅ com lacuna medida
 
@@ -190,10 +195,10 @@ o método de leitura de um service não vira escritor.
 
 **Medição honesta contra app de produção**, e a lacuna é real:
 
-| app | rotas | EE detectado | rotas com verbo de escrita | tempo |
-|---|---|---|---|---|
-| app C | 161 | 40 | 107 | 42 s |
-| app D | 58 | 26 | 29 | 3,5 s |
+| app   | rotas | EE detectado | rotas com verbo de escrita | tempo |
+| ----- | ----- | ------------ | -------------------------- | ----- |
+| app C | 161   | 40           | 107                        | 42 s  |
+| app D | 58    | 26           | 29                         | 3,5 s |
 
 O verbo HTTP **não é gabarito** — parte dos POST só lê (um `POST .../export`
 que devolve PDF é SE, não EE). Mas a distância em `app C` é grande demais
@@ -222,12 +227,12 @@ tipo explícita**, então `constructor(protected billing: BillingService)`
 traz o tipo como identificador importado — resolvível pelo mesmo mecanismo de
 import já existente.
 
-| app | EE antes | EE depois | rotas com verbo de escrita |
-|---|---|---|---|
-| app C | 40 | **84** | 107 |
-| app B | 68 | 68 | 85 |
-| app A | 57 | 57 | 70 |
-| app D | 26 | 26 | 29 |
+| app   | EE antes | EE depois | rotas com verbo de escrita |
+| ----- | -------- | --------- | -------------------------- |
+| app C | 40       | **84**    | 107                        |
+| app B | 68       | 68        | 85                         |
+| app A | 57       | 57        | 70                         |
+| app D | 26       | 26        | 29                         |
 
 A lista de lacunas conhecidas ficou **vazia**.
 
@@ -239,12 +244,12 @@ checker invalida o programa do TypeScript**, e a consulta seguinte o
 reconstrói. Custava ~344 ms por rota, uniformemente. Carregando todos os
 arquivos antes da primeira análise, a primeira rota paga 2,2 s e as demais 1 ms.
 
-| app | antes | depois |
-|---|---|---|
-| app C | 56 s | 2,2 s |
-| app B | 47 s | 1,5 s |
-| app A | 32 s | 1,0 s |
-| app D | 3,5 s | 0,4 s |
+| app   | antes | depois |
+| ----- | ----- | ------ |
+| app C | 56 s  | 2,2 s  |
+| app B | 47 s  | 1,5 s  |
+| app A | 32 s  | 1,0 s  |
+| app D | 3,5 s | 0,4 s  |
 
 Regressão registrada em teste, e ela **mede a causa, não o tempo** — tempo seria
 instável em CI. A primeira versão do teste não tinha dentes: comparava o número
@@ -264,12 +269,12 @@ método público delegando a privados da mesma classe, onde a escrita acontece.
 Nenhum resolvedor cobria — `property-service` exige `this.prop.metodo()`, dois
 níveis.
 
-| app | EE antes da 4c | depois | verbo de escrita |
-|---|---|---|---|
-| app C | 84 | **91** | 107 |
-| app B | 68 | **77** | 85 |
-| app A | 57 | **61** | 70 |
-| app D | 26 | 26 | 29 |
+| app   | EE antes da 4c | depois | verbo de escrita |
+| ----- | -------------- | ------ | ---------------- |
+| app C | 84             | **91** | 107              |
+| app B | 68             | **77** | 85               |
+| app A | 57             | **61** | 70               |
+| app D | 26             | 26     | 29               |
 
 Detecção entre 85% e 91% das rotas com verbo de escrita. FTR médio também subiu
 (1,47 → 1,66 em `app C`), o que muda complexidade.
@@ -309,13 +314,13 @@ Duas peças que a fase exigiu e não estavam previstas:
 
 ### Primeira contagem em produção
 
-| app | PF | ALI | AIE | EE | SE | tempo |
-|---|---|---|---|---|---|---|
-| app A | 910 | 35 | 0 | 61 | 74 | 1,3 s |
-| app B | 829 | 22 | 6 | 77 | 56 | 2,0 s |
-| app C | 778 | 21 | 4 | 91 | 43 | 3,2 s |
-| app D | 259 | 10 | 2 | 26 | 16 | 0,5 s |
-| starter-kit | 99 | 4 | 0 | 15 | 6 | 0,4 s |
+| app         | PF  | ALI | AIE | EE  | SE  | tempo |
+| ----------- | --- | --- | --- | --- | --- | ----- |
+| app A       | 910 | 35  | 0   | 61  | 74  | 1,3 s |
+| app B       | 829 | 22  | 6   | 77  | 56  | 2,0 s |
+| app C       | 778 | 21  | 4   | 91  | 43  | 3,2 s |
+| app D       | 259 | 10  | 2   | 26  | 16  | 0,5 s |
+| starter-kit | 99  | 4   | 0   | 15  | 6   | 0,4 s |
 
 O spike estimara 844–890 PF para `app C`; o motor dá 778. A diferença é
 explicável e a favor do motor: o spike contava os 32 models como funções de
@@ -339,12 +344,12 @@ A fixture e o gabarito foram **congelados em commit próprio antes** de o contad
 rodar sobre eles, com as escolhas de transcrição documentadas em
 `fixtures/apps/vazquez/REFERENCIA.md`. Sem isso a independência seria ilusória.
 
-| | total | vs gabarito |
-|---|---|---|
-| Vazquez et al., manual publicada | 46 | — |
-| **este pacote** | **46** | **0%** |
-| Ligeiro, automático sobre MDArte | 52 | +13% |
-| manual pelas regras do Ligeiro | 43 | −6,5% |
+|                                  | total  | vs gabarito |
+| -------------------------------- | ------ | ----------- |
+| Vazquez et al., manual publicada | 46     | —           |
+| **este pacote**                  | **46** | **0%**      |
+| Ligeiro, automático sobre MDArte | 52     | +13%        |
+| manual pelas regras do Ligeiro   | 43     | −6,5%       |
 
 **8 das 10 funções batem exatamente**, incluindo as três funções de dados com
 tipo, DET, RET e pontos idênticos.
@@ -367,7 +372,7 @@ precisa saber disso.
 **O gabarito estava errado nos documentos.** Vinham escritos 56 PF e desvio de
 ~7%. A extração do PDF interleava o número da página entre os dois totais da
 Tabela 6.5, e o número da página foi lido como gabarito. O texto da dissertação
-desfaz a dúvida — *"tendo o processo automático obtido o maior valor"*, e o
+desfaz a dúvida — _"tendo o processo automático obtido o maior valor"_, e o
 automático é 52, logo a referência é menor. Somando a coluna à mão: 46.
 
 **A regra de DET estava errada, e só o benchmark expôs.** Os DETs de saída eram
@@ -379,17 +384,17 @@ distinção por TIPO: EE conta o que o usuário informa; SE conta o que ele info
 
 O efeito nas apps de produção foi grande — e nenhuma fixture o teria pego:
 
-| app | antes | depois |
-|---|---|---|
-| app A | 910 | 954 |
-| app B | 829 | 807 |
-| app C | 778 | 714 |
-| app D | 259 | 257 |
+| app   | antes | depois |
+| ----- | ----- | ------ |
+| app A | 910   | 954    |
+| app B | 829   | 807    |
+| app C | 778   | 714    |
+| app D | 259   | 257    |
 
 ### Fumaça em app real
 
 Cinco aplicações de produção contadas de 0,4 a 3,2 s cada, sem pendência de
-rastreamento bloqueante. Os números estão em `spike-findings.md`.
+rastreamento bloqueante. Os totais estão na tabela da Fase 5, acima.
 
 ## Fase 7 — superfície de uso ✅
 
@@ -397,12 +402,12 @@ rastreamento bloqueante. Os números estão em `spike-findings.md`.
 lógica, só imprimindo o que o pipeline devolve. É isso que permite testar a
 contagem inteira sem bootar uma aplicação: as fixtures não bootam.
 
-| comando | o que faz |
-|---|---|
-| `fp:inventory` | fatos crus e cobertura do rastreamento; `--out` salva JSON |
-| `fp:count` | contagem não ajustada; `--out`, `--json`, `--min-coverage` |
-| `fp:explain <função>` | procedência: regra, origem de cada DET e FTR, caminho percorrido |
-| `fp:diff <anterior.json>` | inclusão / alteração / exclusão, e o PF faturável |
+| comando                   | o que faz                                                        |
+| ------------------------- | ---------------------------------------------------------------- |
+| `fp:inventory`            | fatos crus e cobertura do rastreamento; `--out` salva JSON       |
+| `fp:count`                | contagem não ajustada; `--out`, `--json`, `--min-coverage`       |
+| `fp:explain <função>`     | procedência: regra, origem de cada DET e FTR, caminho percorrido |
+| `fp:diff <anterior.json>` | inclusão / alteração / exclusão, e o PF faturável                |
 
 ### `fp:diff` — as duas decisões que o tornam viável
 
@@ -463,10 +468,10 @@ com handler resolvido, repositório alcançado por alguma transação.
 
 Medido em produção:
 
-| app | PF | PF/repositório | ciclos | escrita c/ validator |
-|---|---|---|---|---|
-| app A | 954 | 27,3 | 0 | 64% |
-| app C | 714 | 22,3 | **2** | 42% |
+| app   | PF  | PF/repositório | ciclos | escrita c/ validator |
+| ----- | --- | -------------- | ------ | -------------------- |
+| app A | 954 | 27,3           | 0      | 64%                  |
+| app C | 714 | 22,3           | **2**  | 42%                  |
 
 Os dois ciclos entre módulos do `app C` e os 42% de escrita sem validator
 são achados reais, não ruído da ferramenta.

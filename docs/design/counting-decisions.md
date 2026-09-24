@@ -1,39 +1,39 @@
-# Decisões de contagem
+# Counting decisions
 
-Casos que a análise estática levanta e o que decidimos para cada um, com a
-regra normativa que sustenta. Fonte: **OMG Automated Function Points v1.0**
-(ISO/IEC 19515), que é o que este pacote implementa.
+The cases static analysis raises, what we decided for each, and the normative
+rule that backs it. Source: **OMG Automated Function Points v1.0**
+(ISO/IEC 19515), which is what this package implements.
 
-Quando o AFP e a intuição divergem, vale o AFP — é ele que torna a contagem
-defensável.
+Where AFP and intuition diverge, AFP wins — it is what makes the count
+defensible.
 
 ---
 
-## 1. Rota que não alcança dado nenhum
+## 1. A route that reaches no data at all
 
-Exemplo: `router.on('/sobre').renderInertia('portal/sobre')` — página estática,
-sem handler. Aparece em 3 das 6 aplicações levantadas.
+Example: `router.on('/about').renderInertia('portal/about')` — a static page,
+with no handler. It appears in 3 of the 6 applications surveyed.
 
-**Decisão: não conta.**
+**Decision: it does not count.**
 
 > "To identify the transaction start and finish, the static code analyzer shall
 > assume that the code contains a complete transaction whenever it can show one
 > or several code paths from the user interface down to the data entities."
 > — AFP §6.5.3
 
-Sem caminho até uma função de dados, não há transação a identificar. O AFP
-tipifica as transações "through the detection of the transaction's actions made
-on the identified internal data entities" — sem entidade tocada, não há o que
-classificar. O IFPUG concorda por outro caminho: uma CE exige recuperação de
-dado de ALI/AIE.
+With no path down to a data function there is no transaction to identify. AFP
+types transactions "through the detection of the transaction's actions made on
+the identified internal data entities" — with no entity touched there is
+nothing to classify. IFPUG agrees by another route: an EQ requires retrieving
+data from an ILF or EIF.
 
-**O melhor da decisão é que não precisa de caso especial.** Não é uma regra
-sobre `router.on`; cai naturalmente de "rastreie até os dados". Qualquer rota
-que não chegue a dado nenhum fica de fora, seja qual for a forma dela.
+**The best part of this decision is that it needs no special case.** It is not
+a rule about `router.on`; it falls out of "trace down to the data". Any route
+that reaches no data drops out, whatever shape it has.
 
-**Mas tem que aparecer no relatório.** "Não alcançou dado nenhum" significa
-duas coisas muito diferentes: a rota é legitimamente estática, ou o rastreador
-falhou. As duas precisam ser visíveis, e o AFP exige isso:
+**But it has to appear in the report.** "Reached no data" means two very
+different things: the route is legitimately static, or the tracer failed. Both
+have to be visible, and AFP requires it:
 
 > "If the transaction execution depends on code that is unknown or unavailable
 > to the automated tool, the code end point shall be cataloged and listed in the
@@ -42,36 +42,36 @@ falhou. As duas precisam ser visíveis, e o AFP exige isso:
 
 ---
 
-## 2. Rotas registradas por pacotes de terceiros
+## 2. Routes registered by third-party packages
 
-Exemplo: `transmit.registerRoutes(...)`, rotas de métricas, `drive.fs.serve`.
+Example: `transmit.registerRoutes(...)`, metrics routes, `drive.fs.serve`.
 
-**Decisão: não contam.**
+**Decision: they do not count.**
 
-O AFP exige que a transação cruze a fronteira da aplicação e seja reconhecível
-pelo usuário. Canal de SSE e servidor de arquivos são infraestrutura.
+AFP requires a transaction to cross the application boundary and be recognisable
+by the user. An SSE channel and a file server are infrastructure.
 
-Na prática **nem precisa de lista de exclusão**: pela regra 1, essas rotas não
-alcançam funções de dados da aplicação e já saem sozinhas. A lista em
-`boundary.ignoreEntryPoints` fica como rede de segurança e para deixar a
-intenção explícita no relatório, não como mecanismo principal.
+In practice **no exclusion list is even needed**: by rule 1 these routes reach
+no data function of the application and drop out on their own. The list in
+`boundary.ignoreEntryPoints` stays as a safety net, and to make the intent
+explicit in the report — not as the primary mechanism.
 
 ---
 
-## 3. Escrita em hook de model (`@afterCreate`, `@beforeSave`…)
+## 3. Writes inside a model hook (`@afterCreate`, `@beforeSave`…)
 
-Presente em 4 das 6 aplicações levantadas.
+Present in 4 of the 6 applications surveyed.
 
-**Decisão: o hook pertence à transação que o disparou. Nunca é transação
-própria.**
+**Decision: the hook belongs to the transaction that fired it. It is never a
+transaction of its own.**
 
-Um processo elementar é, pelo IFPUG, "the smallest unit of activity which is
+An elementary process is, under IFPUG, "the smallest unit of activity which is
 meaningful to the user, that constitutes a complete transaction, it is
 self-contained and leaves the business of the application in a consistent
-state" — e precisa **cruzar a fronteira**. Um hook não cruza fronteira nenhuma:
-ele dispara dentro de uma transação que já cruzou.
+state" — and it must **cross the boundary**. A hook crosses no boundary: it
+fires inside a transaction that already crossed one.
 
-O AFP manda agregar tudo que a transação alcança:
+AFP requires aggregating everything the transaction reaches:
 
 > "Each transaction shall be traced using static code analysis in order to
 > capture all the data functions involved, the DETs involved, and the actions
@@ -80,46 +80,49 @@ O AFP manda agregar tudo que a transação alcança:
 > shall consider these multiple optional paths to be part of the same
 > transaction in order to capture all data functions handled." — AFP §6.5.3
 
-**Consequência de implementação, e não é pequena:** quando o grafo de chamadas
-chega a uma escrita num model, o rastreador tem que **entrar também nos hooks
-daquele model**, porque eles fazem parte do mesmo caminho. Escrita em hook
-conta como acesso da transação que disparou, soma FTR, e faz da tabela alvo um
-ALI mantido pela aplicação.
+**Implementation consequence, and not a small one:** when the call graph
+reaches a write on a model, the tracer has to **step into that model's hooks**
+too, because they are part of the same path. A write in a hook counts as an
+access of the transaction that fired it, adds an FTR, and makes the target
+table an ILF maintained by the application.
 
-Ignorar hooks subconta FTR e pode deixar uma tabela classificada como AIE
-quando na verdade é ALI.
+Ignoring hooks undercounts FTR and can leave a table classified as an EIF when
+it is really an ILF.
+
+> **Not in v1.** Hooks are decided but not yet followed by the graph. Recorded
+> in `implementation-plan.md` under "After v1".
 
 ---
 
-## 4. Mixins e pacotes que alteram o model
+## 4. Mixins and packages that change the model
 
-Exemplo: `class User extends compose(UserSchema, Auditable)`.
+Example: `class User extends compose(UserSchema, Auditable)`.
 
-**Decisão: a ferramenta descobre; não existe lista de pacotes conhecidos.**
+**Decision: the tool discovers it; there is no list of known packages.**
 
-Essa é a regra certa porque qualquer pacote pode mudar a forma de um model.
-Hoje é `Auditable`; amanhã é soft-delete (acrescenta `deletedAt`),
-multi-tenancy (acrescenta `tenantId`), versionamento. Uma lista de exceções
-estaria desatualizada na semana seguinte.
+This is the right rule because any package can change the shape of a model.
+Today it is `Auditable`; tomorrow soft-delete (adding `deletedAt`),
+multi-tenancy (adding `tenantId`), versioning. A list of exceptions would be
+out of date the following week.
 
-### Colunas: o schema gerado já resolve
+### Columns: the generated schema already settles it
 
-`database/schema.ts` é gerado das migrations, então reflete as colunas que
-**de fato existem no banco** — independentemente de quem as criou. Um mixin que
-acrescenta coluna via migration própria aparece lá; uma propriedade transiente
-não aparece, e corretamente.
+`database/schema.ts` is generated from the migrations, so it reflects the
+columns that **actually exist in the database** — regardless of who created
+them. A mixin that adds a column through its own migration shows up there; a
+transient property does not, and correctly so.
 
-Verificado no `@filipebraida/adonis-auditing`: o mixin `Auditable` não declara
-nenhum `@column`. O que ele acrescenta é comportamento (`$isAuditDisabled`,
-`auditComment`, métodos) e os dados vão para uma tabela separada, criada pela
-migration do próprio pacote. Zero DET acrescentado ao model hospedeiro — e o
-schema gerado chega a essa conclusão sozinho, sem o pacote saber o que é
-auditoria.
+Verified against `@filipebraida/adonis-auditing`: the `Auditable` mixin
+declares no `@column` at all. What it adds is behaviour (`$isAuditDisabled`,
+`auditComment`, methods) and the data goes to a separate table, created by the
+package's own migration. Zero DETs added to the host model — and the generated
+schema reaches that conclusion on its own, without the package knowing what
+auditing is.
 
-### Tabelas de pacote: filtro de dados técnicos
+### Package tables: the technical data filter
 
-O problema que sobra é o inverso: a tabela `audits` **existe** e apareceria como
-ALI. O AFP prevê isso:
+The remaining problem is the inverse: the `audits` table **does exist** and
+would show up as an ILF. AFP anticipates this:
 
 > "Some data tables, namely temporary data tables and technical data tables, are
 > ignored in the sizing process in order to match the automated counting process
@@ -127,59 +130,65 @@ ALI. O AFP prevê isso:
 > be marked as such to be presented in the final report, and shall be ignored in
 > the rest of this process." — AFP §6.5.2.1.1
 
-O AFP oferece dois mecanismos, e nós acrescentamos um terceiro, melhor:
+AFP offers two mechanisms, and we add a third, better one:
 
-1. **Estrutura de lookup** (§6.5.2.1.2): uma PK, no máximo um inteiro de ordem,
-   nenhuma relação de cascade delete apontando para ela, menos de três atributos
-   de texto ou nomes casando com `name|message|type|code|description|label`.
-2. **Convenção de nome** (§6.5.2.1.3), configurável, com defaults do próprio
-   spec: `^(.+temp|.*session.*|.*error.*|.*search.*|.*login.*|.*logon.*|.*filter.*)$`,
+1. **Lookup structure** (§6.5.2.1.2): one PK, at most one ordering integer, no
+   cascade-delete relation pointing at it, fewer than three text attributes, or
+   names matching `name|message|type|code|description|label`.
+2. **Naming convention** (§6.5.2.1.3), configurable, with the spec's own
+   defaults: `^(.+temp|.*session.*|.*error.*|.*search.*|.*login.*|.*logon.*|.*filter.*)$`,
    `^(.+status)$`, `^(lkp_.+|.+types?|.+_t)$`.
-3. **Origem da escrita** — nosso: se **toda** escrita numa tabela nasce dentro
-   de código de pacote (`node_modules`) e nenhuma nasce em código da aplicação,
-   a tabela é infraestrutura daquele pacote, não função da aplicação.
+3. **Origin of the write** — ours: if **every** write to a table originates
+   inside package code (`node_modules`) and none originates in application
+   code, the table is that package's infrastructure, not a function of the
+   application.
 
-O terceiro é o que atende de verdade o "ele tem que descobrir": não depende de
-nome, não depende de lista, e funciona para pacote que ninguém previu.
+The third is what really answers "the tool has to discover it": it depends on
+no name, no list, and works for a package nobody anticipated.
 
-### A regra de fechamento do AFP
+> **Not in v1.** The `node_modules` boundary — what makes mechanism 3 possible
+> — is decided but not implemented. Mechanisms 1 and 2 are.
 
-E existe uma rede de segurança normativa acima de todas:
+### AFP's closing rule
+
+And there is a normative safety net above all of them:
 
 > "If a Data Function is not used in any of the processing of an application's
 > Transactional Functions, the Data Function shall not be counted in the
 > application." — AFP §6.5.4
 
-Tabela que nenhuma transação da aplicação toca simplesmente não entra. Isso
-elimina sozinha boa parte das tabelas de infraestrutura, sem regra nenhuma.
+A table no transaction of the application touches simply does not enter. That
+alone eliminates a good share of infrastructure tables, with no rule at all.
 
 ---
 
-## Consolidando: o que essas decisões têm em comum
+## Consolidating: what these decisions have in common
 
-Três das quatro se resolvem pela **mesma** regra — rastrear a transação até as
-funções de dados e contar o que ela alcança. Rota estática cai fora porque não
-alcança; rota de terceiro cai fora porque não alcança; hook entra porque está no
-caminho; tabela órfã cai fora porque ninguém a alcança.
+Three of the four are settled by the **same** rule — trace the transaction down
+to the data functions and count what it reaches. A static route drops out
+because it reaches nothing; a third-party route drops out because it reaches
+nothing; a hook is included because it is on the path; an orphan table drops
+out because nobody reaches it.
 
-Isso é um bom sinal de que o desenho está no eixo certo: **o grafo
-transação → dados é a espinha da contagem**, e o resto é filtro de borda.
+That is a good sign the design is on the right axis: **the transaction → data
+graph is the backbone of the count**, and the rest is boundary filtering.
 
-Também reforça a prioridade já identificada no spike: a qualidade do pacote é a
-qualidade desse rastreamento. É onde o esforço tem que ir.
+It also confirms the priority: the quality of this package is the quality of
+that tracing. That is where the effort has to go.
 
 ---
 
-## 5. Identidade de uma função entre versões (`fp:diff`)
+## 5. Identity of a function across versions (`fp:diff`)
 
-É a decisão que toca dinheiro: num contrato por demanda, o que se fatura é
-inclusão / alteração / exclusão entre duas versões. Se uma rota renomeada vira
-"exclusão + inclusão", fatura em dobro; se uma alteração real passa como "sem
-mudança", não fatura. A identidade **restringe o formato do inventário** desde a
-Fase 2, por isso é decidida antes de existir o diff.
+This is the decision that touches money: under a demand-based contract, what
+gets invoiced is additions / modifications / deletions between two versions. If
+a renamed route reads as "deletion + addition" it bills twice; if a real
+modification passes as "unchanged" it does not bill at all. Identity
+**constrains the shape of the inventory** from the collectors onward, which is
+why it was decided before the diff existed.
 
-**Base normativa: OMG Automated Enhancement Points 1.0** — a spec irmã do AFP,
-feita exatamente para medir manutenção entre duas revisões.
+**Normative basis: OMG Automated Enhancement Points 1.0** — AFP's sibling spec,
+built precisely to measure maintenance between two revisions.
 
 > "Each Artifact shall be analyzed in both revisions to determine whether it is:
 > Added — when it exists in revision ToRevision while it didn't exist in
@@ -191,63 +200,64 @@ feita exatamente para medir manutenção entre duas revisões.
 > removed from the processing flow. Computational object modification status is
 > based on their source code checksum." — AEP §6.5
 
-A AEP define também *split* e *merge* de entidades de dados (pelos DETs que
-migram de uma para outra) e *mudança de tipo* (ALI ↔ AIE), e pondera cada caso
-por um **Complexity Factor**: adicionada = 1; excluída = 0,4; modificada entre
-0,25 e 1,75 pela Tabela 6.1, com teto de 0,25–0,75 quando o que mudou é
-artefato compartilhado.
+AEP also defines _split_ and _merge_ of data entities (by the DETs migrating
+from one to another) and _type change_ (ILF ↔ EIF), and weights each case by a
+**Complexity Factor**: added = 1; deleted = 0.4; modified between 0.25 and 1.75
+per Table 6.1, capped at 0.25–0.75 when what changed is a shared artefact.
 
-### Decisão
+### Decision
 
-**Identidade de função transacional = identidade do ponto de entrada**, nunca
-da implementação:
+**Transactional function identity = entry point identity**, never the
+implementation:
 
-| tipo | chave |
-|---|---|
-| HTTP | `(verbo, padrão normalizado)` — parâmetros anonimizados (`/books/:id` ≡ `/books/:uuid`), prefixos de grupo aplicados, barra final removida |
-| comando ace | `commandName` |
-| job / listener agendado | nome da classe |
+| kind                     | key                                                                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| HTTP                     | `(verb, normalised pattern)` — parameters anonymised (`/books/:id` ≡ `/books/:uuid`), group prefixes applied, trailing slash removed |
+| ace command              | `commandName`                                                                                                                        |
+| scheduled job / listener | class name                                                                                                                           |
 
-**Não** é o nome da rota (`.as()` é opcional e cosmético — renomear não muda a
-função que o usuário vê) nem o caminho do controller (é implementação: mover
-`books_controller.ts` de módulo não altera a função).
+It is **not** the route name (`.as()` is optional and cosmetic — renaming does
+not change the function the user sees) nor the controller path (that is
+implementation: moving `books_controller.ts` between modules does not alter the
+function).
 
-**Identidade de função de dados = nome físico da tabela.** É de onde o AFP
-deriva a função de dados. Split/merge detectados como na AEP: se a maioria dos
-DETs de uma tabela aparece em outra na revisão seguinte, é split/merge, não
-exclusão + inclusão.
+**Data function identity = the physical table name.** It is what AFP derives
+the data function from.
 
-**Modificação = mudança no checksum do escopo de implementação**, como na AEP,
-com um refinamento deliberado: o checksum é do **AST normalizado** dos corpos
-alcançados (sem whitespace, sem comentários), não dos bytes do arquivo. Rodar o
-prettier não pode virar fatura.
+**Modification = a change in the checksum of the implementation scope**, as in
+AEP, with one deliberate refinement: the checksum is over the **normalised AST**
+of the bodies reached (no whitespace, no comments), not over the file bytes.
+Running Prettier must not become an invoice.
 
-**Renomeação de URL** é mudança visível ao usuário e conta como exclusão +
-inclusão — mas o relatório marca como `possível renomeação` quando o escopo de
-implementação é idêntico ao de uma função excluída, para o contador humano
-decidir. É o único caso em que a ferramenta sugere em vez de afirmar.
+**A URL rename** is a user-visible change and counts as deletion + addition.
 
-**Fatores por tipo de mudança** são configuráveis, com a AEP como default. O
-Roteiro de Métricas do SISP usa fatores próprios para inclusão/alteração/
-exclusão; entra como *preset* nomeado, com os valores conferidos contra a versão
-do roteiro em vigor no contrato — não de memória.
+**Factors per change type** are configurable, with AEP as the default. The SISP
+metrics guide uses its own factors for addition/modification/deletion; it goes
+in as a named _preset_, with the values checked against the revision of the
+guide in force in the contract — not from memory.
 
-### O que o inventário passa a carregar
+> **Not in v1.** Split/merge detection between data entities, the `possible
+rename` marker for a deleted function with an identical implementation scope,
+> and the graded modification factor (AEP Table 6.1, which needs cyclomatic
+> complexity). A modification is billed at 1 today, and the report says that
+> overestimates.
 
-- `EntryPoint.identity`: a chave acima, calculada na coleta
-- `HandlerBehavior.scope`: lista de `{ file, member, bodyHash }` alcançados
-- `DataStore.table` e os nomes dos DETs (para split/merge)
+### What the inventory therefore carries
+
+- `EntryPoint.identity`: the key above, computed at collection time
+- `Behavior.scope`: the list of `{ file, member, bodyHash }` reached
+- `DataStore.table` and the DET names
 
 ---
 
-## 6. DETs de saída (SE / CE)
+## 6. Output DETs (EO / EQ)
 
-Com Inertia, o que sai é `inertia.render('page', props)`. Model serializado
-inteiro? Só o que a tela mostra? Só o transformer? Sem decisão, toda SE tem DET
-inventado.
+With Inertia, what goes out is `inertia.render('page', props)`. The whole
+serialised model? Only what the screen shows? Only the transformer? Without a
+decision, every EO has an invented DET count.
 
-**Base normativa: o AFP conta DET de transação pelos campos de dados usados, não
-pelo que é renderizado.**
+**Normative basis: AFP counts a transaction's DETs by the data fields used, not
+by what is rendered.**
 
 > "A data function shall be identified as used if any of its tables or table
 > fields are used. Each data function (ILF or EIF) shall be identified as a File
@@ -256,71 +266,99 @@ pelo que é renderizado.**
 > complete the Output Transaction. If a DET both enters and exits the boundary,
 > count that DET only once." — AFP §7.3
 
-E o AFP é explícito sobre a prioridade quando isso diverge do contador humano:
+And AFP is explicit about the priority when this diverges from a human counter:
 
 > "This specification prioritizes repeatability and consistency over consistency
 > with the IFPUG CPM counting guidelines." — AFP §6.1
 
-### Decisão
+### Decision
 
-DETs de uma SE = **união dos campos distintos dos data stores lidos no escopo de
-implementação**, estreitada pelo que for estaticamente visível:
+The DETs of an EO = **the union of the distinct fields of the data stores read
+in the implementation scope**, narrowed by whatever is statically visible:
 
-| o código faz | DETs |
-|---|---|
-| `Book.query()` / `selectFrom('books').selectAll()` | todas as colunas de `books` |
-| `.select(['title', 'isbn'])` | só as selecionadas |
-| `.preload('author')` / join | + colunas do relacionado |
-| passa por transformer / DTO que lista campos | **as chaves do transformer** — é o que cruza a fronteira |
-| prop escalar derivada (`total`, `canEdit`) | 1 DET cada — dado derivado saindo da fronteira |
-| campo que entra e sai (filtro ecoado na tela) | conta uma vez |
+| what the code does                                        | DETs                                                           |
+| --------------------------------------------------------- | -------------------------------------------------------------- |
+| `Book.query()` / `selectFrom('books').selectAll()`        | every column of `books`                                        |
+| `.select(['title', 'isbn'])`                              | only the selected ones                                         |
+| `.preload('author')` / join                               | + the related columns                                          |
+| passes through a transformer / DTO listing fields         | **the transformer's keys** — that is what crosses the boundary |
+| a derived scalar prop (`total`, `canEdit`)                | 1 DET each — derived data leaving the boundary                 |
+| a field that enters and exits (a filter echoed on screen) | counted once                                                   |
 
-**Divergência conhecida e aceita:** o contador humano conta os campos *exibidos*;
-sem `.select()` nem transformer, nós contamos a tabela inteira e superestimamos.
-É a troca que o AFP faz de propósito — repetibilidade sobre fidelidade — e vai
-para o `Rationale` de cada função como `detSource: 'all-columns'` vs
-`'transformer'` vs `'select'`, para o `fp:calibrate` medir o viés por origem.
+**Known and accepted divergence:** a human counter counts the fields
+_displayed_; with no `.select()` and no transformer we count the whole table and
+overestimate. That is the trade AFP makes on purpose — repeatability over
+fidelity — and it goes into each function's `Rationale` as
+`detSource: 'all-columns'` vs `'transformer'` vs `'select'`, so `fp:calibrate`
+can measure the bias per origin.
 
-**Mensagens de erro/confirmação:** o IFPUG manual conta +1 DET; o AFP não. Segue
-o AFP. O estudo do Ligeiro mostrou que essa é a divergência sistemática de −1 DET
-por transação; fica como `messageDet: 0 | 1` na config, para calibração, com
-default 0.
+**Error and confirmation messages:** the IFPUG manual counts +1 DET; AFP does
+not. We follow AFP. The Ligeiro study showed this is the systematic −1 DET per
+transaction divergence; it stays as `messageDet: 0 | 1` in the configuration,
+for calibration, defaulting to 0.
 
 ---
 
-## 7. DETs para tipos compostos (entrada)
+## 7. DETs for composite types (input)
 
-Validators VineJS e tipos do registry têm objeto aninhado, array, union, spread.
-O spike usou "+3 para spread" — chute, e chute é o que este pacote existe para
-eliminar.
+VineJS validators and registry types have nested objects, arrays, unions and
+spreads. The spike used "+3 for a spread" — a guess, and guessing is what this
+package exists to eliminate.
 
-**Base normativa:**
+**Normative basis:**
 
 > "A data element type is a unique user recognizable, non-repeated attribute
-> that is part of an ILF, EIF, EI or EO." — AFP §4, citando ISO/IEC 20926
+> that is part of an ILF, EIF, EI or EO." — AFP §4, citing ISO/IEC 20926
 >
 > "Count only one DET for each unique field that is required to complete the
 > External Input." — AFP §7.3
 
-E a regra IFPUG para grupo repetitivo: DET recursivo conta só na primeira
-ocorrência.
+Plus the IFPUG rule for a repeating group: a recursive DET counts only on its
+first occurrence.
 
-### Decisão
+### Decision
 
-| forma no validator / tipo | DETs | por quê |
-|---|---|---|
-| campo escalar | 1 | atributo único |
-| `vine.object({ a, b })` aninhado | folhas contadas individualmente | o usuário preenche cada uma |
-| `vine.array(vine.string())` | 1 | grupo repetitivo de um atributo |
-| `vine.array(vine.object({ a, b }))` | folhas do objeto, **uma vez** | grupo repetitivo conta na primeira ocorrência |
-| `vine.enum(...)` / union | 1 | um atributo com domínio |
-| `.optional()` / `.nullable()` | 1 | o campo existe |
-| parâmetro de rota (`:id`) | 1 cada | entrada exigida para completar |
-| upload de arquivo | 1 | um atributo |
-| `...base.getProperties()` (spread) | folhas do `base`, **resolvido** | se não resolver, conta **0 e entra em `unresolved`** — nunca chuta |
-| campo que entra e sai | 1 | AFP §7.3 |
-| botão/comando de submissão | 0 | IFPUG manual conta 1; AFP não. Config `commandDet`, default 0 |
+| shape in the validator / type       | DETs                               | why                                                                             |
+| ----------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------- |
+| scalar field                        | 1                                  | a unique attribute                                                              |
+| nested `vine.object({ a, b })`      | leaves counted individually        | the user fills in each one                                                      |
+| `vine.array(vine.string())`         | 1                                  | repeating group of one attribute                                                |
+| `vine.array(vine.object({ a, b }))` | the object's leaves, **once**      | a repeating group counts on its first occurrence                                |
+| `vine.enum(...)` / union            | 1                                  | one attribute with a domain                                                     |
+| `.optional()` / `.nullable()`       | 1                                  | the field exists                                                                |
+| route parameter (`:id`)             | 1 each                             | input required to complete                                                      |
+| file upload                         | 1                                  | one attribute                                                                   |
+| `...base.getProperties()` (spread)  | the leaves of `base`, **resolved** | if it does not resolve, it counts **0 and enters `unresolved`** — never a guess |
+| a field that enters and exits       | 1                                  | AFP §7.3                                                                        |
+| the submit button / command         | 0                                  | the IFPUG manual counts 1; AFP does not                                         |
 
-Com Tuyau presente, o `body` do registry é a mesma árvore já resolvida (spread
-inclusive) e prevalece sobre o AST do validator. As duas fontes têm que dar o
-mesmo número — é um teste da Fase 3.
+> **Not in v1.** Cross-checking against the Tuyau registry, whose `body` is the
+> same tree already resolved (spreads included) and should prevail over the
+> validator AST. The two sources must produce the same number.
+
+---
+
+## The total is more defensible than any single function
+
+Worth stating plainly, because it shapes how the output should be used.
+
+The spike built two independent implementations — one at file level, one at
+method level — which classified transactions quite differently, and their
+totals landed within 5% of each other. The reason is arithmetic: a low EI is
+worth 3 and a low EO is worth 4, so misclassifying one for the other moves the
+total by a single point.
+
+The Vazquez benchmark confirmed it from outside: 8 of the 10 functions match
+the published count exactly, and the two that do not are +1 and −1, cancelling
+into an exact total.
+
+The consequence cuts both ways:
+
+- **Good for aggregate billing.** The total is stable under the classification
+  decisions that are hardest to automate.
+- **Bad for defending a single function in an audit.** Per-function agreement
+  is weaker than the total suggests.
+
+This is the central justification for `fp:explain`, and the reason the
+per-function agreement is reported next to the total in the benchmark rather
+than hidden behind it.

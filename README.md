@@ -278,13 +278,15 @@ The reasoning behind the count lives with the code:
   each edge case, with the AFP rule that settles it
 - [`docs/design/resolvers.md`](docs/design/resolvers.md) — the catalogue of code
   patterns and how each is followed
-- [`docs/design/implementation-plan.md`](docs/design/implementation-plan.md) —
-  how it was built, phase by phase, and what each phase found
-- [`docs/research/adonisjs-variation.md`](docs/research/adonisjs-variation.md)
-  and
-  [`docs/research/external-validation.md`](docs/research/external-validation.md)
-  — what varies between real AdonisJS applications, measured in-house and then
-  outside the sample
+
+Three further documents are kept as a **dated record** of how the design was
+arrived at, in Portuguese, and are not a reference for current behaviour:
+[`implementation-plan.md`](docs/design/implementation-plan.md) (built phase by
+phase, and what each phase found),
+[`adonisjs-variation.md`](docs/research/adonisjs-variation.md) (what varies
+between real AdonisJS applications) and
+[`external-validation.md`](docs/research/external-validation.md) (the thesis
+tested outside the sample that produced it).
 
 ## Contributing
 

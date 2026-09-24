@@ -1,75 +1,76 @@
-# Estratégias de rastreamento
+# Tracing strategies
 
-Catálogo dos padrões de organização que aparecem em apps AdonisJS e o estado de
-cada um. A lista é aberta por construção — ver
+Catalogue of the organisation patterns that appear in AdonisJS applications and
+the state of each one. The list is open by construction — see
 `src/inventory/resolvers/types.ts`.
 
-| padrão | exemplo | estratégia | estado |
-|---|---|---|---|
-| controller gordo | `await User.create(payload)` | detector Lucid | **feito** |
-| método da própria classe | `await this.persistExpiration(x)` | `same-class-method` | **feito** |
-| action object | `await new CreateUser().handle(p)` | `action-object` | **feito** |
-| action em variável | `const a = new CreateUser(); a.handle()` | `action-object` | **feito** |
-| service estático | `await UserService.create(p)` | `static-service` | **feito** |
-| service injetado | `constructor(private users: UserService)` + `this.users.create(p)` | `property-service` | **feito** — resolve pela anotação de tipo, **sem type checker** |
-| repositório Kysely | `this.repo.create(p)` → `db.insertInto('users')` | `property-service` + detector Kysely | **obrigatório** — sem Lucid, é a escrita |
-| função de módulo | `await createUser(p)` | `module-function` | **feito** |
-| job | `await CreateUserJob.dispatch(p)` | `job-dispatch` | **feito** |
-| query builder | `db.table('users').insert(p)` | detector próprio | a fazer |
+| pattern              | example                                                            | strategy                             | state                                                             |
+| -------------------- | ------------------------------------------------------------------ | ------------------------------------ | ----------------------------------------------------------------- |
+| fat controller       | `await User.create(payload)`                                       | Lucid detector                       | **done**                                                          |
+| same-class method    | `await this.persistExpiration(x)`                                  | `same-class-method`                  | **done**                                                          |
+| action object        | `await new CreateUser().handle(p)`                                 | `action-object`                      | **done**                                                          |
+| action in a variable | `const a = new CreateUser(); a.handle()`                           | `action-object`                      | **done**                                                          |
+| static service       | `await UserService.create(p)`                                      | `static-service`                     | **done**                                                          |
+| injected service     | `constructor(private users: UserService)` + `this.users.create(p)` | `property-service`                   | **done** — resolved from the type annotation, **no type checker** |
+| module function      | `await createUser(p)`                                              | `module-function`                    | **done**                                                          |
+| job                  | `await CreateUserJob.dispatch(p)`                                  | `job-dispatch`                       | **done**                                                          |
+| Kysely repository    | `this.repo.create(p)` → `db.insertInto('users')`                   | `property-service` + Kysely detector | after v1 — Kysely is detected and reported as unsupported         |
+| query builder        | `db.table('users').insert(p)`                                      | its own detector                     | after v1                                                          |
 
-## Primeira que reivindica, vence
+## First to claim it, wins
 
-Formas sintaticamente idênticas têm significados diferentes:
-`CreateUserJob.dispatch(p)` e `UserService.create(p)` são ambas
-`Identificador.metodo(args)`. Só a ORDEM separa uma da outra.
+Syntactically identical shapes carry different meanings:
+`CreateUserJob.dispatch(p)` and `UserService.create(p)` are both
+`Identifier.method(args)`. Only the ORDER tells them apart.
 
-Isso não foi projetado — foi descoberto por um teste, que flagrou
-`static-service` engolindo a fixture de job. Por isso `resolveCall()` para na
-primeira estratégia que devolve resultado, e há um teste de regressão
-afirmando qual estratégia reivindica cada padrão.
+This was not designed — it was discovered by a test, which caught
+`static-service` swallowing the job fixture. Hence `resolveCall()` stops at the
+first strategy that returns a result, and there is a regression test asserting
+which strategy claims each pattern.
 
-Consequência: `module-function` fica por último. Ela casa com qualquer chamada
-de identificador importado e engoliria todos os casos mais precisos.
+Consequence: `module-function` comes last. It matches any call on an imported
+identifier and would swallow every more precise case.
 
-Outra armadilha da mesma família: `Invite.findByOrFail(...)` também é
-`Identificador.metodo(args)`. Model é repositório de dados, não corpo a
-percorrer — daí a invariante de ordem em `ResolverContext.dataStoresBySymbol`:
-os DataStores são coletados ANTES de qualquer análise de handler.
+Another trap in the same family: `Invite.findByOrFail(...)` is also
+`Identifier.method(args)`. A model is a data store, not a body to walk into —
+hence the ordering invariant in `ResolverContext.dataStoresBySymbol`: data
+stores are collected BEFORE any handler is analysed.
 
-## `@inject()` não precisa de type checker
+## `@inject()` does not need the type checker
 
-Uma análise anterior deste projeto afirmou que resolver
-`constructor(protected billing: BillingService)` exigiria o type checker do
-TypeScript, e tratou isso como a decisão mais cara do desenho.
+An earlier analysis in this project claimed that resolving
+`constructor(protected billing: BillingService)` would require the TypeScript
+type checker, and treated that as the most expensive decision in the design.
 
-**Estava errado.** O `@inject()` do AdonisJS só funciona com a anotação de tipo
-explícita — é dela que o container tira o que injetar. Então o tipo está sempre
-no AST, como identificador importado, e resolve pelo mesmo caminho de qualquer
-import.
+**It was wrong.** AdonisJS `@inject()` only works with an explicit type
+annotation — that annotation is how the container knows what to inject. So the
+type is always in the AST, as an imported identifier, and resolves through the
+same path as any import.
 
-Importava muito: numa app de produção, 68 rotas de escrita paravam no primeiro
-passo com `this.algumServiço.metodo()`. Resolver isso levou a detecção de EE de
-40 para 84 em 161 rotas.
+It mattered a great deal: in a production application, 68 write routes stopped
+at the first step on `this.someService.method()`. Resolving it took EI
+detection from 40 to 84 out of 161 routes.
 
-## Decisão tomada: jobs
+## Decision taken: jobs
 
-Quando o handler despacha um job que escreve, a escrita é parte da **mesma**
-função transacional, ou é uma função própria?
+When a handler dispatches a job that writes, is the write part of the **same**
+transactional function, or a function of its own?
 
-O IFPUG conta pelo que o usuário reconhece. Se a pessoa clica "finalizar" e o
-efeito esperado acontece, é uma transação só — mesmo que a execução seja
-assíncrona. Isso sugere seguir o job como parte da transação que o despacha.
+IFPUG counts by what the user recognises. If someone clicks "finish" and the
+expected effect happens, it is one transaction — even if execution is
+asynchronous. That argues for following the job as part of the transaction that
+dispatches it.
 
-Mas um job **agendado**, que ninguém dispara, é um ponto de entrada próprio.
+But a **scheduled** job, which nobody dispatches, is an entry point of its own.
 
-**Decisão:** o job despachado por um handler é seguido como parte da mesma
-função transacional. Job agendado, que ninguém dispara, é ponto de entrada
-próprio — e fica fora do v1, que só coleta rotas HTTP.
+**Decision:** a job dispatched by a handler is followed as part of the same
+transactional function. A scheduled job, which nobody dispatches, is an entry
+point of its own — and stays out of v1, which collects only HTTP routes.
 
-## Ordem
+## Order
 
-`order` menor roda primeiro. Estratégias específicas antes das genéricas:
-`module-function` por último, porque casa com qualquer chamada de identificador
-importado e engoliria os casos mais precisos.
+A lower `order` runs first. Specific strategies before generic ones:
+`module-function` last, because it matches any call on an imported identifier
+and would swallow the more precise cases.
 
-Estratégias vindas da config do usuário entram antes das embutidas.
+Strategies coming from the user's configuration run before the built-in ones.

@@ -1,5 +1,10 @@
 # Variação estrutural em aplicações AdonisJS
 
+> **Registro datado — setembro/2026.** Este documento descreve o que foi medido e
+> decidido naquele momento, não o comportamento atual do pacote. Conclusões
+> daqui podem ter sido revistas depois; a referência viva é
+> [`../design/architecture.md`](../design/architecture.md).
+
 Levantamento empírico sobre **6 aplicações AdonisJS 7 de produção**, feito para
 responder uma pergunta: quanto do desenho pode depender de convenção de pasta?
 
@@ -10,12 +15,12 @@ gerados que atravessam todos os layouts.
 
 ### 1. Layout de diretórios — duas famílias incompatíveis
 
-| forma | apps | caminho de um model |
-|---|---|---|
-| MVC plano | 2 de 6 | `app/models/egresso.ts` |
+| forma              | apps   | caminho de um model            |
+| ------------------ | ------ | ------------------------------ |
+| MVC plano          | 2 de 6 | `app/models/egresso.ts`        |
 | módulo por domínio | 4 de 6 | `app/collect/models/invite.ts` |
 
-Os *tipos* de artefato são os mesmos nas duas (models, controllers, services,
+Os _tipos_ de artefato são os mesmos nas duas (models, controllers, services,
 actions, queries, validators, transformers, jobs, policies). Só muda o
 aninhamento. Mas um glob como `app/*/models/*.ts` acerta uma família e erra a
 outra em 100% dos casos.
@@ -38,13 +43,13 @@ das duas famílias.
 
 Contagem de chamadas de escrita por tipo de artefato:
 
-| app | controllers | services | actions | queries | jobs | models |
-|---|---|---|---|---|---|---|
-| starter-kit | 0 | 3 | **15** | 0 | 0 | 3 |
-| app B | 14 | 16 | **92** | 0 | 0 | 0 |
-| app D | 1 | 7 | **33** | 0 | 5 | 3 |
-| app C | 27 | **154** | 131 | 8 | 63 | 5 |
-| app A | 0 | 1 | **135** | 0 | 1 | 1 |
+| app         | controllers | services | actions | queries | jobs | models |
+| ----------- | ----------- | -------- | ------- | ------- | ---- | ------ |
+| starter-kit | 0           | 3        | **15**  | 0       | 0    | 3      |
+| app B       | 14          | 16       | **92**  | 0       | 0    | 0      |
+| app D       | 1           | 7        | **33**  | 0       | 5    | 3      |
+| app C       | 27          | **154**  | 131     | 8       | 63   | 5      |
+| app A       | 0           | 1        | **135** | 0       | 1    | 1      |
 
 Nenhuma aplicação é pura. A mais concentrada (`app A`) ainda espalha por 4 tipos;
 a mais dispersa usa os 6. **Há escrita dentro de models** em 4 das 6 — hooks do
@@ -55,12 +60,12 @@ que seguir o grafo de chamadas onde ele for.
 
 ### 4. Definição de model — a variação mais perigosa
 
-| estilo | exemplo |
-|---|---|
-| direto | `class Invite extends BaseModel` com `@column` no próprio arquivo |
-| base própria | `class Invite extends BaseModel` onde `BaseModel` é local, não do Lucid |
-| schema gerado | `class Egresso extends EgressoSchema` — sem nenhum `@column` |
-| schema + mixin | `class User extends compose(UserSchema, Auditable)` |
+| estilo         | exemplo                                                                 |
+| -------------- | ----------------------------------------------------------------------- |
+| direto         | `class Invite extends BaseModel` com `@column` no próprio arquivo       |
+| base própria   | `class Invite extends BaseModel` onde `BaseModel` é local, não do Lucid |
+| schema gerado  | `class Egresso extends EgressoSchema` — sem nenhum `@column`            |
+| schema + mixin | `class User extends compose(UserSchema, Auditable)`                     |
 
 Em `app A`, **35 arquivos de model e zero `extends BaseModel` do Lucid**; só 3 têm
 `@column`. Detectar model por `extends BaseModel` ou contar DET por `@column` no
@@ -128,14 +133,14 @@ export class AcompanhamentoSchema extends BaseModel {
 Gerado a partir das migrations, com **lista canônica de colunas**. Presente nas
 6 apps, de 2 a 48 classes:
 
-| app | classes | colunas |
-|---|---|---|
-| starter-kit | 8 | 55 |
-| app B | 45 | 395 |
-| app D | 17 | 152 |
-| app C | 39 | 400 |
-| app A | 48 | 406 |
-| adonis-modal (playground) | 2 | 11 |
+| app                       | classes | colunas |
+| ------------------------- | ------- | ------- |
+| starter-kit               | 8       | 55      |
+| app B                     | 45      | 395     |
+| app D                     | 17      | 152     |
+| app C                     | 39      | 400     |
+| app A                     | 48      | 406     |
+| adonis-modal (playground) | 2       | 11      |
 
 O caminho varia (`app/core/database/schema.ts` ou `database/schema.ts`), mas o
 arquivo se identifica pelo cabeçalho de geração e pelas classes `*Schema`.
@@ -151,13 +156,13 @@ app onde o schema gerado tem 400. O spike subcontou DETs em ~20%, e a figura de
 A pergunta "regex de pastas ou lista de pastas configurável?" tem uma terceira
 resposta, melhor: **para contar, o tipo de pasta é irrelevante.**
 
-| o que a contagem precisa | de onde vem | depende de pasta? |
-|---|---|---|
-| funções de dados e seus DETs | `database/schema.ts` gerado | não |
-| transações, verbos, DETs de entrada | registry gerado | não |
-| corpo do handler | `controllers.ts` gerado, ou o AST da rota | não |
-| onde a escrita acontece | grafo de chamadas a partir do handler | não |
-| se é escrita | call site sobre símbolo de data store | não |
+| o que a contagem precisa            | de onde vem                               | depende de pasta? |
+| ----------------------------------- | ----------------------------------------- | ----------------- |
+| funções de dados e seus DETs        | `database/schema.ts` gerado               | não               |
+| transações, verbos, DETs de entrada | registry gerado                           | não               |
+| corpo do handler                    | `controllers.ts` gerado, ou o AST da rota | não               |
+| onde a escrita acontece             | grafo de chamadas a partir do handler     | não               |
+| se é escrita                        | call site sobre símbolo de data store     | não               |
 
 Pasta serve para três coisas, todas secundárias:
 
@@ -165,10 +170,16 @@ Pasta serve para três coisas, todas secundárias:
 2. **configurar a fronteira** (excluir módulo de infraestrutura)
 3. **override** de casos exóticos que o detector não pegou
 
-Nunca para *encontrar* as coisas. Um pacote que encontra models em
+Nunca para _encontrar_ as coisas. Um pacote que encontra models em
 `app/**/models/` conta zero em `app A`.
 
 ### Gerado primeiro, AST depois, convenção nunca
+
+> **Invertido depois.** A validação externa mostrou que os artefatos gerados só
+> existem em core 7 + Lucid 22 + Tuyau. A ordem em vigor é AST como base e
+> gerado como upgrade de precisão — ver
+> [`external-validation.md`](external-validation.md) e o escopo do v1 em
+> `../design/architecture.md`. A ordem abaixo é a que esta medição sugeria.
 
 Ordem de preferência das fontes:
 
@@ -188,15 +199,18 @@ versionados — mas isso é escolha de cada projeto. O pacote tem que:
 - oferecer caminho alternativo (bootar a app e usar `router.toJSON()`);
 - nunca assumir que o registry reflete o código atual sem verificar.
 
-## Casos que ainda precisam de decisão
+## Casos que precisavam de decisão — todos decididos
 
-- `router.on(...).renderInertia(...)` — transação sem handler. É SE/CE de
-  apresentação? Conta com quantos DETs?
-- Rotas registradas por pacotes de terceiros (`transmit.registerRoutes`) —
-  infraestrutura, fora da fronteira, provavelmente.
-- Escrita em hooks de model (`@afterCreate`) — pertence a qual transação?
-- Mixins via `compose(Schema, Auditable)` — atributos herdados do mixin contam
-  como DET? (O Auditable não acrescenta coluna ao usuário.)
+Os quatro casos que este levantamento deixou em aberto viraram as decisões §1 a
+§4 de [`../design/counting-decisions.md`](../design/counting-decisions.md), cada
+uma com a citação normativa que a sustenta:
+
+| caso levantado aqui                                         | decisão                                                |
+| ----------------------------------------------------------- | ------------------------------------------------------ |
+| `router.on(...).renderInertia(...)` — transação sem handler | §1 — não alcança dado, não conta                       |
+| rotas de pacotes de terceiros (`transmit.registerRoutes`)   | §2 — infraestrutura, fora da fronteira                 |
+| escrita em hook de model (`@afterCreate`)                   | §3 — pertence à transação que o disparou               |
+| mixins via `compose(Schema, Auditable)`                     | §4 — o schema gerado resolve; nada de lista de pacotes |
 
 ## Aplicações levantadas
 
