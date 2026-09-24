@@ -63,7 +63,9 @@
     "metrics",
     "code-metrics",
     "static-analysis",
-    "software-measurement"
+    "software-measurement",
+    "cli",
+    "ci"
   ],
   "author": "Filipe Braida <filipebraida@gmail.com>",
   "license": "MIT",

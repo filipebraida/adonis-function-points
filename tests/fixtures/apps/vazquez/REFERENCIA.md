@@ -1,109 +1,101 @@
-# Vazquez benchmark — reference count and transcription choices
+# Benchmark Vazquez — gabarito e escolhas de transcrição
 
-Case study from **Vazquez, Simões and Albert (2011)**, with a published manual
-count. Used as the reference by the Ligeiro dissertation (Pinel, COPPE/UFRJ,
-2012), which counted it automatically from MDArte models.
+Estudo de caso de **Vazquez, Simões e Albert (2011)**, com contagem manual
+publicada. Usado como gabarito pela dissertação do Ligeiro (Pinel, COPPE/UFRJ,
+2012), que o contou automaticamente a partir de modelos MDArte.
 
-It is this project's only external benchmark: a count we did not make, over a
-specification we did not write.
+É o único benchmark externo deste projeto: uma contagem que não foi feita por
+nós, sobre uma especificação que não escrevemos.
 
-The system and the function names are Brazilian Portuguese, as published. They
-are kept verbatim so every line here can be checked against the source.
+## O sistema
 
-## The system
+Registro de ponto. O trabalhador registra entradas e saídas, justifica quando
+esquece de registrar ou quando altera um registro, e consulta suas horas. Cada
+trabalhador vê só os próprios dados. O gerente emite relatório de presença de
+todos.
 
-Time and attendance. A worker records clock-ins and clock-outs, justifies a
-missed or amended entry, and checks their hours. Each worker sees only their
-own data. The manager issues an attendance report covering everyone.
+## Gabarito: 46 PF não ajustados
 
-## Reference: 46 unadjusted FP
+Coluna "VAZQUEZ et al. (2011)" da Tabela 6.7 da dissertação.
 
-Column "VAZQUEZ et al. (2011)" of Table 6.7 in the dissertation.
-
-| function | type | RET/FTR | DET | complexity | FP |
+| função | tipo | AR/TR | TD | complexidade | PF |
 |---|---|---|---|---|---|
-| Pessoa | EIF | 1 | 4 | low | 5 |
-| Justificativa | ILF | 1 | 3 | low | 7 |
-| Apontamento | ILF | 1 | 4 | low | 7 |
-| Consulta Apontamento Diário | EQ | 1 | 5 | low | 3 |
-| Registro de Ponto | EI | 1 | 3 | low | 3 |
-| Alteração de Apontamento | EI | 2 | 5 | average | 4 |
-| Exclusão de Apontamento | EI | 2 | 2 | low | 3 |
-| Apontamento c/ Justificativa | EI | 2 | 5 | average | 4 |
-| Emitir Relatório de Presença | EO | 3 | 9 | average | 5 |
-| Acompanhar Presença | EO | 3 | 10 | average | 5 |
+| Pessoa | AIE | 1 | 4 | baixa | 5 |
+| Justificativa | ALI | 1 | 3 | baixa | 7 |
+| Apontamento | ALI | 1 | 4 | baixa | 7 |
+| Consulta Apontamento Diário | CE | 1 | 5 | baixa | 3 |
+| Registro de Ponto | EE | 1 | 3 | baixa | 3 |
+| Alteração de Apontamento | EE | 2 | 5 | média | 4 |
+| Exclusão de Apontamento | EE | 2 | 2 | baixa | 3 |
+| Apontamento c/ Justificativa | EE | 2 | 5 | média | 4 |
+| Emitir Relatório de Presença | SE | 3 | 9 | média | 5 |
+| Acompanhar Presença | SE | 3 | 10 | média | 5 |
 | **total** | | | | | **46** |
 
-Data functions 19, transactional 27.
+Funções de dados 19, transacionais 27.
 
-### How the number was established, and the correction it required
+### Como o número foi apurado, e a correção que exigiu
 
-This document claimed 56 FP in earlier versions. That was wrong.
+Este documento afirmava 56 PF em versões anteriores. Estava errado.
 
-The PDF extraction interleaved the page number between the two totals of Table
-6.5, and the page number was read as if it were the reference. The
-dissertation's own text removes the ambiguity: *"os valores totais calculados
-pelas abordagens são diferentes, tendo o processo automático obtido o maior
-valor"* (the totals calculated by the two approaches differ, with the automated
-process obtaining the higher value) — the automated one (Ligeiro) is 52, so the
-reference is **lower** than 52.
+A extração do PDF interleava o número da página entre os dois totais da Tabela
+6.5, e o número da página foi lido como se fosse o gabarito. O texto da própria
+dissertação desfaz a ambiguidade: *"os valores totais calculados pelas
+abordagens são diferentes, tendo o processo automático obtido o maior valor"* —
+o automático (Ligeiro) é 52, logo a referência é **menor** que 52.
 
-Summing the Vazquez column by hand: 19 + 27 = 46. And Table 6.7 shows the same
-interleaving pattern (`Total 43 / [page 61] / Total 46`), which confirms the
-reading.
+Somando a coluna de Vazquez à mão: 19 + 27 = 46. E a Tabela 6.7 exibe o mesmo
+padrão de interleaving (`Total 43 / [página 61] / Total 46`), o que confirma a
+leitura.
 
-## Counts to compare against
+## Referências para comparação
 
-| count | total | vs reference |
+| contagem | total | vs gabarito |
 |---|---|---|
-| Vazquez et al., published manual count | 46 | — |
-| Ligeiro, automated over MDArte models | 52 | +13% |
-| manual following Ligeiro's own rules | 43 | −6.5% |
+| Vazquez et al., manual publicada | 46 | — |
+| Ligeiro, automática sobre modelos MDArte | 52 | +13% |
+| manual seguindo as regras do Ligeiro | 43 | −6,5% |
 
-## Divergences Ligeiro itself documented
+## Divergências que o próprio Ligeiro documentou
 
-Three groups, and all three apply to any automated counter:
+Três grupos, e as três se aplicam a qualquer contador automático:
 
-1. **User messages** are worth 1 DET in a manual count and are invisible to
-   static analysis. This produces −1 DET per transaction, which sometimes
-   crosses a complexity band.
-2. **FTRs counted by code dependency** come out higher than the user's view. In
-   "Registro de Ponto" the code uses 3 data functions and the human counter
-   recognised 1.
-3. **EO vs EQ** is statically undecidable, because it depends on whether there
-   is calculation or derived data.
+1. **Mensagens ao usuário** valem 1 DET na contagem manual e são invisíveis para
+   análise estática. Produz −1 DET por transação, o que às vezes cruza a faixa
+   de complexidade.
+2. **ARs contados por dependência de código** ficam maiores que a visão do
+   usuário. Em "Registro de Ponto", o código usa 3 funções de dados e o contador
+   humano reconheceu 1.
+3. **SE vs CE** é indecidível estaticamente, porque depende de haver cálculo ou
+   dado derivado.
 
-## Divergences expected from OUR counter
+## Divergências esperadas do NOSSO contador
 
-Predicted before the run, and they come from the standard, not from defects:
+Previstas antes de rodar, e são da norma, não defeitos:
 
-- **EQ collapsed into EO** (AFP §6.5.3, explicit). "Consulta Apontamento
-  Diário" is an EQ worth 3 FP in the reference; as an EO with 1 FTR and 5 DETs
-  it is worth 4. **+1 FP.**
-- **Messages not counted** (`messageDet: 0`, the AFP default): −1 DET per
-  transaction, which can lower complexity in borderline cases.
-- **Output DETs taken from the whole table read** when there is no visible
-  `select` and no transformer (counting-decisions §6): tends to
-  **overestimate**.
+- **CE colapsado em SE** (AFP §6.5.3, explícito). "Consulta Apontamento Diário"
+  é CE de 3 PF no gabarito; como SE com 1 FTR e 5 DET, vale 4. **+1 PF.**
+- **Mensagens não contadas** (`messageDet: 0`, default AFP): −1 DET por
+  transação, o que pode reduzir complexidade em casos limítrofes.
+- **DETs de saída pela tabela lida inteira** quando não há `select` nem
+  transformer visível (counting-decisions §6): tende a **superestimar**.
 
-## Transcription choices
+## Escolhas de transcrição
 
-The specification is written as use cases and screens; it became an AdonisJS
-app. Each choice below can move the number, so it is recorded **before** the
-comparison:
+A especificação é de casos de uso e telas; virou uma app AdonisJS. Cada escolha
+abaixo pode mover o número, então fica registrada **antes** de comparar:
 
-| decision | choice | why |
+| decisão | escolha | por quê |
 |---|---|---|
-| `Pessoa` outside the boundary | a model the app never writes | the reference classifies it as an EIF: it belongs to access control |
-| DETs of `Pessoa` | 4 non-identifier attributes | matches the reference's 4 DETs |
-| DETs of `Justificativa` | 3 | same |
-| DETs of `Apontamento` | 4 | same |
-| input fields | one VineJS validator per write transaction | it is where the app declares what the user supplies |
-| reports | read with `preload`, no transformer | the reference counts 9 and 10 DETs, i.e. fields from several entities |
-| "Efetuar Login" | **excluded** | the dissertation excluded it from the comparison, because MDArte generated it |
-| "Registrar Justificativa" | its own transaction | the reference counts it separately ("Apontamento c/ Justificativa"); only Ligeiro merged it |
+| `Pessoa` fora da fronteira | model sem escrita pela app | o gabarito a classifica como AIE: é parte do controle de acesso |
+| DETs de `Pessoa` | 4 atributos não identificadores | bate com os 4 TDs do gabarito |
+| DETs de `Justificativa` | 3 | idem |
+| DETs de `Apontamento` | 4 | idem |
+| campos de entrada | um validator VineJS por transação de escrita | é onde a app declara o que o usuário informa |
+| relatórios | leitura com `preload`, sem transformer | o gabarito conta 9 e 10 DETs, ou seja, campos de várias entidades |
+| "Efetuar Login" | **fora** | a dissertação o excluiu da comparação, porque o MDArte o gerava |
+| "Registrar Justificativa" | transação própria | o gabarito a conta separada ("Apontamento c/ Justificativa"); só o Ligeiro a agregou |
 
-**What was NOT done:** no transcription choice was adjusted after seeing the
-counter's result. The fixture and this document land in their own commit, and
-the result of the comparison lands in the next one — whatever it turns out to
-be.
+**O que NÃO foi feito:** nenhuma escolha de transcrição foi ajustada depois de
+ver o resultado do contador. A fixture e este documento entram em commit próprio,
+e o resultado da comparação entra no commit seguinte — qualquer que seja.

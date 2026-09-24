@@ -164,7 +164,8 @@ function-by-function agreement rather than on its own.
 
 Reproduce it with `npm test` — the benchmark is
 `tests/acceptance/vazquez.spec.ts`, and the reference is
-[`tests/fixtures/apps/vazquez/REFERENCIA.md`](tests/fixtures/apps/vazquez/REFERENCIA.md).
+[`tests/fixtures/apps/vazquez/REFERENCIA.md`](tests/fixtures/apps/vazquez/REFERENCIA.md)
+(in Portuguese, like the case study it transcribes).
 
 ## Principles
 
@@ -337,7 +338,7 @@ tested outside the sample that produced it).
 
 ```bash
 npm install
-npm test          # lint + 210 tests
+npm test          # lint + 231 tests
 npm run typecheck
 ```
 
