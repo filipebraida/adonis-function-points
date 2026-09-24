@@ -1,4 +1,4 @@
-import type { CallResolver, ResolverRegistry } from './types.js'
+import type { CallResolver } from './types.js'
 
 import { actionObjectResolver } from './action_object.js'
 import { jobDispatchResolver } from './job_dispatch.js'
@@ -44,16 +44,4 @@ export function resolveCall(
     if (refs.length > 0) return { by: resolver.name, refs }
   }
   return null
-}
-
-export function createRegistry(extra: Partial<ResolverRegistry> = {}): ResolverRegistry {
-  const byOrder = (a: { order?: number }, b: { order?: number }) =>
-    (a.order ?? 100) - (b.order ?? 100)
-
-  return {
-    callResolvers: [...(extra.callResolvers ?? []), ...BUILTIN_CALL_RESOLVERS].sort(byOrder),
-    persistenceDetectors: [...(extra.persistenceDetectors ?? [])].sort(byOrder),
-    dataStoreCollectors: [...(extra.dataStoreCollectors ?? [])],
-    entryPointCollectors: [...(extra.entryPointCollectors ?? [])],
-  }
 }

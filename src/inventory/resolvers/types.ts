@@ -1,6 +1,6 @@
-import type { CallExpression, Node, SourceFile } from 'ts-morph'
+import type { CallExpression, SourceFile } from 'ts-morph'
 
-import type { DataStore, EntryPoint, HandlerRef, Provenance } from '../../types.js'
+import type { DataStore, HandlerRef } from '../../types.js'
 
 /**
  * AdonisJS does not impose a code organisation. The same transaction can be
@@ -66,65 +66,4 @@ export interface CallResolver {
   /** lower runs first; specific strategies before generic ones */
   readonly order?: number
   resolve(call: CallExpression, ctx: ResolverContext): HandlerRef[]
-}
-
-/**
- * Decides whether a call site touches a data store, and how.
- *
- * Deliberately separate from `CallResolver`: swapping the ORM changes the
- * detector, not the call graph.
- */
-export interface PersistenceDetector {
-  readonly name: string
-  readonly order?: number
-  detect(call: CallExpression, ctx: ResolverContext): PersistenceAccess | null
-}
-
-export type PersistenceAccess = {
-  mode: 'read' | 'write'
-  /** data store id, when identifiable */
-  store?: string
-  /** symbol used in the code, for diagnostics when `store` is unknown */
-  symbol?: string
-  provenance: Provenance
-}
-
-/**
- * Where logical data stores come from (ILF/EIF candidates).
- *
- * Default: Lucid models plus the generated schema. Another source (Prisma, raw
- * SQL schema) plugs in as another collector.
- */
-export interface DataStoreCollector {
-  readonly name: string
-  collect(ctx: CollectorContext): Promise<DataStore[]> | DataStore[]
-}
-
-/**
- * Where entry points come from (EI/EO/EQ candidates).
- *
- * A transaction is not a synonym for an HTTP route: an ace command that imports
- * a spreadsheet, or a scheduled job that syncs with an external system, are
- * transactional functions under IFPUG. Each is a collector.
- */
-export interface EntryPointCollector {
-  readonly name: string
-  collect(ctx: CollectorContext): Promise<EntryPoint[]> | EntryPoint[]
-}
-
-export type CollectorContext = {
-  /** root of the analysed application */
-  appRoot: string
-  sourceFiles(glob: string): SourceFile[]
-  sourceFile(absPath: string): SourceFile | null
-  resolveSpecifier(specifier: string): string | null
-  /** node -> {file, line}, for provenance */
-  provenanceOf(node: Node, by: string): Provenance
-}
-
-export type ResolverRegistry = {
-  callResolvers: CallResolver[]
-  persistenceDetectors: PersistenceDetector[]
-  dataStoreCollectors: DataStoreCollector[]
-  entryPointCollectors: EntryPointCollector[]
 }
