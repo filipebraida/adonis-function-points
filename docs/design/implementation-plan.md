@@ -18,7 +18,7 @@ fixture Kysely fica pulada como sentinela delas.
 
 | | |
 |---|---|
-| feito | **Fases 1 a 8** — o plano inteiro; 199 testes, nenhum pulado |
+| feito | **Fases 1 a 8** — o plano inteiro; 210 testes, nenhum pulado |
 | falta | nada do plano original; ver "Depois do v1" |
 
 ## Método: exemplo primeiro
@@ -160,12 +160,14 @@ Dois achados que só a app real revelou:
   a transação e reportaria o motivo errado. `HandlerRef` ganhou `line` para
   apontar o corpo, que a Fase 4 vai percorrer.
 
-### 3b — DETs de entrada
+### 3b — DETs de entrada ✅
 
-Falta: contar os campos declarados nos validators pela tabela de tipos
-compostos (§7), e ligá-los à transação. O vínculo exige ler o handler
-(`request.validateUsing(x)`), então é a ponte natural para a Fase 4. Com Tuyau
-presente, registry e validator têm que dar o mesmo número.
+Os campos declarados nos validators são contados pela tabela de tipos compostos
+(§7) e ligados à transação a partir do handler (`request.validateUsing(x)`), o
+que fez desta a ponte natural para a Fase 4 — está implementado em
+`call_graph.ts`, não num coletor separado. Spread não resolvido conta 0 e vira
+pendência, nunca chute. O cruzamento com o registry do Tuyau fica para depois do
+v1.
 
 ## Fase 4 — o grafo *(a fase cara)*
 
@@ -513,11 +515,12 @@ estava sendo seguida.
 
 ## Pendência de escopo
 
-**Orçamento de desempenho.** As fixtures têm 2 entidades; o alvo real tem 48 e
-~1100 arquivos. O grafo com hooks sobre ts-morph pode não caber em CI. Medir na
-Fase 4 contra a app real **em dois momentos**: com o grafo sintático, e no dia
-em que o type checker entrar — porque é ele que muda a ordem de grandeza. Teto
-proposto para discutir: 60 s numa app de 1100 arquivos, sem cache.
+**Orçamento de desempenho — medido, dentro do teto.** As fixtures têm 2
+entidades; as apps reais medidas vão a ~48 entidades e ~1100 arquivos. O teto
+proposto era 60 s sem cache; o grafo sintático fica em 1–3 s por app depois da
+correção de invalidação do programa do TypeScript (Fase 4b). O orçamento volta a
+valer no dia em que o type checker entrar, porque é ele que muda a ordem de
+grandeza.
 
 ## Ordem, e por quê
 

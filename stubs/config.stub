@@ -5,8 +5,8 @@ import { defineConfig } from '@filipebraida/adonis-function-points'
 
 export default defineConfig({
   /**
-   * A fronteira da aplicação é uma decisão de negócio, não técnica.
-   * Reveja com quem assina o contrato, não só com o time.
+   * The application boundary is a business decision, not a technical one.
+   * Review it with whoever signs the contract, not only with the team.
    */
   boundary: {
     infrastructure: ['access_tokens', 'reset_password_tokens', 'audits'],
@@ -14,10 +14,12 @@ export default defineConfig({
     externallyMaintained: [],
   },
 
+  /** Logical subgroups (RET). `constant` pins it at 1, which is honest. */
   retStrategy: 'constant',
-  maxCallDepth: 3,
-  collapseInquiriesIntoOutputs: true,
 
-  /** Recusa emitir contagem se o rastreamento cobrir menos que isto. */
+  /** How far to follow the call graph from the handler. */
+  maxDepth: 3,
+
+  /** Refuses to emit a count if tracing covers less than this. */
   minCoverage: 0.85,
 })

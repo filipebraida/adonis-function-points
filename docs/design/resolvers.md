@@ -60,12 +60,11 @@ O IFPUG conta pelo que o usuário reconhece. Se a pessoa clica "finalizar" e o
 efeito esperado acontece, é uma transação só — mesmo que a execução seja
 assíncrona. Isso sugere seguir o job como parte da transação que o despacha.
 
-Mas um job **agendado**, que ninguém dispara, é um ponto de entrada próprio e
-deve ser coletado por um `EntryPointCollector`.
+Mas um job **agendado**, que ninguém dispara, é um ponto de entrada próprio.
 
 **Decisão:** o job despachado por um handler é seguido como parte da mesma
 função transacional. Job agendado, que ninguém dispara, é ponto de entrada
-próprio e sai de um `EntryPointCollector`.
+próprio — e fica fora do v1, que só coleta rotas HTTP.
 
 ## Ordem
 

@@ -1,80 +1,174 @@
 # @filipebraida/adonis-function-points
 
-Contagem automatizada de pontos de função e métricas de código para aplicações
-AdonisJS.
+Automated function point counting and code metrics for AdonisJS applications.
 
-> **Estado: em desenvolvimento.** O scaffold e o desenho estão prontos; os
-> coletores ainda não. Ver [`docs/design/architecture.md`](docs/design/architecture.md).
-
-## Por quê
-
-Fábricas de software faturam por ponto de função, e a contagem é manual, lenta
-e varia de contador para contador. Existem ferramentas comerciais de contagem
-automatizada para legado enterprise, mas **nenhum framework moderno tem uma** —
-nem Laravel, nem Rails, nem AdonisJS. O que existe nesses ecossistemas
-(`rails stats`, `laravel-stats`, `adonisjs-stats`) conta classes e linhas, que
-é outra coisa.
-
-Este pacote implementa o padrão **OMG Automated Function Points**
-(ISO/IEC 19515), que define como automatizar o IFPUG CPM substituindo os
-julgamentos subjetivos por regras determinísticas.
-
-## O que faz
+Counts IFPUG function points straight from the source, following the OMG
+**Automated Function Points** standard (ISO/IEC 19515). Every number it prints
+says where it came from: the file, the line, the rule from the standard, and the
+origin of each DET and each FTR.
 
 ```bash
-node ace fp:inventory     # extrai os fatos crus da aplicação
-node ace fp:count         # conta PF não ajustados
-node ace fp:diff HEAD~50  # inclusão / alteração / exclusão entre duas versões
-node ace fp:explain orders.store    # por que esta função foi contada assim
-node ace fp:calibrate contagens.csv # fatores de correção vs contagem manual
+node ace fp:count
 ```
 
-`fp:diff` é o que vira fatura num contrato por demanda: classifica cada função
-como inclusão, alteração ou exclusão, que é o que o roteiro de métricas do SISP
-precisa.
+```
+Unadjusted count: 46 FP
+Ruleset: afp@1.0.0
 
-## Princípios
+type      n     FP
+ILF       2     14
+EIF       1      5
+EI        4     13
+EO        3     14
 
-**Rastreabilidade.** Toda função contada diz de onde veio: arquivo, linha,
-regra aplicada, origem de cada DET e de cada FTR. Se PF vira fatura, alguém vai
-contestar um número — e um número sem procedência é indefensável.
+function                                type    DET  FTR   FP
+Apontamento                             ILF       4    1    7
+Justificativa                           ILF       3    1    7
+Pessoa                                  EIF       4    1    5
+GET /apontamentos                       EO        4    1    4
+POST /apontamentos                      EI        3    1    3
+PUT /apontamentos/:param                EI        5    2    4
+DELETE /apontamentos/:param             EI        1    2    3
+POST /apontamentos/justificar           EI        4    2    3
+GET /presenca                           EO       13    3    5
+GET /presenca/relatorio                 EO       13    3    5
+```
 
-**Dizer "não sei" em vez de errar em silêncio.** Chamada que o rastreamento não
-consegue seguir entra na métrica de cobertura. Se a cobertura cai abaixo do
-limite configurado, a contagem falha em vez de emitir um número que parece
-certo.
+## Why
 
-**Extensibilidade como requisito.** AdonisJS não impõe padrão de organização —
-controller gordo, action object, service estático, repository, job. As
-estratégias de rastreamento são registráveis; um projeto com convenção própria
-registra a sua.
+Software factories bill by function point, and the count is manual, slow, and
+varies from counter to counter. Commercial automated counters exist for
+enterprise legacy, but **no modern framework has one** — not Laravel, not Rails,
+not AdonisJS. What those ecosystems do have (`rails stats`, `laravel-stats`,
+`adonisjs-stats`) counts classes and lines, which is a different thing.
 
-**Consistência acima de exatidão.** Contra um contador certificado, espere
-5–15% de desvio. Mas a repetibilidade é total: a mesma regra, sempre, sem
-variação entre analistas. Erro sistemático se calibra; variância entre
-contadores, não.
+This package implements the OMG **Automated Function Points** specification,
+which defines how to automate IFPUG CPM by replacing the subjective judgements
+with deterministic rules.
 
-## Suporte
-
-| | v1 |
-|---|---|
-| AdonisJS 7 + Lucid 22 | **sim** — schema gerado, `codegen`, com ou sem Tuyau |
-| AdonisJS 6 / Lucid 21 | não — detectado e reportado |
-| Kysely e outros ORMs | não — detectado e reportado; a costura existe e é testada |
-
-Fora do escopo, o pacote diz que não suporta. Nunca conta zero em silêncio.
-
-## Instalação
+## Install
 
 ```bash
 npm i @filipebraida/adonis-function-points
 node ace configure @filipebraida/adonis-function-points
 ```
 
-## Configuração
+Requires **AdonisJS 7** and **Lucid 22** (see [Support](#support)).
 
-A fronteira da aplicação é uma decisão de negócio, não técnica — por isso é
-configuração, não heurística.
+## Commands
+
+| command                               | what it does                                               |
+| ------------------------------------- | ---------------------------------------------------------- |
+| `node ace fp:count`                   | counts unadjusted function points                          |
+| `node ace fp:inventory`               | the raw facts: stores, routes, tracing coverage            |
+| `node ace fp:explain <name>`          | why one function was counted that way                      |
+| `node ace fp:diff <previous.json>`    | additions / modifications / deletions, and the billable FP |
+| `node ace fp:calibrate <samples.csv>` | correction factors against a manual count                  |
+
+`fp:count --out count.json` saves a count; `fp:diff count.json` compares that
+saved count against the current state of the application. It deliberately does
+**not** take a git ref: booting an older checkout, with possibly different
+dependencies, is a problem not worth solving.
+
+### `fp:explain` — the number has to be defensible
+
+```
+POST /apontamentos  —  EI, low complexity, 3 FP
+module: ponto
+
+Rule applied: afp:6.5.3 modifies a data store -> EI
+
+DET = 3
+  validator:registrarPontoValidator.marcadoEm
+  validator:registrarPontoValidator.pessoaId
+  validator:registrarPontoValidator.tipo
+
+FTR = 1
+  reaches:Apontamento
+
+Path walked:
+  controllers/apontamentos_controller.ts#store  (store)
+    actions/registrar_ponto.ts#handle  (action-object) [writes]
+```
+
+If function points get invoiced, someone will dispute a number — and a number
+without provenance is indefensible.
+
+## Benchmark
+
+The only reference in this project not produced by its own authors is the case
+study published in **Vazquez, Simões & Albert (2011)**, the same one used by the
+COPPE/UFRJ dissertation on the _Ligeiro_ tool (Pinel, 2012).
+
+The fixture and the reference count were frozen in their own commit **before**
+the counter was ever run against them, with the transcription choices written
+down first. Without that the independence would be illusory.
+
+|                                     | total     | vs reference |
+| ----------------------------------- | --------- | ------------ |
+| **Vazquez et al. (2011), manual**   | **46 FP** | —            |
+| **this package**                    | **46 FP** | **0%**       |
+| Ligeiro, automated (Pinel 2012)     | 52 FP     | +13%         |
+| Ligeiro, manual under its own rules | 43 FP     | −6.5%        |
+
+Eight of the ten functions match exactly. The two that do not were **predicted
+in writing before the run**, and come from the standard rather than from
+defects:
+
+- **+1** `Consulta Apontamento Diário` is an EQ in the reference; AFP §6.5.3
+  requires collapsing EQ into EO, and an EO weighs more in the same band.
+- **−1** `Apontamento c/ Justificativa`: the IFPUG manual counts 1 DET for the
+  user message, AFP does not.
+
+They cancel out, which is exactly why the total is reported alongside the
+function-by-function agreement rather than on its own.
+
+Reproduce it with `npm test` — the benchmark is
+`tests/acceptance/vazquez.spec.ts`, and the reference is
+[`tests/fixtures/apps/vazquez/REFERENCIA.md`](tests/fixtures/apps/vazquez/REFERENCIA.md).
+
+## Principles
+
+**Traceability.** Every counted function says where it came from: file, line,
+rule applied, origin of each DET and each FTR, and the path walked through the
+call graph. The ruleset is versioned and printed in every report — two counts
+are only comparable if the rules did not change in between.
+
+**Say "I don't know" rather than be wrong in silence.** A call the tracer cannot
+follow enters the coverage metric. If coverage falls below the configured
+threshold, the analysis **fails** instead of emitting a number that looks right.
+This is not a preference; AFP §6.5.3 requires it:
+
+> "If the transaction execution depends on code that is unknown or unavailable
+> to the automated tool, the code end point shall be cataloged and listed in the
+> generated report in order to detect and quantify the missing patterns and
+> libraries."
+
+**Shape must not change the count.** The same logical application written in
+different ways — flat MVC or module-per-domain, fat controller or action object,
+generated artefacts or none — must produce an identical number. That is the
+project's golden invariant, and it is a test
+(`tests/acceptance/golden_invariant.spec.ts`) that was written before the first
+collector.
+
+**Extensibility as a requirement.** AdonisJS imposes no code organisation — fat
+controller, action object, static service, injected service, module function,
+job. Tracing strategies are registrable, so a project with its own convention
+registers it (see [Custom code pattern](#custom-code-pattern)).
+
+**Function points are not the only number on the dashboard.** If function points
+pay, the team optimises function points: more models, more endpoints, less
+reuse. Coupling, instability and density come free from the same inventory, and
+are the counterweight.
+
+## Configuration
+
+Discovery does the technical work — subpath aliases, generated artefacts,
+layout, scan roots are all read from the application, never assumed. What stays
+configurable is what is a **business decision** that no heuristic should make.
+
+**Every option here has an effect, and a test proving it.** Configuration the
+code does not honour is worse than none at all.
 
 ```ts
 // config/function_points.ts
@@ -82,26 +176,31 @@ import { defineConfig } from '@filipebraida/adonis-function-points'
 
 export default defineConfig({
   boundary: {
-    infrastructure: ['access_tokens', 'audits'],
-    externallyMaintained: ['erp_customers'],   // viram AIE em vez de ALI
+    infrastructure: ['access_tokens', 'audits'], // excluded, with the reason in the report
+    externallyMaintained: ['erp_customers'], // counted as EIF instead of ILF
     ignoreEntryPoints: ['prometheus.metrics'],
   },
-  retStrategy: 'constant',
-  maxCallDepth: 3,
-  minCoverage: 0.85,
+
+  retStrategy: 'constant', // or 'composition'
+  maxDepth: 3, // how far to follow the call graph
+  messageDet: 0, // 1 restores the IFPUG confirmation-message DET
+  minCoverage: 0.85, // below this, the analysis fails
 })
 ```
 
-### Padrão de código próprio
+`complexityTables` and `weights` are also accepted, for calibrating the bands
+against a manual count.
+
+### Custom code pattern
 
 ```ts
 import type { CallResolver } from '@filipebraida/adonis-function-points'
 
 const repositoryResolver: CallResolver = {
   name: 'my-repository',
-  order: 5,
+  order: 5, // lower runs first; custom strategies run before the built-ins
   resolve(call, ctx) {
-    /* devolve os corpos a seguir */
+    // return the bodies to follow, or [] if this is not your pattern
     return []
   },
 }
@@ -111,23 +210,99 @@ export default defineConfig({
 })
 ```
 
-## Limitações conhecidas
+The **first** strategy that claims a call wins. That is not an implementation
+detail: `CreateUserJob.dispatch(p)`, `UserService.create(p)` and `User.find(p)`
+are all `Identifier.method(args)`, and only ordering tells them apart.
 
-Herdadas do próprio padrão AFP, não da implementação:
+Built-in strategies, most specific first: `same-class-method`, `action-object`,
+`job-dispatch`, `static-service`, `property-service`, `module-function`.
 
-- **CE é colapsado em SE.** Distinguir consulta de saída exige saber se há
-  cálculo ou dado derivado, o que análise estática não vê. É o que o AFP manda.
-- **RET aproximado.** O que o usuário reconhece como subgrupo lógico não é
-  derivável do código.
-- **Mensagens de erro e confirmação** contam 1 DET na contagem manual e são
-  invisíveis aqui. Em casos limítrofes isso muda a faixa de complexidade.
-- **VAF não é calculado.** As 14 características gerais do sistema exigem
-  julgamento humano. O AFP fixa VAF = 1, e contagem não ajustada é o que vale
-  em contrato público brasileiro.
+## Support
 
-Medições e divergências esperadas em
-[`docs/research/spike-findings.md`](docs/research/spike-findings.md).
+|                       | v1                                                           |
+| --------------------- | ------------------------------------------------------------ |
+| AdonisJS 7 + Lucid 22 | **yes** — generated schema, `codegen`, with or without Tuyau |
+| AdonisJS 6 / Lucid 21 | no — detected and reported                                   |
+| Kysely and other ORMs | no — detected and reported                                   |
 
-## Licença
+Out of scope, the package says it does not support the application. It never
+counts zero in silence.
+
+## Known limitations
+
+Inherited from the AFP standard itself, not from this implementation:
+
+- **EQ is collapsed into EO.** Telling an inquiry from an output requires
+  knowing whether there is derived data or calculation, which static analysis
+  cannot see. AFP mandates the collapse.
+- **RET is approximated.** What a user recognises as a logical subgroup is not
+  derivable from code. The default pins it at 1; `composition` derives it from
+  composition relations.
+- **Confirmation and error messages** count 1 DET in a manual count and are
+  invisible here — a known systematic divergence of −1 DET per transaction.
+  `messageDet: 1` restores it.
+- **VAF is not calculated.** The 14 general system characteristics require human
+  judgement. AFP fixes VAF = 1, and the unadjusted count is what public
+  contracts in Brazil use anyway.
+- **The modification factor in `fp:diff` is 1.** AEP grades it from 0.25 to 1.75
+  using Effort Complexity, which requires cyclomatic complexity. Counting 1
+  overestimates, and the report says so.
+- **Only HTTP routes are collected as entry points.** An ace command that
+  imports a spreadsheet and a scheduled job are transactional functions under
+  IFPUG; they are out of v1.
+
+## References
+
+- **OMG Automated Function Points (AFP) 1.0** — ISO/IEC 19515:2019. The
+  normative basis for the count: technical data filter (§6.5.2.1.1), transaction
+  detection (§6.5.3), ILF vs EIF by maintenance (§6.5.4), DET/RET/FTR (§7.2,
+  §7.3).
+- **OMG Automated Enhancement Points (AEP) 1.0** — the basis for `fp:diff`:
+  added / modified / deleted (§6.3) and the complexity factors (§6.5).
+- **IFPUG Counting Practices Manual (CPM) 4.3** — the underlying method AFP
+  automates.
+- **Vazquez, C. E., Simões, G. S., Albert, R. M. (2011).** _Análise de Pontos de
+  Função: Medição, Estimativas e Gerenciamento de Projetos de Software._ Érica.
+  The benchmark case study.
+- **Pinel, B. (2012).** _Ligeiro: uma ferramenta para contagem automática de
+  pontos de função._ COPPE/UFRJ.
+  [pesc.coppe.ufrj.br](https://pesc.coppe.ufrj.br/uploadfile/1343153707.pdf)
+
+## Design documents
+
+The reasoning behind the count lives with the code:
+
+- [`docs/design/architecture.md`](docs/design/architecture.md) — the thesis, the
+  layers, and what is discovered instead of configured
+- [`docs/design/counting-decisions.md`](docs/design/counting-decisions.md) —
+  each edge case, with the AFP rule that settles it
+- [`docs/design/resolvers.md`](docs/design/resolvers.md) — the catalogue of code
+  patterns and how each is followed
+- [`docs/design/implementation-plan.md`](docs/design/implementation-plan.md) —
+  how it was built, phase by phase, and what each phase found
+- [`docs/research/adonisjs-variation.md`](docs/research/adonisjs-variation.md)
+  and
+  [`docs/research/external-validation.md`](docs/research/external-validation.md)
+  — what varies between real AdonisJS applications, measured in-house and then
+  outside the sample
+
+## Contributing
+
+```bash
+npm install
+npm test          # lint + 210 tests
+npm run typecheck
+```
+
+Two house rules worth knowing before opening a PR:
+
+1. **Example first.** A fixture with a known answer comes before the code. A
+   fixture written after the code tests what the code does, not what it should
+   do.
+2. **A silent drop is the worst possible defect.** Anything the tracer cannot
+   follow must land in `unresolved` with the _right_ reason, never be quietly
+   treated as a read.
+
+## License
 
 MIT

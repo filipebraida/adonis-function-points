@@ -93,9 +93,13 @@ possivelmente obsoleto.
 O `romainlanz.com` (core team) usa **Kysely + kysely-codegen**, sem Lucid: o
 schema gerado é `types/db.ts` (`interface Articles { … }` por tabela), as
 migrations usam a DSL do Kysely, e a escrita é `.insertInto()/.updateTable()/
-.deleteFrom()`. `DataStoreCollector` e `PersistenceDetector` são pontos de
-extensão porque uma app do core team precisa deles — não por hipótese. O v1
-suporta **Lucid e Kysely**; o relatório diz qual detector produziu cada acesso.
+.deleteFrom()`.
+
+O v1 suporta **apenas Lucid**: Kysely é detectado e reportado como não
+suportado, com a fixture sentinela pulada no lugar. A costura para um segundo
+ORM existe — a detecção de persistência está isolada em
+`src/inventory/detectors/` — mas ainda não é ponto de extensão público, porque
+nada no pipeline consome um detector registrado. Ver "Extensibilidade".
 
 ### A raiz de varredura não é `app/`
 
@@ -119,28 +123,31 @@ pacote próprio se as métricas estatísticas crescerem.
 
 ```
 src/
+├── types.ts                  modelo de domínio compartilhado
+├── pipeline.ts               analyze(root, options) -> { inventory, count }
+├── define_config.ts          FunctionPointsConfig
 ├── inventory/
 │   ├── app_context.ts        descobre a app: imports do package.json,
-│   │                         artefatos gerados, layout
+│   │                         artefatos gerados, layout, raízes de varredura
 │   ├── sources/              fatos, por ARTEFATO (não por pasta)
-│   │   ├── routes_ast.ts         BASE: rotas dos preloads, lazy import ou mapa
-│   │   ├── models_ast.ts         BASE: models seguindo a cadeia de herança
-│   │   ├── validators_ast.ts     BASE: DETs de entrada
-│   │   ├── route_registry.ts     upgrade (Tuyau): DETs de entrada tipados
-│   │   ├── controllers_map.ts    upgrade (core 7): nome -> arquivo
-│   │   ├── data_schema.ts        upgrade (Lucid 22): colunas canônicas
-│   │   └── model_hooks.ts        hooks, que entram no caminho da transação
+│   │   ├── data_stores.ts        models seguindo a cadeia de herança;
+│   │   │                         schema gerado quando existe
+│   │   └── routes_ast.ts         rotas dos preloads, lazy import ou mapa
 │   ├── graph/
-│   │   ├── call_graph.ts     transação -> dados, em nível de MÉTODO
-│   │   └── coverage.ts       o que não foi resolvido, exigido pelo AFP
+│   │   └── call_graph.ts     transação -> dados, em nível de MÉTODO;
+│   │                         DETs de entrada pelos validators; cobertura
 │   ├── resolvers/            como seguir cada padrão de código
-│   └── detectors/            o que é leitura/escrita (lucid, query builder)
-└── albrecht/
-    ├── tables.ts             tabelas de complexidade IFPUG
-    ├── data_functions.ts     ALI vs AIE, DET/RET
-    ├── transactional_functions.ts   EE vs SE, DET/FTR
-    ├── technical_filter.ts   AFP 6.5.2.1.1 + origem da escrita
-    └── counter.ts
+│   └── detectors/lucid.ts    o que é leitura/escrita
+├── albrecht/
+│   ├── tables.ts             tabelas de complexidade IFPUG
+│   ├── data_functions.ts     ALI vs AIE, DET/RET
+│   ├── transactional_functions.ts   EE vs SE, DET/FTR
+│   ├── technical_filter.ts   AFP 6.5.2.1.1 + origem da escrita
+│   ├── counter.ts            a contagem
+│   ├── diff.ts               inclusão / alteração / exclusão (AEP)
+│   └── calibration.ts        viés contra contagem manual
+├── metrics/structure.ts      acoplamento, densidade, conformidade
+└── reporters/table.ts        os relatórios de `fp:*`
 ```
 
 ## Descoberta no lugar de configuração
@@ -172,27 +179,29 @@ AdonisJS não impõe organização. Medido nas 6 apps, a escrita se espalha assi
 Nenhuma usa menos de 4 tipos de artefato. O rastreamento não pode privilegiar
 nenhum — segue o grafo onde ele for, e o tipo de artefato é só metadado.
 
-Quatro pontos de extensão em `src/inventory/resolvers/types.ts`:
+**Um** ponto de extensão público, em `src/inventory/resolvers/types.ts`:
 
 - **`CallResolver`** — como seguir de um call site ao próximo corpo. Inclui
   resolução **por tipo do parâmetro do construtor** (`@inject()` com
   `constructor(private q: GetArticleQuery)`), que em apps com DI é o *único*
-  caminho da rota à escrita
-- **`PersistenceDetector`** — o que é leitura/escrita (trocar o ORM troca isto,
-  não o grafo)
-- **`DataStoreCollector`** — de onde saem candidatos a ALI/AIE
-- **`EntryPointCollector`** — de onde saem candidatos a EE/SE/CE
+  caminho da rota à escrita.
 
 Estratégias do usuário rodam **antes** das embutidas. **A primeira que
 reivindica, vence** — formas sintaticamente idênticas têm significados
 diferentes (`Job.dispatch(p)`, `Service.create(p)` e `Model.find(p)` são todas
 `Identificador.metodo(args)`), e só a ordem as separa.
 
+Coletor de repositórios, coletor de pontos de entrada e detector de persistência
+continuam sendo **costuras internas** — cada um mora num módulo próprio e pode
+virar ponto de extensão quando houver um segundo caso real. Enquanto o pipeline
+não consumir um registrado, a interface não é exportada: tipo público que o
+código não honra é a mesma promessa vazia que configuração sem efeito.
+
 ### Transação não é sinônimo de rota HTTP
 
 Comando ace que importa planilha e job agendado que sincroniza com sistema
-externo são funções transacionais pelo IFPUG. Cada um é um
-`EntryPointCollector`.
+externo são funções transacionais pelo IFPUG. No v1 só rotas HTTP são coletadas;
+é a costura de coleta de pontos de entrada que abre esse caminho.
 
 ## Rastreabilidade é requisito
 

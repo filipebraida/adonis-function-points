@@ -61,9 +61,10 @@ não existe o alias). Comportou-se bem; o que falta é o que vem depois dele.
 
 Três lições que entram no desenho:
 
-1. **`DataStoreCollector` precisa de um segundo coletor de verdade** — kysely-codegen —
-   e o `PersistenceDetector` de Kysely. Não é hipótese de extensibilidade; é uma
-   app de membro do core team.
+1. **A coleta de repositórios precisa de um segundo coletor de verdade** —
+   kysely-codegen — e de uma detecção de persistência para Kysely. Não é
+   hipótese de extensibilidade; é uma app de membro do core team. (Ficou fora
+   do v1, com a fixture sentinela pulada; ver `../design/architecture.md`.)
 2. **`property_service` por tipo do construtor deixa de ser "depois".** Aqui é o
    único caminho da rota à escrita.
 3. **A raiz de varredura não é `app/`.** É o conjunto de diretórios alcançáveis
