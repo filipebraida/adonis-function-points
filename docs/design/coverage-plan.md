@@ -67,12 +67,12 @@ A classificação é por forma da expressão, então é aproximada nas bordas.
 
 Quantas transações ficam completamente limpas a cada fase, na app C:
 
-|                                      | cobertura          | ganho |
-| ------------------------------------ | ------------------ | ----- |
-| hoje                                 | 53,2%              | —     |
-| fase 1 — filtro de ruído             | **59,0% (medido)** | +11   |
-| fase 2 — injeção por valor default   | **63,8% (medido)** | +9    |
-| fase 3 — fronteira de `node_modules` | ~81% (projetado)   | +31   |
+|                                    | cobertura          | ganho |
+| ---------------------------------- | ------------------ | ----- |
+| hoje                               | 53,2%              | —     |
+| fase 1 — filtro de ruído           | **59,0% (medido)** | +11   |
+| fase 2 — injeção por valor default | **63,8% (medido)** | +9    |
+| fase 3 — transformers              | **79,3% (medido)** | +31   |
 
 **A fase 1 está entregue, e 59,0% é medido, não projetado.** A projeção original
 dizia 64,9% com um filtro que silenciava também `get`, `set`, `has` e `find` —
@@ -130,14 +130,49 @@ transação dela conta como SE porque a escrita dentro do service fica invisíve
 de 59,0% para 63,8%, e as outras três não mudaram: o padrão só existe numa
 delas.
 
-## Fase 3 — fronteira de `node_modules` (decisão §4)
+## Fase 3 — transformers ✅ (não era a fronteira de `node_modules`)
 
-Os 47 transformers e as 31 chamadas encadeadas são o mesmo padrão: o método
-vem de uma base que mora em pacote. A decisão §4 já prevê entrar **um nível**
-para dentro do pacote, marcando `vendor: true`, e nunca além.
+Os 47 transformers e as 31 chamadas encadeadas são o mesmo padrão. **E a
+premissa deste plano sobre eles estava errada.**
 
-É a fase mais cara e a que mais rende. Também é a que mais pode mudar a
-contagem, porque uma base de transformer pode ler dado.
+Previa-se entrar um nível em `node_modules`, pela decisão §4. Não foi
+necessário: as 33 transformers estendem `BaseTransformer` do `@adonisjs/core`,
+e `transform()`/`paginate()` do pacote **chamam de volta** o `toObject()` que a
+aplicação escreve. O corpo que interessa sempre esteve na aplicação. É a mesma
+forma do `job-dispatch`, onde `dispatch` enfileira e `handle` executa.
+
+Virou um resolvedor (`transformer`, ordem 18, antes do `static-service` porque
+`X.transform(p)` também é `Identificador.metodo(args)`), não travessia de
+pacote. A fronteira de `node_modules` da §4 **continua não implementada** — e
+continua não sendo necessária para isto.
+
+Efeito medido: a contagem não mudou em nenhuma das quatro aplicações, embora a
+fixture prove que pode — nela, uma tabela escrita só dentro do `toObject()`
+sairia da contagem pela §6.5.4 sem este resolvedor.
+
+Seguir os transformers **expôs uma segunda camada de ruído**: `this.pick` (24
+ocorrências) e `this.whenLoaded` (14) são auxiliares do próprio
+`BaseTransformer`, chamados de dentro do `toObject()` que passamos a alcançar.
+Entraram no filtro da fase 1, e valem 6 pontos de cobertura.
+
+## Onde as três fases chegaram
+
+| app | antes | depois    |
+| --- | ----- | --------- |
+| A   | —     | 79,7%     |
+| B   | —     | 84,7%     |
+| C   | 53,2% | **79,3%** |
+| D   | —     | 91,4%     |
+
+**A meta de 0,85 não foi alcançada em duas das quatro**, e isso é resultado, não
+falha: a projeção original prometia 86,2% com um filtro que silenciava
+`get`/`set`/`has`/`find` — cobertura comprada esconderia lacuna.
+
+O que sobra na app C são 109 pendências, e a leitura honesta é que **o limite
+de 0,85 talvez seja o número errado para uma aplicação com 172 funções**. Um
+`minCoverage` por aplicação, calibrado com o número na mão, defende melhor que
+um número redondo escolhido antes de medir. Essa decisão é de contrato, não de
+código.
 
 ## Como saber que terminou
 

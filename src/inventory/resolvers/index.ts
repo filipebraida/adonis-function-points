@@ -6,6 +6,7 @@ import { moduleFunctionResolver } from './module_function.js'
 import { propertyServiceResolver } from './property_service.js'
 import { sameClassMethodResolver } from './same_class_method.js'
 import { staticServiceResolver } from './static_service.js'
+import { transformerResolver } from './transformer.js'
 
 export * from './types.js'
 
@@ -20,6 +21,7 @@ export const BUILTIN_CALL_RESOLVERS: CallResolver[] = [
   sameClassMethodResolver, //   5  await this.persistExpiration(invite)
   actionObjectResolver, //     10  await new CreateUser().handle(payload)
   jobDispatchResolver, //      15  await CreateUserJob.dispatch(payload)
+  transformerResolver, //     18  InviteTransformer.transform(invite)
   staticServiceResolver, //    20  await UserService.create(payload)
   propertyServiceResolver, //  30  await this.users.create(payload)
   moduleFunctionResolver, //   50  await createUser(payload)

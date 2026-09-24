@@ -65,6 +65,12 @@ const NEVER_DATA_METHODS = new Set([
   'toJSON',
   // VineJS
   'validate',
+  // BaseTransformer helpers, called from inside the `toObject` the tracer now
+  // reaches: following transformers is what exposed them
+  'pick',
+  'whenLoaded',
+  'whenNotNull',
+  'primitive',
 ])
 
 /**

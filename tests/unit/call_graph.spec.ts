@@ -251,8 +251,9 @@ test.group('graph: same-class method and package boundary', () => {
   })
 
   /**
-   * `InviteTransformer.transform()` resolves to the application file, but the
-   * method is inherited from a PACKAGE class — it is not there.
+   * `InviteMailer.sendLater()` resolves to the application file, but the method
+   * is inherited from a PACKAGE class — it is not there, and unlike a
+   * transformer there is no application-side body it calls back into.
    *
    * Dropping it silently would be the worst possible defect: the resolver
    * produces the reference, `findBody` fails and nobody knows. It has to become
@@ -260,7 +261,7 @@ test.group('graph: same-class method and package boundary', () => {
    */
   test('a method inherited from a package is reported, not silenced', async ({ assert }) => {
     const behavior = await analyze('same_class_method')
-    const unresolved = behavior.unresolved.find((u) => u.expression.includes('transform'))
+    const unresolved = behavior.unresolved.find((u) => u.expression.includes('sendLater'))
 
     assert.exists(unresolved, 'a body that was not found got dropped in silence')
     assert.match(unresolved!.reason, /body not found/i)
