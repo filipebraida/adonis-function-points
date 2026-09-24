@@ -141,6 +141,8 @@ export type Inventory = {
   version: 1
   generatedAt: string
   app: string
+  /** versões do framework em que a contagem foi feita — vai para o relatório */
+  framework: { core?: number; lucid?: number; orm: string }
   dataStores: DataStore[]
   entryPoints: EntryPoint[]
   behaviors: HandlerBehavior[]
@@ -148,6 +150,8 @@ export type Inventory = {
     entryPointsTotal: number
     entryPointsResolved: number
     unresolvedCalls: number
+    /** fração de pontos de entrada cujo handler foi rastreado até o fim */
+    ratio: number
   }
 }
 
@@ -169,6 +173,16 @@ export type CountedFunction = {
   refs: number
   complexity: Complexity
   points: number
+  /**
+   * Hash do escopo de implementação — counting-decisions §5.
+   *
+   * É o que o `fp:diff` compara para decidir se a função foi ALTERADA. Combina
+   * os hashes de AST normalizado dos corpos alcançados, então formatação e
+   * comentário não entram: rodar o prettier não pode virar fatura.
+   *
+   * Ausente em função de dados, cujo escopo é a própria declaração.
+   */
+  scopeHash?: string
   /** por que foi classificada assim — alimenta `fp:explain` */
   rationale: Rationale
 }

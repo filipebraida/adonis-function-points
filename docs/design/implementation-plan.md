@@ -18,8 +18,8 @@ fixture Kysely fica pulada como sentinela delas.
 
 | | |
 |---|---|
-| feito | scaffold; **Fases 1 a 6** — contagem validada contra benchmark externo; 6 resolvedores; 143 testes, nenhum pulado |
-| falta | Fase 7 (comandos), Fase 8 (métricas estatísticas) |
+| feito | **Fases 1 a 7** — contagem validada e utilizável por linha de comando; 172 testes, nenhum pulado |
+| falta | Fase 8 (métricas estatísticas); `fp:calibrate` |
 
 ## Método: exemplo primeiro
 
@@ -389,23 +389,41 @@ O efeito nas apps de produção foi grande — e nenhuma fixture o teria pego:
 Cinco aplicações de produção contadas de 0,4 a 3,2 s cada, sem pendência de
 rastreamento bloqueante. Os números estão em `spike-findings.md`.
 
-## Fase 7 — superfície de uso
+## Fase 7 — superfície de uso ✅
 
-`fp:inventory`, `fp:count`, `fp:explain`, depois `fp:diff` e `fp:calibrate`.
+`src/pipeline.ts` concentra a orquestração e os comandos ace ficam finos — sem
+lógica, só imprimindo o que o pipeline devolve. É isso que permite testar a
+contagem inteira sem bootar uma aplicação: as fixtures não bootam.
 
-`fp:diff` é o que vira fatura: inclusão / alteração / exclusão, com os fatores da
-AEP por default e SISP como preset. Duas decisões que o tornam viável:
+| comando | o que faz |
+|---|---|
+| `fp:inventory` | fatos crus e cobertura do rastreamento; `--out` salva JSON |
+| `fp:count` | contagem não ajustada; `--out`, `--json`, `--min-coverage` |
+| `fp:explain <função>` | procedência: regra, origem de cada DET e FTR, caminho percorrido |
+| `fp:diff <anterior.json>` | inclusão / alteração / exclusão, e o PF faturável |
 
-- **opera sobre dois inventários salvos** (`fp-inventory.json` gerado por
-  release e guardado como artefato), nunca sobre dois checkouts. Bootar a versão
-  antiga, com dependências possivelmente diferentes, é exatamente o tipo de
-  problema que não vale resolver.
-- **recusa comparar inventários de `rulesetVersion` diferentes.** A arquitetura
-  exige o ruleset versionado; este é o item que o implementa: sai em todo
-  relatório, e o diff falha em vez de somar laranjas com maçãs.
+### `fp:diff` — as duas decisões que o tornam viável
 
-`fp:explain` merece teste próprio — a procedência é requisito, não enfeite, e
-tem que sobreviver a refatoração.
+**Opera sobre uma contagem salva**, comparada com o estado atual — nunca sobre
+dois checkouts. Bootar a versão antiga, com dependências possivelmente
+diferentes, é problema que não vale resolver.
+
+**Recusa comparar rulesets diferentes.** Se as regras mudaram entre as duas
+medições, a diferença não mede trabalho: mede a mudança de regra. E o resultado
+iria para uma fatura.
+
+Fatores por tipo de mudança, com os âncoras explícitos da AEP §6.5: adicionada
+1, excluída 0,4. **Alterada é 1 por default e isso superestima** — a AEP grada
+de 0,25 a 1,75 pela variação de Effort Complexity, que exige complexidade
+ciclomática, ainda não medida aqui. Contar 1 é a escolha de não inventar número,
+não a de faturar menos, e **o resultado avisa**: cobrar valor cheio por uma
+alteração de uma linha sem dizer nada seria indefensável.
+
+### Cobertura como porta
+
+`analyze()` aceita `minCoverage` e **falha** abaixo dele, com mensagem que diz o
+que fazer (`fp:inventory` para ver as pendências). Um número com rastreamento
+ruim não deveria virar fatura.
 
 ## Fase 8 — métricas estatísticas
 

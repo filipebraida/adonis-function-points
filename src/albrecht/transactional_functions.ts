@@ -66,6 +66,7 @@ export function countTransactionalFunctions(
       refs,
       complexity,
       points: pointsOf(type, complexity),
+      scopeHash: scopeHashOf(behavior),
       rationale: {
         rule: behavior.writes
           ? 'afp:6.5.3 modifica repositório de dados -> EE'
@@ -78,6 +79,19 @@ export function countTransactionalFunctions(
   }
 
   return counted
+}
+
+/**
+ * Hash combinado do escopo de implementação, para o `fp:diff`.
+ *
+ * Ordenado antes de combinar: a ordem de travessia pode variar sem que o código
+ * tenha mudado, e um hash instável faria toda release virar "alteração".
+ */
+function scopeHashOf(behavior: Behavior): string {
+  return behavior.scope
+    .map((entry) => `${entry.member ?? '*'}:${entry.bodyHash}`)
+    .sort()
+    .join('|')
 }
 
 /**
