@@ -2,7 +2,9 @@ import type { AppContext } from '../inventory/app_context.js'
 import type { CollectedDataStore } from '../inventory/sources/data_stores.js'
 import type { CollectedEntryPoint } from '../inventory/sources/routes_ast.js'
 import type { Behavior } from '../inventory/graph/call_graph.js'
-import type { CountResult, CountedFunction, FunctionType } from '../types.js'
+import type { Complexity, CountResult, CountedFunction, FunctionType } from '../types.js'
+import { DEFAULT_TABLES, DEFAULT_WEIGHTS } from './tables.js'
+import type { ComplexityTable } from './tables.js'
 import { countDataFunctions } from './data_functions.js'
 import type { StoreUsage } from './data_functions.js'
 import { countTransactionalFunctions } from './transactional_functions.js'
@@ -37,9 +39,14 @@ export type CountInput = {
 
 export type CountOptions = {
   retStrategy?: 'constant' | 'composition'
-  externallyMaintained?: string[]
-  /** IFPUG conta 1 DET de mensagem; o AFP não. Default segue o AFP. */
+  boundary?: {
+    infrastructure?: string[]
+    externallyMaintained?: string[]
+    ignoreEntryPoints?: string[]
+  }
   messageDet?: number
+  complexityTables?: Partial<Record<FunctionType, ComplexityTable>>
+  weights?: Partial<Record<FunctionType, Record<Complexity, number>>>
 }
 
 export function count(input: CountInput, options: CountOptions = {}): CountResult {
@@ -48,8 +55,16 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
   // 1. como cada repositório é usado pelas transações
   const usage = usageOf(input)
 
-  // 2. filtro de dados técnicos — AFP §6.5.2.1.1
+  const tables = { ...DEFAULT_TABLES, ...options.complexityTables }
+  const weights = { ...DEFAULT_WEIGHTS, ...options.weights }
+  const infrastructure = new Set(options.boundary?.infrastructure ?? [])
+
+  // 2. filtro de dados técnicos — AFP §6.5.2.1.1, mais a fronteira configurada
   const countable = input.stores.filter((store) => {
+    if (infrastructure.has(store.name) || infrastructure.has(store.table ?? '')) {
+      warnings.push(`fora da contagem por configuração de fronteira: ${store.name}`)
+      return false
+    }
     const technical = isTechnical(store)
     if (technical) warnings.push(`técnico, fora da contagem: ${store.name} (${technical})`)
     return !technical
@@ -58,7 +73,9 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
   // 3. funções de dados
   const dataFunctions = countDataFunctions(countable, usage, {
     retStrategy: options.retStrategy ?? 'constant',
-    externallyMaintained: new Set(options.externallyMaintained ?? []),
+    externallyMaintained: new Set(options.boundary?.externallyMaintained ?? []),
+    tables,
+    weights,
   })
 
   // 4. funções transacionais, sobre os repositórios que de fato contam
@@ -66,9 +83,16 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     dataFunctions.map((fn) => [fn.name, countable.find((store) => store.name === fn.name)!])
   )
 
-  const transactionalFunctions = countTransactionalFunctions(input.entryPoints, input.behaviors, {
+  const ignored = new Set(options.boundary?.ignoreEntryPoints ?? [])
+  const entryPoints = input.entryPoints.filter(
+    (entry) => !ignored.has(entry.identity) && !ignored.has(entry.name ?? '')
+  )
+
+  const transactionalFunctions = countTransactionalFunctions(entryPoints, input.behaviors, {
     countedStores,
     messageDet: options.messageDet ?? 0,
+    tables,
+    weights,
   })
 
   const functions = [...dataFunctions, ...transactionalFunctions]

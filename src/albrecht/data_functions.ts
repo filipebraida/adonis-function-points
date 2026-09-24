@@ -1,6 +1,7 @@
 import type { CollectedDataStore } from '../inventory/sources/data_stores.js'
-import type { CountedFunction, FunctionType } from '../types.js'
+import type { Complexity, CountedFunction, FunctionType } from '../types.js'
 import { complexityOf, pointsOf } from './tables.js'
+import type { ComplexityTable } from './tables.js'
 
 /**
  * Funções de dados: ALI e AIE.
@@ -29,6 +30,8 @@ export type DataFunctionOptions = {
   retStrategy: 'constant' | 'composition'
   /** repositórios mantidos por outro sistema, por decisão de fronteira */
   externallyMaintained: Set<string>
+  tables: Record<FunctionType, ComplexityTable>
+  weights: Record<FunctionType, Record<Complexity, number>>
 }
 
 export function countDataFunctions(
@@ -60,7 +63,7 @@ export function countDataFunctions(
     const external = options.externallyMaintained.has(store.name) || !use.written
     const type: FunctionType = external ? 'EIF' : 'ILF'
 
-    const complexity = complexityOf(type, refs, det)
+    const complexity = complexityOf(type, refs, det, options.tables)
 
     counted.push({
       id: `data:${store.name}`,
@@ -70,7 +73,7 @@ export function countDataFunctions(
       det,
       refs,
       complexity,
-      points: pointsOf(type, complexity),
+      points: pointsOf(type, complexity, options.weights),
       rationale: {
         rule: options.externallyMaintained.has(store.name)
           ? 'afp:6.5.4 mantido externamente por configuração de fronteira -> AIE'

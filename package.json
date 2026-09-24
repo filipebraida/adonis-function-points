@@ -2,23 +2,37 @@
   "name": "@filipebraida/adonis-function-points",
   "description": "Automated function point counting and code metrics for AdonisJS applications.",
   "version": "0.1.0",
-  "engines": { "node": ">=24.0.0" },
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "type": "module",
-  "files": ["build", "!build/bin", "!build/tests"],
+  "files": [
+    "build",
+    "!build/bin",
+    "!build/tests"
+  ],
   "main": "build/index.js",
   "exports": {
-    ".": { "types": "./build/index.d.ts", "import": "./build/index.js" },
-    "./types": { "types": "./build/src/types.d.ts", "import": "./build/src/types.js" },
+    ".": {
+      "types": "./build/index.d.ts",
+      "import": "./build/index.js"
+    },
+    "./types": {
+      "types": "./build/src/types.d.ts",
+      "import": "./build/src/types.js"
+    },
     "./resolvers": {
       "types": "./build/src/inventory/resolvers/index.d.ts",
       "import": "./build/src/inventory/resolvers/index.js"
     },
-    "./function_points_provider": {
-      "types": "./build/providers/function_points_provider.d.ts",
-      "import": "./build/providers/function_points_provider.js"
+    "./commands": {
+      "types": "./build/commands/main.d.ts",
+      "import": "./build/commands/main.js"
     },
-    "./commands": { "types": "./build/commands/main.d.ts", "import": "./build/commands/main.js" },
-    "./commands/*": { "types": "./build/commands/*.d.ts", "import": "./build/commands/*.js" }
+    "./commands/*": {
+      "types": "./build/commands/*.d.ts",
+      "import": "./build/commands/*.js"
+    }
   },
   "scripts": {
     "copy:templates": "copyfiles \"stubs/**/*.stub\" build",
@@ -36,14 +50,29 @@
     "prepublishOnly": "npm run build"
   },
   "keywords": [
-    "adonisjs", "adonis", "function-points", "function-point-analysis",
-    "ifpug", "afp", "cosmic", "apf", "pontos-de-funcao", "metrics",
-    "code-metrics", "static-analysis", "software-measurement"
+    "adonisjs",
+    "adonis",
+    "function-points",
+    "function-point-analysis",
+    "ifpug",
+    "afp",
+    "cosmic",
+    "apf",
+    "pontos-de-funcao",
+    "metrics",
+    "code-metrics",
+    "static-analysis",
+    "software-measurement"
   ],
   "author": "Filipe Braida <filipebraida@gmail.com>",
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/filipebraida/adonis-function-points.git" },
-  "bugs": { "url": "https://github.com/filipebraida/adonis-function-points/issues" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/filipebraida/adonis-function-points.git"
+  },
+  "bugs": {
+    "url": "https://github.com/filipebraida/adonis-function-points/issues"
+  },
   "homepage": "https://github.com/filipebraida/adonis-function-points#readme",
   "dependencies": {
     "@poppinss/utils": "^6.7.0",
@@ -71,8 +100,22 @@
     "@adonisjs/core": "^7.0.0",
     "@adonisjs/lucid": "^22.0.0"
   },
-  "peerDependenciesMeta": { "@adonisjs/lucid": { "optional": true } },
-  "publishConfig": { "access": "public" },
-  "c8": { "reporter": ["text", "html"], "exclude": ["tests/**"] },
+  "peerDependenciesMeta": {
+    "@adonisjs/lucid": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "c8": {
+    "reporter": [
+      "text",
+      "html"
+    ],
+    "exclude": [
+      "tests/**"
+    ]
+  },
   "prettier": "@adonisjs/prettier-config"
 }

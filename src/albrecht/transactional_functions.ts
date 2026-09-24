@@ -1,8 +1,9 @@
 import type { CollectedDataStore } from '../inventory/sources/data_stores.js'
 import type { CollectedEntryPoint } from '../inventory/sources/routes_ast.js'
 import type { Behavior } from '../inventory/graph/call_graph.js'
-import type { CountedFunction, FunctionType } from '../types.js'
+import type { Complexity, CountedFunction, FunctionType } from '../types.js'
 import { complexityOf, pointsOf } from './tables.js'
+import type { ComplexityTable } from './tables.js'
 
 /**
  * Funções transacionais: EE e SE.
@@ -30,6 +31,8 @@ export type TransactionOptions = {
    * medida na dissertação do Ligeiro.
    */
   messageDet: number
+  tables: Record<FunctionType, ComplexityTable>
+  weights: Record<FunctionType, Record<Complexity, number>>
 }
 
 export function countTransactionalFunctions(
@@ -55,7 +58,7 @@ export function countTransactionalFunctions(
     const refs = touched.length
 
     const { det, sources } = detsFor(entry, behavior, touched, type, options)
-    const complexity = complexityOf(type, refs, det)
+    const complexity = complexityOf(type, refs, det, options.tables)
 
     counted.push({
       id: `tx:${entry.identity}`,
@@ -65,7 +68,7 @@ export function countTransactionalFunctions(
       det,
       refs,
       complexity,
-      points: pointsOf(type, complexity),
+      points: pointsOf(type, complexity, options.weights),
       scopeHash: scopeHashOf(behavior),
       rationale: {
         rule: behavior.writes

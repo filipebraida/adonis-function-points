@@ -6,8 +6,8 @@ import type { AppContext } from '../app_context.js'
 import type { CollectedDataStore } from '../sources/data_stores.js'
 import { detectAccess, rootSymbolOf } from '../detectors/lucid.js'
 import type { RelationMap, StoreSymbols } from '../detectors/lucid.js'
-import { resolveCall } from '../resolvers/index.js'
-import type { ResolverContext } from '../resolvers/types.js'
+import { BUILTIN_CALL_RESOLVERS, resolveCall } from '../resolvers/index.js'
+import type { CallResolver, ResolverContext } from '../resolvers/types.js'
 import type { HandlerRef, TraceStep, UnresolvedCall } from '../../types.js'
 
 /**
@@ -148,6 +148,13 @@ type BodyFacts = {
 export type GraphOptions = {
   /** quanto seguir a partir do handler; o default vem da configuração */
   maxDepth?: number
+  /**
+   * Estratégias próprias, somadas às embutidas e ordenadas por `order`.
+   *
+   * É o que torna o rastreamento extensível: AdonisJS não impõe padrão de
+   * organização, então um projeto com convenção própria registra a sua.
+   */
+  callResolvers?: CallResolver[]
 }
 
 const DEFAULT_MAX_DEPTH = 3
@@ -188,6 +195,10 @@ export function createAnalyzer(
     stores.map((store) => [store.name, store.relations])
   )
   const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH
+
+  const resolvers = [...(options.callResolvers ?? []), ...BUILTIN_CALL_RESOLVERS].sort(
+    (a, b) => (a.order ?? 100) - (b.order ?? 100)
+  )
 
   const files = new Map<string, SourceFile | null>()
   const sourceFile = (absPath: string): SourceFile | null => {
@@ -269,7 +280,7 @@ export function createAnalyzer(
         sourceFile,
       }
 
-      const resolved = resolveCall(call, context)
+      const resolved = resolveCall(call, context, resolvers)
       if (resolved) {
         for (const next of resolved.refs) followUps.push({ ref: next, by: resolved.by })
         continue

@@ -4,6 +4,7 @@ import { collectEntryPoints } from './inventory/sources/routes_ast.js'
 import { createAnalyzer } from './inventory/graph/call_graph.js'
 import { count } from './albrecht/counter.js'
 import type { CountOptions } from './albrecht/counter.js'
+import type { CallResolver } from './inventory/resolvers/types.js'
 import type { CountResult, Inventory } from './types.js'
 
 /**
@@ -22,6 +23,8 @@ import type { CountResult, Inventory } from './types.js'
 export type AnalysisOptions = CountOptions & {
   /** profundidade do grafo de chamadas a partir do handler */
   maxDepth?: number
+  /** estratégias de rastreamento próprias, rodando antes das embutidas */
+  resolvers?: { call?: CallResolver[] }
   /**
    * Cobertura mínima do rastreamento. Abaixo dela a análise falha em vez de
    * emitir um número que parece certo.
@@ -53,7 +56,10 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
   const { stores, unresolved: storeProblems } = await collectDataStores(app)
   const { entryPoints, unresolved: routeProblems } = await collectEntryPoints(app)
 
-  const analyzer = createAnalyzer(app, stores, { maxDepth: options.maxDepth })
+  const analyzer = createAnalyzer(app, stores, {
+    maxDepth: options.maxDepth,
+    callResolvers: options.resolvers?.call,
+  })
 
   const behaviors = new Map(
     entryPoints

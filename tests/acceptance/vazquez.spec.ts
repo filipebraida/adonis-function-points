@@ -55,7 +55,10 @@ async function contar(): Promise<CountResult> {
   )
 
   // `Pessoa` é parte do controle de acesso, fora da fronteira — ver REFERENCIA.md
-  return count({ app, stores, entryPoints, behaviors }, { externallyMaintained: ['Pessoa'] })
+  return count(
+    { app, stores, entryPoints, behaviors },
+    { boundary: { externallyMaintained: ['Pessoa'] } }
+  )
 }
 
 const pf = (result: CountResult, name: string) => result.functions.find((f) => f.name === name)

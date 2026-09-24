@@ -25,7 +25,7 @@ GET /presenca/relatorio,5
 
 const calibrarVazquez = async () => {
   const { count } = await analyze(appFixturePath('vazquez'), {
-    externallyMaintained: ['Pessoa'],
+    boundary: { externallyMaintained: ['Pessoa'] },
   })
   return calibrate(count, parseSamples(AMOSTRAS_VAZQUEZ))
 }
@@ -140,7 +140,7 @@ test.group('calibração: guardas contra número enganoso', () => {
 
   test('não aplica o fator automaticamente', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('vazquez'), {
-      externallyMaintained: ['Pessoa'],
+      boundary: { externallyMaintained: ['Pessoa'] },
     })
     const antes = count.totals.unadjusted
 
