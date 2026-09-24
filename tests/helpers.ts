@@ -13,6 +13,16 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 export const fixturePath = (...parts: string[]) => path.join(HERE, 'fixtures', ...parts)
 
+/**
+ * A path with forward slashes, for assertions.
+ *
+ * The collectors return platform-native paths, which is correct — but an
+ * assertion written as `/app\/models\/book\.ts$/` then passes on Linux and
+ * fails on Windows against `D:\…\app\models\book.ts`. The product is not
+ * what differs between the two; the assertion is.
+ */
+export const posix = (value: string) => value.split(path.sep).join('/')
+
 /** root of a full application fixture, under tests/fixtures/apps/ */
 export const appFixturePath = (name: string) => fixturePath('apps', name)
 

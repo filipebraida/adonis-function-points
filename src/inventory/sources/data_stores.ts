@@ -71,7 +71,7 @@ export async function collectDataStores(app: AppContext): Promise<DataStoreColle
 
   for (const file of project.getSourceFiles()) {
     // the generated file is a BASE for models, not a model itself
-    if (app.generated.dataSchema && file.getFilePath() === app.generated.dataSchema) continue
+    if (samePath(file.getFilePath(), app.generated.dataSchema)) continue
 
     for (const cls of file.getClasses()) {
       const described = describeStore(cls, app, project, unresolved)
@@ -165,7 +165,7 @@ function walkChain(start: ClassDeclaration, app: AppContext, project: Project): 
     seen.add(key)
     classes.push(cls)
 
-    if (app.generated.dataSchema === cls.getSourceFile().getFilePath()) {
+    if (samePath(cls.getSourceFile().getFilePath(), app.generated.dataSchema)) {
       columnSource = 'generated-schema'
     }
 
@@ -384,6 +384,18 @@ function tableOf(cls: ClassDeclaration): string | undefined {
   if (!declared || !Node.isPropertyDeclaration(declared)) return undefined
   return declared.getInitializer()?.asKind(SyntaxKind.StringLiteral)?.getLiteralValue()
 }
+
+/**
+ * Compares a ts-morph path with one built by node's `path` API.
+ *
+ * ts-morph always normalises to forward slashes, including on Windows, while
+ * `AppContext` builds paths with `path.join`. Comparing them with `===` is
+ * true on Linux and false on Windows, where the generated schema would then be
+ * silently ignored and every column read from the decorators instead — a
+ * different count on a different operating system, with nothing said.
+ */
+const samePath = (a: string | undefined, b: string | undefined) =>
+  a !== undefined && b !== undefined && a.split('\\').join('/') === b.split('\\').join('/')
 
 /** Lucid convention when `static table` is not declared */
 function tableFromName(name: string): string {

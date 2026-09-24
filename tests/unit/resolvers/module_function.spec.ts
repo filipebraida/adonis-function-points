@@ -1,7 +1,7 @@
 import { test } from '@japa/runner'
 
 import { moduleFunctionResolver } from '../../../src/inventory/resolvers/module_function.js'
-import { loadFixture } from '../../helpers.js'
+import { loadFixture, posix } from '../../helpers.js'
 
 test.group('resolver: module function', () => {
   test('follows `importedFunction()`', async ({ assert }) => {
@@ -14,7 +14,7 @@ test.group('resolver: module function', () => {
       .flatMap((call) => moduleFunctionResolver.resolve(call, ctx))
 
     assert.lengthOf(refs, 1)
-    assert.include(refs[0].file, 'services/expire_invite.ts')
+    assert.include(posix(refs[0].file), 'services/expire_invite.ts')
     assert.equal(refs[0].member, 'expireInvite')
   })
 })

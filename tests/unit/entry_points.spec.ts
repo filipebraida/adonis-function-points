@@ -4,7 +4,7 @@ import path from 'node:path'
 import { discoverApp } from '../../src/inventory/app_context.js'
 import { collectEntryPoints } from '../../src/inventory/sources/routes_ast.js'
 import type { EntryPointCollection } from '../../src/inventory/sources/routes_ast.js'
-import { fixturePath } from '../helpers.js'
+import { fixturePath, posix } from '../helpers.js'
 
 const collect = async (root: string) => collectEntryPoints(await discoverApp(root))
 
@@ -111,12 +111,14 @@ test.group('entry points: controller resolution', () => {
     const admin = handlerOf(result, 'GET', '/admin/books')
 
     assert.include(
-      result.entryPoints.find((e) => e.signature === '/books' && e.trigger === 'GET')!.handler!
-        .file,
+      posix(
+        result.entryPoints.find((e) => e.signature === '/books' && e.trigger === 'GET')!.handler!
+          .file
+      ),
       '/catalog/'
     )
     assert.include(
-      result.entryPoints.find((e) => e.signature === '/admin/books')!.handler!.file,
+      posix(result.entryPoints.find((e) => e.signature === '/admin/books')!.handler!.file),
       '/admin/'
     )
     assert.equal(catalog.file, admin.file, 'same basename, different files')

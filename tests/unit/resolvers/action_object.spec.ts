@@ -1,7 +1,7 @@
 import { test } from '@japa/runner'
 
 import { actionObjectResolver } from '../../../src/inventory/resolvers/action_object.js'
-import { loadFixture } from '../../helpers.js'
+import { loadFixture, posix } from '../../helpers.js'
 
 test.group('resolver: action object', () => {
   test('follows `new Action().handle()` instantiated inline', async ({ assert }) => {
@@ -14,7 +14,7 @@ test.group('resolver: action object', () => {
       .flatMap((call) => actionObjectResolver.resolve(call, ctx))
 
     assert.lengthOf(refs, 1)
-    assert.include(refs[0].file, 'actions/expire_invite.ts')
+    assert.include(posix(refs[0].file), 'actions/expire_invite.ts')
     assert.equal(refs[0].member, 'handle')
   })
 
@@ -28,7 +28,7 @@ test.group('resolver: action object', () => {
       .flatMap((call) => actionObjectResolver.resolve(call, ctx))
 
     assert.lengthOf(refs, 1)
-    assert.include(refs[0].file, 'actions/expire_invite.ts')
+    assert.include(posix(refs[0].file), 'actions/expire_invite.ts')
     assert.equal(refs[0].member, 'handle')
   })
 

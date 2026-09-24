@@ -2,7 +2,7 @@ import { test } from '@japa/runner'
 import path from 'node:path'
 
 import { discoverApp } from '../../src/inventory/app_context.js'
-import { appFixturePath } from '../helpers.js'
+import { appFixturePath, posix } from '../helpers.js'
 
 test.group('AppContext: subpath aliases', () => {
   /**
@@ -33,7 +33,7 @@ test.group('AppContext: subpath aliases', () => {
 
   test("translates the map's .js target to the .ts we analyse", async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_flat'))
-    assert.match(app.resolveSpecifier('#models/book')!, /app\/models\/book\.ts$/)
+    assert.match(posix(app.resolveSpecifier('#models/book')!), /app\/models\/book\.ts$/)
   })
 
   /**
@@ -49,18 +49,21 @@ test.group('AppContext: subpath aliases', () => {
     const app = await discoverApp(appFixturePath('overlapping_aliases'))
     const resolved = app.resolveSpecifier('#app/legacy/importer')!
 
-    assert.match(resolved, /vendor\/legacy\/importer\.ts$/)
-    assert.notMatch(resolved, /app\/legacy\/importer\.ts$/)
+    assert.match(posix(resolved), /vendor\/legacy\/importer\.ts$/)
+    assert.notMatch(posix(resolved), /app\/legacy\/importer\.ts$/)
   })
 
   test('a non-overlapping alias resolves directly', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('overlapping_aliases'))
-    assert.match(app.resolveSpecifier('#core/database/schema')!, /app\/core\/database\/schema\.ts$/)
+    assert.match(
+      posix(app.resolveSpecifier('#core/database/schema')!),
+      /app\/core\/database\/schema\.ts$/
+    )
   })
 
   test('resolves an alias with no wildcard', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('overlapping_aliases'))
-    assert.match(app.resolveSpecifier('#exact')!, /billing\/models\/invoice\.ts$/)
+    assert.match(posix(app.resolveSpecifier('#exact')!), /billing\/models\/invoice\.ts$/)
   })
 
   test('returns null for a package specifier instead of guessing', async ({ assert }) => {
@@ -76,8 +79,8 @@ test.group('AppContext: generated artefacts', () => {
     const flat = await discoverApp(appFixturePath('minimal_flat'))
     const modular = await discoverApp(appFixturePath('minimal_modular'))
 
-    assert.match(flat.generated.dataSchema!, /(^|\/)database\/schema\.ts$/)
-    assert.match(modular.generated.dataSchema!, /app\/core\/database\/schema\.ts$/)
+    assert.match(posix(flat.generated.dataSchema!), /(^|\/)database\/schema\.ts$/)
+    assert.match(posix(modular.generated.dataSchema!), /app\/core\/database\/schema\.ts$/)
   })
 
   test('finds a generated schema in an unconventional path', async ({ assert }) => {

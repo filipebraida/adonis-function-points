@@ -5,7 +5,7 @@ import { discoverApp } from '../../src/inventory/app_context.js'
 import { collectDataStores } from '../../src/inventory/sources/data_stores.js'
 import { analyzeHandler, createAnalyzer } from '../../src/inventory/graph/call_graph.js'
 import type { HandlerRef } from '../../src/types.js'
-import { fixturePath } from '../helpers.js'
+import { fixturePath, posix } from '../helpers.js'
 
 /** analyses the `handle` handler of the given controller, inside a fixture */
 async function analyze(pattern: string, controller = 'expire_invite_controller.ts') {
@@ -65,7 +65,7 @@ test.group('graph: reaches the data in every code pattern', () => {
     assert.isTrue(behavior.writes)
     assert.isEmpty(behavior.unresolved, 'no unresolved call should be left')
 
-    const service = behavior.trace.find((step) => step.file.includes('services/'))
+    const service = behavior.trace.find((step) => posix(step.file).includes('services/'))
     assert.exists(service, 'did not walk into the injected service')
     assert.equal(service!.by, 'property-service')
   })
@@ -90,7 +90,7 @@ test.group('graph: store reached through a parameter type', () => {
 
   test('the write is attributed to the right body', async ({ assert }) => {
     const behavior = await analyze('typed_input')
-    const action = behavior.trace.find((step) => step.file.includes('actions/'))
+    const action = behavior.trace.find((step) => posix(step.file).includes('actions/'))
 
     assert.exists(action)
     assert.isTrue(action!.writes, 'the write happens in the action, not the controller')
@@ -133,9 +133,9 @@ test.group('graph: trace and provenance', () => {
 
     assert.isAbove(behavior.trace.length, 1, 'the trace should have more than one step')
     assert.equal(behavior.trace[0].depth, 0)
-    assert.include(behavior.trace[0].file, 'expire_invite_controller')
+    assert.include(posix(behavior.trace[0].file), 'expire_invite_controller')
 
-    const action = behavior.trace.find((step) => step.file.includes('actions/'))
+    const action = behavior.trace.find((step) => posix(step.file).includes('actions/'))
     assert.exists(action, 'did not walk into the action')
     assert.equal(action!.by, 'action-object', 'the trace must say WHO resolved it')
     assert.isTrue(action!.writes, 'the write happens in the action')
@@ -151,7 +151,7 @@ test.group('graph: trace and provenance', () => {
     const verbose = await analyze('method_level', 'expire_invite_verbose_controller.ts')
 
     const handlerHash = (behavior: typeof compact) =>
-      behavior.scope.find((entry) => entry.file.includes('controllers/'))!.bodyHash
+      behavior.scope.find((entry) => posix(entry.file).includes('controllers/'))!.bodyHash
 
     assert.equal(
       handlerHash(verbose),
@@ -165,7 +165,7 @@ test.group('graph: trace and provenance', () => {
     const list = await analyze('method_level', 'list_invites_controller.ts')
 
     const handlerHash = (behavior: typeof expire) =>
-      behavior.scope.find((entry) => entry.file.includes('controllers/'))!.bodyHash
+      behavior.scope.find((entry) => posix(entry.file).includes('controllers/'))!.bodyHash
 
     assert.notEqual(handlerHash(expire), handlerHash(list))
   })
