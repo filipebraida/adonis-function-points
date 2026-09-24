@@ -486,6 +486,23 @@ vira alvo, não medida.
 
 - **Hooks de model** (§3) e **fronteira de `node_modules`** (§4), decididos e
   não implementados.
+
+  **Medido antes de priorizar (set/2026).** Nas 4 apps: 10 hooks no total, e uma
+  delas não tem nenhum. Do total, 7 não tocam dado — 3 são `refresh()` da própria
+  linha, 1 é log, e os outros normalizam campo antes de salvar. Sobram 3 que
+  alcançam OUTRA tabela: um lê tabela de referência, dois apagam em cascata.
+
+  O efeito esperado é pequeno, e por um motivo que só a medição mostra: as três
+  tabelas alcançadas por hook **já são contadas**, porque outras transações as
+  alcançam também. Então hooks não acrescentariam função de dados nenhuma; só
+  somariam FTR a um punhado de transações — na app maior, 3 a 6 rotas de 134,
+  com no máximo 1 PF cada, sobre um total de 714. Menos de 1%.
+
+  A regra do §3 continua certa e a lacuna continua real: numa app onde a tabela
+  da cascata só fosse escrita pelo hook, ela seria função de dados inteira
+  faltando, não arredondamento. Mas nestas não é o caso, e isso põe hooks abaixo
+  de qualquer coisa que erre o número inteiro.
+
 - **Fator de alteração graduado** no `fp:diff`: exige complexidade ciclomática,
   que a AEP usa na Tabela 6.1. Hoje é 1 e avisa que superestima.
 - **Hotspots churn × complexidade**, que exigem histórico do git.
