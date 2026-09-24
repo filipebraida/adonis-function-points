@@ -8,7 +8,12 @@ It is this project's only external benchmark: a count we did not make, over a
 specification we did not write.
 
 The system and the function names are Brazilian Portuguese, as published. They
-are kept verbatim so every line here can be checked against the source.
+are kept verbatim so every line here can be checked against the source — and so
+are the fixture's own file and directory names (`app/ponto/`, `pessoa.ts`,
+`apontamentos_controller.ts`). **Do not anglicise them.** The fixture exists to
+be compared against a published count function by function; renaming its parts
+breaks that correspondence and the comparison stops being verifiable. This is
+the one fixture in the repository where Portuguese names are deliberate.
 
 ## The system
 
