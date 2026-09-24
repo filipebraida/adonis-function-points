@@ -152,6 +152,30 @@ src/
 └── reporters/table.ts        the `fp:*` reports
 ```
 
+## Two front-ends, one set of runners
+
+The package is used two ways: installed, through `node ace fp:*`, and
+standalone, through `npx` in CI. Neither can be allowed to disagree about a
+number, so everything that decides one lives in `src/cli/runners.ts` and both
+front-ends only parse arguments and print.
+
+```
+commands/fp_*.ts   ace adapters (@adonisjs/core)  ─┐
+                                                   ├─> src/cli/runners.ts ──> analyze()
+bin/cli.js -> src/cli.ts   standalone, for CI     ─┘
+```
+
+Standalone is possible at all because of a decision taken in Phase 1 for a
+different reason: **fixtures do not boot**, so the engine had to work from the
+AST over a file tree. `src/**` imports nothing from `@adonisjs/*`, needs no
+container, no `.env` and no database. The framework is a peer dependency of the
+ace adapters only.
+
+Loading `config/function_points.ts` belongs to the shared layer for the same
+reason. The ace commands run with `startApp: false`, so there is no booted
+container to read configuration from, and the standalone CLI has no container
+at all — both import the file directly.
+
 ## Discovery in place of configuration
 
 `AppContext` discovers what it needs rather than asking:

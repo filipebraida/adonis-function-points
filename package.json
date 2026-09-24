@@ -8,6 +8,7 @@
   "type": "module",
   "files": [
     "build",
+    "bin/cli.js",
     "!build/bin",
     "!build/tests"
   ],
@@ -76,6 +77,7 @@
   "homepage": "https://github.com/filipebraida/adonis-function-points#readme",
   "dependencies": {
     "@poppinss/utils": "^6.7.0",
+    "jiti": "^2.6.1",
     "ts-morph": "^24.0.0"
   },
   "devDependencies": {
@@ -101,6 +103,9 @@
     "@adonisjs/lucid": "^22.0.0"
   },
   "peerDependenciesMeta": {
+    "@adonisjs/core": {
+      "optional": true
+    },
     "@adonisjs/lucid": {
       "optional": true
     }
@@ -117,5 +122,8 @@
       "tests/**"
     ]
   },
-  "prettier": "@adonisjs/prettier-config"
+  "prettier": "@adonisjs/prettier-config",
+  "bin": {
+    "adonis-function-points": "bin/cli.js"
+  }
 }

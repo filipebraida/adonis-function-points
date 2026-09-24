@@ -1,8 +1,8 @@
 import { BaseCommand, args } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
 
-import { analyze } from '../src/pipeline.js'
-import { renderExplain } from '../src/reporters/table.js'
+import { printResult } from '../src/cli/print.js'
+import { runExplain } from '../src/cli/runners.js'
 
 /**
  * Why a function was counted the way it was.
@@ -19,18 +19,9 @@ export default class FpExplain extends BaseCommand {
   declare name: string
 
   async run() {
-    const { count } = await analyze(this.app.makePath())
-
-    const matched = count.functions.filter((fn) =>
-      fn.name.toLowerCase().includes(this.name.toLowerCase())
+    this.exitCode = printResult(
+      await runExplain({ root: this.app.makePath(), name: this.name }),
+      this.logger
     )
-
-    if (matched.length === 0) {
-      this.logger.error(`no function matching "${this.name}"`)
-      this.exitCode = 1
-      return
-    }
-
-    this.logger.log(matched.map(renderExplain).join('\n\n' + '-'.repeat(70) + '\n\n'))
   }
 }

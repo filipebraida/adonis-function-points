@@ -1,9 +1,8 @@
 import { BaseCommand, args } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
-import { readFile } from 'node:fs/promises'
 
-import { analyze } from '../src/pipeline.js'
-import { calibrate, parseSamples } from '../src/albrecht/calibration.js'
+import { printResult } from '../src/cli/print.js'
+import { runCalibrate } from '../src/cli/runners.js'
 
 /**
  * Measures the counter's bias against a manual count.
@@ -21,25 +20,9 @@ export default class FpCalibrate extends BaseCommand {
   declare samples: string
 
   async run() {
-    const samples = parseSamples(await readFile(this.samples, 'utf8'))
-    const { count } = await analyze(this.app.makePath())
-    const calibration = calibrate(count, samples)
-
-    const { overall } = calibration
-    this.logger.log(
-      `samples: ${overall.samples} · manual ${overall.manualPoints} FP · ` +
-        `automatic ${overall.automaticPoints} FP · deviation ${(overall.deviation * 100).toFixed(1)}%`
+    this.exitCode = printResult(
+      await runCalibrate({ root: this.app.makePath(), samples: this.samples }),
+      this.logger
     )
-    this.logger.log(`exact matches: ${overall.exactMatches}/${overall.samples}`)
-    this.logger.log('')
-
-    for (const item of calibration.byType) {
-      this.logger.log(
-        `${item.type.padEnd(4)} n=${String(item.samples).padStart(3)} ` +
-          `factor ${item.factor.toFixed(3)} · mean deviation ${item.meanAbsoluteDeviation} FP`
-      )
-    }
-
-    for (const warning of calibration.warnings) this.logger.warning(warning)
   }
 }

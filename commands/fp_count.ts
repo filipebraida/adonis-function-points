@@ -1,9 +1,8 @@
 import { BaseCommand, flags } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
-import { writeFile } from 'node:fs/promises'
 
-import { analyze } from '../src/pipeline.js'
-import { renderCount } from '../src/reporters/table.js'
+import { printResult } from '../src/cli/print.js'
+import { runCount } from '../src/cli/runners.js'
 
 export default class FpCount extends BaseCommand {
   static commandName = 'fp:count'
@@ -20,15 +19,14 @@ export default class FpCount extends BaseCommand {
   declare minCoverage?: number
 
   async run() {
-    const { count } = await analyze(this.app.makePath(), {
-      minCoverage: this.minCoverage,
-    })
-
-    if (this.out) {
-      await writeFile(this.out, JSON.stringify(count, null, 2))
-      this.logger.success(`count written to ${this.out}`)
-    }
-
-    this.logger.log(this.json ? JSON.stringify(count, null, 2) : renderCount(count))
+    this.exitCode = printResult(
+      await runCount({
+        root: this.app.makePath(),
+        out: this.out,
+        json: this.json,
+        minCoverage: this.minCoverage,
+      }),
+      this.logger
+    )
   }
 }

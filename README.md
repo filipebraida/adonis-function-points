@@ -55,6 +55,45 @@ node ace configure @filipebraida/adonis-function-points
 
 Requires **AdonisJS 7** and **Lucid 22** (see [Support](#support)).
 
+### Or run it without installing
+
+For CI, or a one-off count on a project you do not want to touch:
+
+```bash
+npx @filipebraida/adonis-function-points count --root ./my-app
+```
+
+Nothing is booted either way — the engine only reads files — so a standalone
+run needs no `.env`, no database, and no install inside the analysed project.
+The standalone binary **does not replace installing**: a project that installs
+the package keeps the `node ace fp:*` commands, and both front-ends call the
+same code, so they cannot disagree about a number.
+
+```
+adonis-function-points <command> [options]
+
+  count                    count the unadjusted function points
+  inventory                the raw facts: stores, routes, tracing coverage
+  explain <name>           why one function was counted that way
+  diff <previous.json>     additions / modifications / deletions, and billable FP
+  calibrate <samples.csv>  correction factors against a manual count
+
+  --root <path>            application to analyse (default: the current directory)
+  --out <path>             write the result as JSON to this path
+  --json                   print JSON instead of a table
+  --min-coverage <0..1>    fail below this tracing coverage
+```
+
+Both front-ends exit non-zero when the count cannot be produced — coverage
+below the minimum, an unreadable configuration, a saved count from a different
+ruleset — so a CI job fails instead of publishing a number nobody can defend.
+
+#### In CI
+
+```yaml
+- run: npx @filipebraida/adonis-function-points count --min-coverage 0.85 --out fp.json
+```
+
 ## Commands
 
 | command                               | what it does                                               |
@@ -190,6 +229,12 @@ export default defineConfig({
 
 `complexityTables` and `weights` are also accepted, for calibrating the bands
 against a manual count.
+
+Both front-ends load this file from the application root, and every run prints
+which configuration produced it — the file path, or `defaults` when there is
+none. A configuration file that exists and fails to load is an **error**: the
+count is not produced. Falling back to the defaults with a warning would change
+the number without telling anyone, and the number becomes an invoice.
 
 ### Custom code pattern
 
