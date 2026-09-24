@@ -67,6 +67,26 @@ test.group('config loading', () => {
  * The two front-ends must not be able to disagree about a number, so everything
  * that decides one lives in the runners and both call them.
  */
+test.group('runners: an empty inventory is never a number', () => {
+  /**
+   * Defence in depth behind the CLI guard: the ace front-end has no `--root` to
+   * get wrong, but nothing else stops a runner returning `0 FP` for a directory
+   * where it simply found nothing.
+   */
+  test('finding nothing is an error, not a count of zero', async ({ assert }) => {
+    const result = await runCount({ root: fixturePath('monorepo') })
+
+    assert.isEmpty(result.output)
+    assert.isNotEmpty(result.errors)
+    assert.isTrue(result.errors!.some((line) => line.includes('not a count of zero')))
+  })
+
+  test('the same holds for the inventory', async ({ assert }) => {
+    const result = await runInventory({ root: fixturePath('monorepo') })
+    assert.isNotEmpty(result.errors)
+  })
+})
+
 test.group('runners: the config reaches the count', () => {
   test('an option in the config file changes the count', async ({ assert }) => {
     const withoutConfig = await runCount({ root: appFixturePath('minimal_flat') })
@@ -121,14 +141,21 @@ test.group('cli: argument parsing', () => {
 })
 
 test.group('cli: exit codes', () => {
-  const silent = { log: () => {}, error: () => {} }
+  const silent = { log: () => {}, error: () => {}, note: () => {} }
 
   /** captures what the CLI would print, so the suite stays quiet */
   const capture = () => {
-    const lines: string[] = []
+    const out: string[] = []
+    const notes: string[] = []
     return {
-      lines,
-      printer: { log: (m: string) => lines.push(m), error: (m: string) => lines.push(m) },
+      lines: out,
+      out,
+      notes,
+      printer: {
+        log: (m: string) => void out.push(m),
+        error: (m: string) => void out.push(m),
+        note: (m: string) => void notes.push(m),
+      },
     }
   }
 
@@ -145,7 +172,7 @@ test.group('cli: exit codes', () => {
    * Pointing at the wrong directory is the likeliest mistake in CI, and its
    * symptom would be a confident zero. Refusing beats counting nothing.
    */
-  test('a root with no package.json is refused', async ({ assert }) => {
+  test('a root that is not an AdonisJS application is refused', async ({ assert }) => {
     const { lines, printer } = capture()
     const code = await run(
       ['count', '--root', path.join(appFixturePath('minimal_flat'), 'app')],
@@ -153,7 +180,22 @@ test.group('cli: exit codes', () => {
     )
 
     assert.equal(code, 1)
-    assert.isTrue(lines.some((line) => line.includes('not an application root')))
+    assert.isTrue(lines.some((line) => line.includes('not an AdonisJS application root')))
+  })
+
+  /**
+   * The real case that found this: pointed at a monorepo root — which has a
+   * package.json, so the old guard passed — the count came back 0 FP at 100%
+   * coverage and exit 0. CI would have gone green on nothing.
+   */
+  test('a monorepo root is refused, not counted as zero', async ({ assert }) => {
+    const { lines, printer } = capture()
+    const monorepo = fixturePath('monorepo')
+
+    const code = await run(['count', '--root', monorepo], printer)
+
+    assert.equal(code, 1)
+    assert.isTrue(lines.some((line) => /apps\/<name>|not an AdonisJS/.test(line)))
   })
 
   test('an unknown command exits 1 and shows the usage', async ({ assert }) => {
@@ -171,6 +213,21 @@ test.group('cli: exit codes', () => {
   test('--help exits 0 when asked for explicitly', async ({ assert }) => {
     const { printer } = capture()
     assert.equal(await run(['count', '--help'], printer), 0)
+  })
+
+  /**
+   * `--json` exists to be piped. A note on stdout makes the output unparseable,
+   * which is a failure that only shows up in the CI job it was built for.
+   */
+  test('--json writes parseable JSON, with notes kept off stdout', async ({ assert }) => {
+    const { out, notes, printer } = capture()
+
+    assert.equal(
+      await run(['count', '--root', appFixturePath('minimal_flat'), '--json'], printer),
+      0
+    )
+    assert.doesNotThrow(() => JSON.parse(out.join('\n')))
+    assert.isTrue(notes.some((note) => note.includes('config')))
   })
 
   /** a flag documented in the usage that does nothing is the defect we keep fixing */

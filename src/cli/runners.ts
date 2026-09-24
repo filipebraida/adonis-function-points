@@ -32,6 +32,25 @@ export type RunResult = {
 
 type Common = { root: string }
 
+/**
+ * An empty inventory is never a number.
+ *
+ * Both front-ends can be pointed at a directory that is not the application —
+ * a monorepo root is the common case — and the symptom is not an error, it is
+ * a confident zero: 0 FP at 100% coverage, exit 0, CI green. Counting nothing
+ * and reporting nothing are indistinguishable from the outside, so the only
+ * safe answer is to refuse.
+ */
+function refuseIfEmpty(root: string, stores: number, entryPoints: number): string[] | null {
+  if (stores > 0 || entryPoints > 0) return null
+
+  return [
+    `found no data stores and no entry points in ${root}.`,
+    `That is not a count of zero — it is a failure to find the application.`,
+    `Check that --root points at the AdonisJS application (apps/<name> in a monorepo).`,
+  ]
+}
+
 /** every run says which configuration produced it — provenance starts here */
 async function configFor(root: string) {
   const { config, file } = await loadConfig(root)
@@ -44,6 +63,13 @@ async function configFor(root: string) {
 export async function runInventory(options: Common & { out?: string }): Promise<RunResult> {
   const { config, notes } = await configFor(options.root)
   const { inventory } = await analyze(options.root, config)
+
+  const empty = refuseIfEmpty(
+    options.root,
+    inventory.dataStores.length,
+    inventory.entryPoints.length
+  )
+  if (empty) return { output: '', notes, errors: empty }
 
   if (options.out) {
     await writeFile(options.out, JSON.stringify(inventory, null, 2))
@@ -68,10 +94,17 @@ export async function runCount(
   const { config, notes } = await configFor(options.root)
 
   // an explicit flag beats the config file: it is the more local intent
-  const { count } = await analyze(options.root, {
+  const { inventory, count } = await analyze(options.root, {
     ...config,
     minCoverage: options.minCoverage ?? config.minCoverage,
   })
+
+  const empty = refuseIfEmpty(
+    options.root,
+    inventory.dataStores.length,
+    inventory.entryPoints.length
+  )
+  if (empty) return { output: '', notes, errors: empty }
 
   if (options.out) {
     await writeFile(options.out, JSON.stringify(count, null, 2))

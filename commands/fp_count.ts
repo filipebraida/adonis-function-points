@@ -2,6 +2,7 @@ import { BaseCommand, flags } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
 
 import { printResult } from '../src/cli/print.js'
+import { printerFor } from './printer.js'
 import { runCount } from '../src/cli/runners.js'
 
 export default class FpCount extends BaseCommand {
@@ -26,7 +27,7 @@ export default class FpCount extends BaseCommand {
         json: this.json,
         minCoverage: this.minCoverage,
       }),
-      this.logger
+      printerFor(this)
     )
   }
 }

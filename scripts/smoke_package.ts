@@ -1,5 +1,13 @@
-import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -58,9 +66,19 @@ try {
   // a real application, installing the package the way a user would
   const app = path.join(workspace, 'app')
   cpSync(path.join(ROOT, 'tests', 'fixtures', 'apps', 'minimal_flat'), app, { recursive: true })
+  /**
+   * Keep the fixture's own `imports` map: it is how `#models/book` resolves,
+   * and without it the app discovers nothing. An earlier version of this script
+   * overwrote the whole file, so every count here was 0 and the assertions
+   * below passed vacuously.
+   */
+  const appManifest = JSON.parse(readFileSync(path.join(app, 'package.json'), 'utf8')) as Record<
+    string,
+    unknown
+  >
   writeFileSync(
     path.join(app, 'package.json'),
-    JSON.stringify({ name: 'smoke-app', type: 'module', private: true }, null, 2)
+    JSON.stringify({ ...appManifest, name: 'smoke-app', private: true }, null, 2)
   )
 
   process.stdout.write('installing the tarball…\n')
@@ -112,20 +130,21 @@ try {
   if (!existsSync(bin)) fail('the bin is linked on install', new Error(`${bin} not found`))
   pass('the bin is linked on install')
 
-  let output: string
-  try {
-    output = run(bin, ['count', '--root', app], app)
-  } catch (error) {
-    fail('counts through the installed binary', error)
-  }
+  const counted = spawnSync(bin, ['count', '--root', app], { cwd: app, encoding: 'utf8' })
+  const output = counted.stdout ?? ''
+  const diagnostics = counted.stderr ?? ''
 
-  if (!output.includes('Unadjusted count:')) {
-    fail('counts through the installed binary', new Error(output))
+  if (counted.status !== 0 || !output.includes('Unadjusted count:')) {
+    fail('counts through the installed binary', new Error(output + diagnostics))
   }
   pass('counts through the installed binary')
 
-  if (!/config:.*function_points\.ts/.test(output)) {
-    fail('honours a config that imports the package', new Error(output))
+  /**
+   * The note naming the configuration belongs on stderr, not stdout: `--json`
+   * exists to be piped, and a note printed there makes the output unparseable.
+   */
+  if (!/config:.*function_points\.ts/.test(diagnostics)) {
+    fail('honours a config that imports the package', new Error(diagnostics || '(no stderr)'))
   }
   pass('honours a config that imports the package')
 
@@ -133,6 +152,24 @@ try {
     fail('the config actually changed the count', new Error('Book was excluded but still counted'))
   }
   pass('the config actually changed the count')
+
+  /**
+   * Without this, every assertion above passes on an empty count: the binary
+   * runs, prints a total of 0, and `Book` is absent because nothing was found.
+   */
+  const total = Number(output.match(/Unadjusted count:\s*(\d+)/)?.[1] ?? 0)
+  if (total <= 0) fail('the count is not empty', new Error(output))
+  pass(`the count is not empty (${total} FP)`)
+
+  // `--json` is the CI contract: stdout has to parse, with notes kept off it
+  const asJson = spawnSync(bin, ['count', '--root', app, '--json'], { cwd: app, encoding: 'utf8' })
+  try {
+    const parsed = JSON.parse(asJson.stdout ?? '') as { totals?: { unadjusted?: number } }
+    if (typeof parsed.totals?.unadjusted !== 'number') throw new Error('no totals in the JSON')
+  } catch (error) {
+    fail('--json writes parseable JSON on stdout', error)
+  }
+  pass('--json writes parseable JSON on stdout')
 
   process.stdout.write(`\n${checks.length} checks passed against the packed tarball\n`)
 } finally {

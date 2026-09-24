@@ -2,6 +2,7 @@ import { BaseCommand, flags } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
 
 import { printResult } from '../src/cli/print.js'
+import { printerFor } from './printer.js'
 import { runInventory } from '../src/cli/runners.js'
 
 export default class FpInventory extends BaseCommand {
@@ -15,7 +16,7 @@ export default class FpInventory extends BaseCommand {
   async run() {
     this.exitCode = printResult(
       await runInventory({ root: this.app.makePath(), out: this.out }),
-      this.logger
+      printerFor(this)
     )
   }
 }

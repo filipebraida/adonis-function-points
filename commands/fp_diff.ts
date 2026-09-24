@@ -2,6 +2,7 @@ import { BaseCommand, args } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
 
 import { printResult } from '../src/cli/print.js'
+import { printerFor } from './printer.js'
 import { runDiff } from '../src/cli/runners.js'
 
 /**
@@ -22,7 +23,7 @@ export default class FpDiff extends BaseCommand {
   async run() {
     this.exitCode = printResult(
       await runDiff({ root: this.app.makePath(), previous: this.previous }),
-      this.logger
+      printerFor(this)
     )
   }
 }

@@ -2,6 +2,7 @@ import { BaseCommand, args } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
 
 import { printResult } from '../src/cli/print.js'
+import { printerFor } from './printer.js'
 import { runCalibrate } from '../src/cli/runners.js'
 
 /**
@@ -22,7 +23,7 @@ export default class FpCalibrate extends BaseCommand {
   async run() {
     this.exitCode = printResult(
       await runCalibrate({ root: this.app.makePath(), samples: this.samples }),
-      this.logger
+      printerFor(this)
     )
   }
 }

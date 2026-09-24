@@ -2,6 +2,7 @@ import { BaseCommand, args } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
 
 import { printResult } from '../src/cli/print.js'
+import { printerFor } from './printer.js'
 import { runExplain } from '../src/cli/runners.js'
 
 /**
@@ -21,7 +22,7 @@ export default class FpExplain extends BaseCommand {
   async run() {
     this.exitCode = printResult(
       await runExplain({ root: this.app.makePath(), name: this.name }),
-      this.logger
+      printerFor(this)
     )
   }
 }

@@ -104,14 +104,12 @@ const numeric = (value: string | true | undefined) =>
 
 const text = (value: string | true | undefined) => (typeof value === 'string' ? value : undefined)
 
-export type Printer = {
-  log: (message: string) => void
-  error: (message: string) => void
-}
+import type { Printer } from './cli/print.js'
 
 const CONSOLE: Printer = {
   log: (message: string) => process.stdout.write(`${message}\n`),
   error: (message: string) => process.stderr.write(`${message}\n`),
+  note: (message: string) => process.stderr.write(`${message}\n`),
 }
 
 export async function run(argv: string[], printer: Printer = CONSOLE): Promise<number> {
@@ -127,14 +125,34 @@ export async function run(argv: string[], printer: Printer = CONSOLE): Promise<n
     return command ? 0 : 1
   }
 
+  /**
+   * The command is validated before the root: an unknown command is a usage
+   * error wherever you run it, and reporting "this is not an application root"
+   * for a typo would point at the wrong problem.
+   */
+  const KNOWN = ['count', 'inventory', 'explain', 'diff', 'calibrate']
+  if (!KNOWN.includes(command)) {
+    printer.error(`unknown command "${command}"`)
+    printer.log(USAGE.trimEnd())
+    return 1
+  }
+
   const root = path.resolve(text(flags.get('root')) ?? process.cwd())
 
   /**
    * Pointing at the wrong directory is the likeliest mistake in CI, and its
-   * symptom would be a confident zero. Refusing beats counting nothing.
+   * symptom is a confident zero: a monorepo root has a package.json, so that
+   * check passed and the count came back 0 FP with 100% coverage and exit 0.
+   *
+   * `adonisrc.ts` is what actually marks an AdonisJS application root.
    */
-  if (!existsSync(path.join(root, 'package.json'))) {
-    printer.error(`no package.json in ${root}: this is not an application root`)
+  const marker = ['adonisrc.ts', 'adonisrc.js'].find((name) => existsSync(path.join(root, name)))
+
+  if (!marker) {
+    printer.error(
+      `no adonisrc.ts in ${root}: this is not an AdonisJS application root.\n` +
+        `In a monorepo, point --root at the application itself (apps/<name>).`
+    )
     return 1
   }
 
@@ -171,9 +189,8 @@ export async function run(argv: string[], printer: Printer = CONSOLE): Promise<n
       result = await runCalibrate({ root, samples: need('a samples CSV', positional[0]) })
       break
 
+    /* c8 ignore next 2 -- unreachable: KNOWN is checked above */
     default:
-      printer.error(`unknown command "${command}"`)
-      printer.log(USAGE.trimEnd())
       return 1
   }
 
