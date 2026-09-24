@@ -20,6 +20,9 @@ export type Provenance = {
   by: string
 }
 
+export type { CountSource } from './inventory/source.js'
+import type { CountSource } from './inventory/source.js'
+
 // ---------------------------------------------------------------------------
 // INVENTORY — raw facts
 // ---------------------------------------------------------------------------
@@ -202,6 +205,15 @@ export type CountResult = {
   /** identifies the rule set — counts are comparable only if these match */
   ruleset: string
   rulesetVersion: string
+  /**
+   * What was counted: application, revision, whether the tree was dirty.
+   *
+   * Optional because `count()` can be called directly with an inventory built
+   * by hand; every count the CLI writes carries it. Without it two saved counts
+   * are comparable in form and meaningless in substance — the same application
+   * a month apart looks exactly like a defect in the counter.
+   */
+  source?: CountSource
   functions: CountedFunction[]
   totals: {
     unadjusted: number

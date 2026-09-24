@@ -67,6 +67,27 @@ export type FunctionPointDiff = DiffResult & {
   warnings: string[]
 }
 
+/**
+ * Two counts of DIFFERENT applications compare cleanly and mean nothing.
+ *
+ * The ruleset guard already refuses counts produced by different rules. This
+ * refuses counts produced over different subjects, which is the same class of
+ * error and the easier one to make in CI, where both files arrive as paths.
+ */
+export class IncomparableSourcesError extends Error {
+  constructor(
+    readonly from: string,
+    readonly to: string
+  ) {
+    super(
+      `refusing to compare counts of different applications: "${from}" and "${to}". ` +
+        `The difference would not measure work, it would measure that the two files ` +
+        `are about different things.`
+    )
+    this.name = 'IncomparableSourcesError'
+  }
+}
+
 export function diffCounts(
   from: CountResult,
   to: CountResult,
@@ -77,6 +98,10 @@ export function diffCounts(
       `${from.ruleset}@${from.rulesetVersion}`,
       `${to.ruleset}@${to.rulesetVersion}`
     )
+  }
+
+  if (from.source && to.source && from.source.app !== to.source.app) {
+    throw new IncomparableSourcesError(from.source.app, to.source.app)
   }
 
   const factors = { ...AEP_FACTORS, ...options.factors }
@@ -103,6 +128,44 @@ export function diffCounts(
   }
 
   const warnings: string[] = []
+
+  /**
+   * Provenance warnings. None of them stops the comparison — they qualify the
+   * number that comes out of it, which is what goes onto an invoice.
+   */
+  for (const [side, count] of [
+    ['from', from],
+    ['to', to],
+  ] as const) {
+    if (!count.source) {
+      warnings.push(
+        `the "${side}" count records no source: it cannot be tied to a revision, ` +
+          `so this difference cannot be reproduced or audited later.`
+      )
+      continue
+    }
+
+    if (count.source.dirty) {
+      warnings.push(
+        `the "${side}" count was taken over a tree with uncommitted changes ` +
+          `(${count.source.app}${count.source.revision ? ` at ${count.source.revision.slice(0, 8)}` : ''}): ` +
+          `no revision reproduces it.`
+      )
+    }
+  }
+
+  if (
+    from.source?.revision &&
+    from.source.revision === to.source?.revision &&
+    !from.source.dirty &&
+    !to.source.dirty
+  ) {
+    warnings.push(
+      `both counts are of the same revision (${from.source.revision.slice(0, 8)}): ` +
+        `any difference here comes from the tool or its configuration, not from work done.`
+    )
+  }
+
   if (entries.some((entry) => entry.change === 'changed') && factors.changed === 1) {
     warnings.push(
       'change factor pinned at 1: AEP grades it from 0.25 to 1.75 through Effort ' +

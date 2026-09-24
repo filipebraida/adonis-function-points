@@ -2,7 +2,11 @@ import { readFile, writeFile } from 'node:fs/promises'
 
 import { analyze } from '../pipeline.js'
 import { calibrate, parseSamples } from '../albrecht/calibration.js'
-import { IncomparableRulesetsError, diffCounts } from '../albrecht/diff.js'
+import {
+  IncomparableRulesetsError,
+  IncomparableSourcesError,
+  diffCounts,
+} from '../albrecht/diff.js'
 import { renderCount, renderDiff, renderExplain } from '../reporters/table.js'
 import { loadConfig } from './load_config.js'
 import type { CountResult } from '../types.js'
@@ -57,7 +61,7 @@ async function configFor(root: string) {
   const notes = file
     ? [`config: ${file}`]
     : ['config: defaults (no config/function_points.ts found)']
-  return { config, notes }
+  return { config: { ...config, configFile: file }, notes }
 }
 
 export async function runInventory(options: Common & { out?: string }): Promise<RunResult> {
@@ -129,18 +133,53 @@ export async function runExplain(options: Common & { name: string }): Promise<Ru
   return { notes, output: matched.map(renderExplain).join('\n\n' + '-'.repeat(70) + '\n\n') }
 }
 
-export async function runDiff(options: Common & { previous: string }): Promise<RunResult> {
+const readCount = async (file: string) => JSON.parse(await readFile(file, 'utf8')) as CountResult
+
+/**
+ * Compares a saved count against the current tree, or against a second saved
+ * count.
+ *
+ * The two-file form is the shape CI has: a pipeline counts the base revision
+ * and the head revision, and neither of them is "the current working tree" by
+ * the time they are compared. Since the analyser needs nothing installed in the
+ * application, counting an older revision is a `git worktree` away.
+ */
+export async function runDiff(
+  options: Common & { previous: string; current?: string }
+): Promise<RunResult> {
   const { config, notes } = await configFor(options.root)
-  const previous = JSON.parse(await readFile(options.previous, 'utf8')) as CountResult
-  const { count } = await analyze(options.root, config)
+  const previous = await readCount(options.previous)
+
+  let current: CountResult
+  if (options.current) {
+    current = await readCount(options.current)
+  } else {
+    const analysis = await analyze(options.root, config)
+    current = analysis.count
+  }
+
+  const to = options.current ?? 'current'
+
+  for (const [label, count] of [
+    [options.previous, previous],
+    [to, current],
+  ] as const) {
+    const source = count.source
+    if (!source) continue
+    notes.push(
+      `${label}: ${source.app}` +
+        (source.revision ? ` @ ${source.revision.slice(0, 8)}` : '') +
+        (source.dirty ? ' (dirty)' : '')
+    )
+  }
 
   try {
-    const diff = diffCounts(previous, count, {
-      labels: { from: options.previous, to: 'current' },
-    })
-    return { notes, output: renderDiff(diff) }
+    return {
+      notes,
+      output: renderDiff(diffCounts(previous, current, { labels: { from: options.previous, to } })),
+    }
   } catch (error) {
-    if (error instanceof IncomparableRulesetsError) {
+    if (error instanceof IncomparableRulesetsError || error instanceof IncomparableSourcesError) {
       return { output: '', notes, errors: [error.message] }
     }
     throw error

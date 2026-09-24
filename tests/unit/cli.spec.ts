@@ -1,9 +1,13 @@
 import { test } from '@japa/runner'
 import path from 'node:path'
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+
+import { analyze } from '../../src/pipeline.js'
 
 import { ConfigLoadError, loadConfig } from '../../src/cli/load_config.js'
 import { printResult } from '../../src/cli/print.js'
-import { runCount, runExplain, runInventory } from '../../src/cli/runners.js'
+import { runCount, runDiff, runExplain, runInventory } from '../../src/cli/runners.js'
 import { packageVersion, parseArgv, run } from '../../src/cli.js'
 import { appFixturePath, fixturePath } from '../helpers.js'
 
@@ -119,6 +123,55 @@ test.group('runners: the config reaches the count', () => {
   test('inventory reports coverage', async ({ assert }) => {
     const result = await runInventory({ root: appFixturePath('minimal_flat') })
     assert.match(result.output, /coverage:\s+\d+/)
+  })
+})
+
+/**
+ * The shape CI has: a pipeline counts the base revision and the head revision,
+ * and by the time they are compared neither is "the current working tree".
+ */
+test.group('runners: diff between two saved counts', () => {
+  test('compares two files without analysing anything', async ({ assert }) => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'fp-diff-'))
+    const base = path.join(dir, 'base.json')
+    const head = path.join(dir, 'head.json')
+
+    const { count } = await analyze(appFixturePath('minimal_flat'))
+    await writeFile(base, JSON.stringify(count))
+    await writeFile(head, JSON.stringify({ ...count, functions: count.functions.slice(1) }))
+
+    const result = await runDiff({
+      root: appFixturePath('minimal_flat'),
+      previous: base,
+      current: head,
+    })
+
+    assert.isEmpty(result.errors ?? [])
+    assert.include(result.output, 'removed')
+    assert.isTrue(
+      result.notes!.some((note) => note.includes('minimal-flat')),
+      'each side has to be named, or the comparison is unauditable'
+    )
+  })
+
+  test('refuses two counts of different applications', async ({ assert }) => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'fp-diff-'))
+    const base = path.join(dir, 'base.json')
+    const head = path.join(dir, 'head.json')
+
+    const flat = await analyze(appFixturePath('minimal_flat'))
+    const hooks = await analyze(appFixturePath('model_hooks'))
+    await writeFile(base, JSON.stringify(flat.count))
+    await writeFile(head, JSON.stringify(hooks.count))
+
+    const result = await runDiff({
+      root: appFixturePath('minimal_flat'),
+      previous: base,
+      current: head,
+    })
+
+    assert.isNotEmpty(result.errors)
+    assert.isTrue(result.errors!.some((line) => /different applications/.test(line)))
   })
 })
 

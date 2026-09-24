@@ -3,6 +3,7 @@ import { collectDataStores } from './inventory/sources/data_stores.js'
 import { collectEntryPoints } from './inventory/sources/routes_ast.js'
 import { createAnalyzer } from './inventory/graph/call_graph.js'
 import { count } from './albrecht/counter.js'
+import { describeSource } from './inventory/source.js'
 import type { CountOptions } from './albrecht/counter.js'
 import type { CallResolver } from './inventory/resolvers/types.js'
 import type { CountResult, Inventory } from './types.js'
@@ -30,6 +31,12 @@ export type AnalysisOptions = CountOptions & {
    * a number that looks right.
    */
   minCoverage?: number
+  /**
+   * Configuration file that produced these options, recorded in the count's
+   * `source`. The pipeline does not read it — the front-ends do — but the
+   * artefact has to say which configuration shaped the number.
+   */
+  configFile?: string | null
 }
 
 export type Analysis = {
@@ -108,5 +115,10 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
     throw new CoverageTooLowError(inventory.coverage.ratio, minimum)
   }
 
-  return { inventory, count: count({ app, stores, entryPoints, behaviors }, options) }
+  const counted = count({ app, stores, entryPoints, behaviors }, options)
+
+  return {
+    inventory,
+    count: { ...counted, source: describeSource(root, options.configFile ?? null) },
+  }
 }

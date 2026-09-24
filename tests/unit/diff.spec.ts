@@ -138,13 +138,15 @@ test.group('diff: factors and billing', () => {
     const diff = diffCounts(result([fn()]), result([fn({ scopeHash: 'h2' })]))
 
     assert.equal(diff.billable, 3)
-    assert.isNotEmpty(diff.warnings)
-    assert.match(diff.warnings[0], /Effort Complexity/)
+    // by content, not by position: other warnings qualify the same diff
+    assert.isTrue(diff.warnings.some((warning) => /Effort Complexity/.test(warning)))
   })
 
   test('with no modification there is no factor warning', async ({ assert }) => {
     const diff = diffCounts(result([fn()]), result([fn()]))
-    assert.isEmpty(diff.warnings)
+
+    // these synthetic counts carry no `source`, which warns for its own reason
+    assert.isFalse(diff.warnings.some((warning) => /Effort Complexity/.test(warning)))
   })
 })
 

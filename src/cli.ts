@@ -29,7 +29,9 @@ Commands
   count                    count the unadjusted function points
   inventory                the raw facts: stores, routes, tracing coverage
   explain <name>           why one function was counted that way
-  diff <previous.json>     additions / modifications / deletions, and billable FP
+  diff <a.json> [b.json]   additions / modifications / deletions, and billable FP
+                           one file compares against the current tree; two
+                           compare the files, which is the shape CI has
   calibrate <samples.csv>  correction factors against a manual count
 
 Options
@@ -146,9 +148,16 @@ export async function run(argv: string[], printer: Printer = CONSOLE): Promise<n
    *
    * `adonisrc.ts` is what actually marks an AdonisJS application root.
    */
+  /**
+   * `diff a.json b.json` analyses nothing: both sides are already counted. It
+   * runs in a pipeline step that may not even sit inside the application — the
+   * CI shape this exists for — so requiring an application root there would
+   * refuse the one case it was added for.
+   */
+  const analysesTheTree = !(command === 'diff' && positional.length >= 2)
   const marker = ['adonisrc.ts', 'adonisrc.js'].find((name) => existsSync(path.join(root, name)))
 
-  if (!marker) {
+  if (analysesTheTree && !marker) {
     printer.error(
       `no adonisrc.ts in ${root}: this is not an AdonisJS application root.\n` +
         `In a monorepo, point --root at the application itself (apps/<name>).`
@@ -182,7 +191,11 @@ export async function run(argv: string[], printer: Printer = CONSOLE): Promise<n
       break
 
     case 'diff':
-      result = await runDiff({ root, previous: need('a saved count', positional[0]) })
+      result = await runDiff({
+        root,
+        previous: need('a saved count', positional[0]),
+        current: positional[1],
+      })
       break
 
     case 'calibrate':

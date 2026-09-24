@@ -90,9 +90,43 @@ ruleset — so a CI job fails instead of publishing a number nobody can defend.
 
 #### In CI
 
-```yaml
-- run: npx @filipebraida/adonis-function-points count --min-coverage 0.85 --out fp.json
+Every count records what it counted, so the artefact stands on its own once it
+leaves the pipeline:
+
+```json
+"source": {
+  "app": "shop",
+  "revision": "adef4ee3…",
+  "branch": "main",
+  "dirty": false,
+  "countedAt": "2026-09-24T17:40:11.000Z",
+  "config": "/app/config/function_points.ts"
+}
 ```
+
+`dirty` is the field that matters in billing: a count taken over uncommitted
+changes cannot be reproduced from any revision, and whoever receives the
+invoice is entitled to know that. `app` is the manifest name, never an absolute
+path — a path would say where your machine keeps its files and travel with
+every count you send anywhere.
+
+`fp:diff` refuses two counts of different applications, the same way it refuses
+two different rulesets, and warns when either side is dirty or when both are
+the same revision.
+
+Counting an older revision needs no checkout of your working tree and nothing
+installed in it, so a pull request is two counts and a comparison:
+
+```yaml
+- run: git worktree add ../base ${{ github.event.pull_request.base.sha }}
+- run: npx @filipebraida/adonis-function-points count --root ../base --out base.json
+- run: npx @filipebraida/adonis-function-points count --out head.json
+- run: npx @filipebraida/adonis-function-points diff base.json head.json
+```
+
+The package does not deliver the result anywhere — an artifact, a ledger
+branch, a billing endpoint and a PR comment are all yours to choose. What it
+owes you is a number that is still defensible wherever it lands.
 
 ## Commands
 
