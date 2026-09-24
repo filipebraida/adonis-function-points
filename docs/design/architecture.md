@@ -260,6 +260,8 @@ the tracer failed. The two have to be distinguishable in the report.
 
 - [`counting-decisions.md`](counting-decisions.md) — the edge cases, with the
   AFP rule that backs each one
+- [`coverage-plan.md`](coverage-plan.md) — making the coverage metric good
+  enough to gate CI on, measured phase by phase
 - [`resolvers.md`](resolvers.md) — the catalogue of code patterns
 - [`implementation-plan.md`](implementation-plan.md) — the plan, test-driven
   (dated record)
