@@ -2,6 +2,7 @@ import { Node, Project, SyntaxKind } from 'ts-morph'
 import type { ClassDeclaration, SourceFile } from 'ts-morph'
 
 import type { AppContext } from '../app_context.js'
+import { samePath } from '../paths.js'
 import type { Attribute, DataStore, UnresolvedCall } from '../../types.js'
 
 /**
@@ -384,18 +385,6 @@ function tableOf(cls: ClassDeclaration): string | undefined {
   if (!declared || !Node.isPropertyDeclaration(declared)) return undefined
   return declared.getInitializer()?.asKind(SyntaxKind.StringLiteral)?.getLiteralValue()
 }
-
-/**
- * Compares a ts-morph path with one built by node's `path` API.
- *
- * ts-morph always normalises to forward slashes, including on Windows, while
- * `AppContext` builds paths with `path.join`. Comparing them with `===` is
- * true on Linux and false on Windows, where the generated schema would then be
- * silently ignored and every column read from the decorators instead — a
- * different count on a different operating system, with nothing said.
- */
-const samePath = (a: string | undefined, b: string | undefined) =>
-  a !== undefined && b !== undefined && a.split('\\').join('/') === b.split('\\').join('/')
 
 /** Lucid convention when `static table` is not declared */
 function tableFromName(name: string): string {

@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
+import { toPosix } from './paths.js'
+
 /**
  * Discovers the shape of the analysed application instead of assuming a
  * convention.
@@ -115,7 +117,7 @@ const ARTIFACT_KINDS = new Set([
 const GENERATED_MARKER = 'automatically generated'
 
 export async function discoverApp(root: string): Promise<AppContext> {
-  const abs = path.resolve(root)
+  const abs = toPosix(path.resolve(root))
   const pkg = await readJson(path.join(abs, 'package.json'))
   const subpathImports = readSubpathImports(pkg)
   const layout = await detectLayout(abs)
@@ -348,7 +350,7 @@ function resolveWithImports(
 
 function toSource(root: string, target: string): string {
   const rel = target.replace(/^\.\//, '').replace(/\.js$/, '.ts')
-  return path.join(root, rel)
+  return toPosix(path.join(root, rel))
 }
 
 // ---------------------------------------------------------------------------
