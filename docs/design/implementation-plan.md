@@ -18,8 +18,8 @@ fixture Kysely fica pulada como sentinela delas.
 
 | | |
 |---|---|
-| feito | scaffold; **Fases 1, 2, 3a, 4a, 4b e 4c**; tabelas IFPUG; 6 resolvedores, nenhuma lacuna declarada; 118 testes |
-| falta | Fase 3b (DETs de entrada), Fases 5–8 |
+| feito | scaffold; **Fases 1 a 5** — inventário e contagem de ponta a ponta; 6 resolvedores, nenhuma lacuna declarada; 136 testes |
+| falta | Fase 6 (validação/benchmark), 7 (comandos), 8 (métricas) |
 
 ## Método: exemplo primeiro
 
@@ -285,22 +285,49 @@ silêncio**. Agora vira pendência com o motivo certo.
   `app C`) é parcialmente legítima: `POST .../export` que só lê é SE, não
   EE. Quanto exatamente, só a calibração da Fase 6 dirá.
 
-## Fase 5 — `albrecht`: as regras
+## Fase 5 — `albrecht`: as regras ✅
 
-As tabelas de complexidade já estão prontas e testadas.
+Entregue o motor de contagem inteiro: funções de dados (ALI/AIE pela regra de
+manutenção da AFP §6.5.4), funções transacionais (EE/SE pela regra de escrita
+§6.5.3, com CE colapsado), filtro de dados técnicos (§6.5.2.1.1) e `CountResult`
+com `Rationale` rastreável em cada função.
 
-Exemplos primeiro:
+**A invariante de ouro está inteira**: as três apps produzem contagem idêntica,
+função por função, incluindo tipo, DET, FTR e pontos.
 
-- ALI vs AIE pela regra de manutenção (AFP §6.5.4): escrita pela aplicação → ALI
-- data store que nenhuma transação alcança → **não conta**
-- EE vs SE pela regra de escrita (AFP §6.5.3); CE colapsado em SE
-- DETs de saída pela §6, com `detSource` registrado em cada função
-- `edges/package_table/`: tabela cuja escrita só nasce em `node_modules` sai da
-  contagem, marcada como técnica no relatório
-- filtro de lookup e de convenção de nome, com os defaults do próprio spec
+Duas peças que a fase exigiu e não estavam previstas:
 
-**Pronto quando:** `CountResult` completo, com `Rationale` rastreável em cada
-função.
+- **Resolução de relação.** `Book.query().preload('author')` lê a tabela de
+  autores. Sem isso, uma tabela lida só por relação não é alcançada por
+  transação nenhuma e cai fora pela §6.5.4 — quando é um AIE legítimo. Na
+  fixture, é a diferença entre `Author` contar ou não.
+- **DETs de entrada** (a Fase 3b que faltava): `request.validateUsing(x)`
+  resolvido até as folhas do schema VineJS, pela tabela de §7. Spread não
+  resolvido conta 0, nunca chuta.
+
+### Primeira contagem em produção
+
+| app | PF | ALI | AIE | EE | SE | tempo |
+|---|---|---|---|---|---|---|
+| app A | 910 | 35 | 0 | 61 | 74 | 1,3 s |
+| app B | 829 | 22 | 6 | 77 | 56 | 2,0 s |
+| app C | 778 | 21 | 4 | 91 | 43 | 3,2 s |
+| app D | 259 | 10 | 2 | 26 | 16 | 0,5 s |
+| starter-kit | 99 | 4 | 0 | 15 | 6 | 0,4 s |
+
+O spike estimara 844–890 PF para `app C`; o motor dá 778. A diferença é
+explicável e a favor do motor: o spike contava os 32 models como funções de
+dados, e agora tabelas órfãs e técnicas saem — 25 contadas de 32.
+
+### Testes sem dentes, revelados por mutação
+
+Duas guardas do contador passavam mutação porque `minimal_flat` **não tem** o
+caso que elas cobrem: toda tabela dela é alcançada e toda rota alcança dado.
+Foi preciso uma fixture de borda (`edges_boundary`) com tabela órfã, tabela
+técnica e rota sem dado. Seis mutações agora falham.
+
+É a terceira vez que "mutação passou verde" aponta um teste que afirmava menos
+do que parecia. A regra de processo está se pagando.
 
 ## Fase 6 — validação
 

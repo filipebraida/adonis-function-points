@@ -26,6 +26,14 @@ export type PersistenceAccess = {
   store: string
   method: string
   line: number
+  /**
+   * Repositório alcançado por RELAÇÃO, não diretamente.
+   *
+   * `Book.query().preload('author')` lê a tabela de autores. Pela AFP isso é um
+   * FTR sobre `Author`, e ignorá-lo faria uma tabela lida só por relação cair
+   * fora da contagem (§6.5.4) quando é um AIE legítimo.
+   */
+  viaRelation?: string
 }
 
 const WRITE_METHODS = new Set([
@@ -78,9 +86,13 @@ const READ_METHODS = new Set([
  */
 export type StoreSymbols = Map<string, string>
 
+/** repositório -> suas relações declaradas */
+export type RelationMap = Map<string, Record<string, string>>
+
 export function detectAccess(
   call: CallExpression,
-  symbols: StoreSymbols
+  symbols: StoreSymbols,
+  relations: RelationMap = new Map()
 ): PersistenceAccess | null {
   const expression = call.getExpression()
   if (!Node.isPropertyAccessExpression(expression)) return null
@@ -107,7 +119,28 @@ export function detectAccess(
     store,
     method,
     line: call.getStartLineNumber(),
+    viaRelation: relationTargetOf(method, call, store, relations),
   }
+}
+
+const RELATION_ACCESSORS = new Set(['preload', 'load', 'related', 'withCount'])
+
+/**
+ * `.preload('author')` sobre um repositório com `{ author: 'Author' }` alcança
+ * `Author`.
+ */
+function relationTargetOf(
+  method: string,
+  call: CallExpression,
+  store: string,
+  relations: RelationMap
+): string | undefined {
+  if (!RELATION_ACCESSORS.has(method)) return undefined
+
+  const name = call.getArguments()[0]?.asKind(SyntaxKind.StringLiteral)?.getLiteralValue()
+  if (!name) return undefined
+
+  return relations.get(store)?.[name]
 }
 
 /**

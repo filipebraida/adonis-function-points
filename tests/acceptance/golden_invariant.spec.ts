@@ -3,6 +3,8 @@ import { test } from '@japa/runner'
 import { discoverApp } from '../../src/inventory/app_context.js'
 import { collectDataStores } from '../../src/inventory/sources/data_stores.js'
 import { collectEntryPoints } from '../../src/inventory/sources/routes_ast.js'
+import { createAnalyzer } from '../../src/inventory/graph/call_graph.js'
+import { count } from '../../src/albrecht/counter.js'
 import { appFixturePath } from '../helpers.js'
 
 /**
@@ -138,7 +140,46 @@ test.group('invariante de ouro: a forma não muda a contagem', () => {
     }
   })
 
-  test('Fase 5 — as três apps produzem contagem idêntica', ({ assert }) => {
-    assert.isTrue(true)
-  }).skip(true, 'aguarda albrecht/counter')
+  test('Fase 5 — as três apps produzem contagem idêntica', async ({ assert }) => {
+    const resultados = await Promise.all(
+      APPS.map(async (name) => {
+        const app = await discoverApp(appFixturePath(name))
+        const { stores } = await collectDataStores(app)
+        const { entryPoints } = await collectEntryPoints(app)
+        const analyzer = createAnalyzer(app, stores)
+
+        const behaviors = new Map(
+          entryPoints
+            .filter((entry) => entry.handler)
+            .map((entry) => [entry.id, analyzer.analyze(entry.handler!)])
+        )
+
+        return count({ app, stores, entryPoints, behaviors })
+      })
+    )
+
+    /**
+     * Assinatura de contagem: tipo, DET, FTR e pontos por função.
+     *
+     * Deliberadamente NÃO inclui `module` nem `rationale` — são o que muda
+     * entre layouts, e incluí-los faria o teste afirmar o contrário do que
+     * existe para afirmar.
+     */
+    const assinatura = (result: (typeof resultados)[number]) =>
+      result.functions
+        .map((fn) => `${fn.name}:${fn.type}:${fn.det}/${fn.refs}=${fn.points}`)
+        .sort()
+        .join(' | ')
+
+    const [referencia, ...outras] = resultados.map(assinatura)
+
+    for (const [index, outra] of outras.entries()) {
+      assert.equal(outra, referencia, `${APPS[index + 1]} divergiu de ${APPS[0]}`)
+    }
+
+    // e o total é o mesmo nas três
+    const totais = resultados.map((result) => result.totals.unadjusted)
+    assert.deepEqual(totais, [totais[0], totais[0], totais[0]])
+    assert.isAbove(totais[0], 0)
+  })
 })

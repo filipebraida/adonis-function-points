@@ -42,6 +42,9 @@ const BASE_MODEL = 'BaseModel'
 /** decorators que marcam relação de composição — candidatos a subgrupo (RET) */
 const COMPOSITION_RELATIONS = new Set(['hasMany', 'hasOne'])
 
+/** todos os decorators de relação do Lucid */
+const ALL_RELATIONS = new Set(['belongsTo', 'hasMany', 'hasOne', 'manyToMany', 'hasManyThrough'])
+
 export async function collectDataStores(app: AppContext): Promise<DataStoreCollection> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
@@ -114,6 +117,7 @@ function describeStore(
     table: tableOf(cls) ?? tableFromName(name),
     attributes: chain.attributes,
     subgroups: subgroupsOf(chain.classes),
+    relations: relationsOf(chain.classes),
     // decidido pela configuração de fronteira, não por heurística
     maintainedExternally: false,
     columnSource: chain.columnSource,
@@ -322,6 +326,31 @@ function columnsOf(cls: ClassDeclaration): Attribute[] {
   }
 
   return attributes
+}
+
+/**
+ * Relações declaradas: propriedade -> repositório alvo.
+ *
+ * `@belongsTo(() => Author) declare author` produz `{ author: 'Author' }`, o
+ * que permite resolver `.preload('author')` mais tarde.
+ */
+function relationsOf(classes: ClassDeclaration[]): Record<string, string> {
+  const relations: Record<string, string> = {}
+
+  for (const cls of classes) {
+    for (const property of cls.getProperties()) {
+      for (const decorator of property.getDecorators()) {
+        if (!ALL_RELATIONS.has(decorator.getName())) continue
+        const target = decorator
+          .getExpression()
+          .getText()
+          .match(/=>\s*([A-Za-z_$][\w$]*)/)
+        if (target) relations[property.getName()] = target[1]
+      }
+    }
+  }
+
+  return relations
 }
 
 /** relações de composição, candidatas a subgrupo lógico (RET) */

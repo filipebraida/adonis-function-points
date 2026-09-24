@@ -36,6 +36,15 @@ export type DataStore = {
   attributes: Attribute[]
   /** subgrupos lógicos candidatos (relações de composição) */
   subgroups: string[]
+  /**
+   * Relações declaradas: nome da propriedade -> nome do repositório alvo.
+   *
+   * É o que permite resolver `.preload('author')` para o repositório `Author`.
+   * Sem isso, uma tabela lida só por relação não é alcançada por transação
+   * nenhuma e cai fora da contagem pela AFP §6.5.4 — quando na verdade é um
+   * AIE legítimo.
+   */
+  relations: Record<string, string>
   /** mantido por esta aplicação, ou por um sistema externo? */
   maintainedExternally: boolean
   provenance: Provenance

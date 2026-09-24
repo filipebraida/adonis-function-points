@@ -5,7 +5,7 @@ import type { CallExpression, ClassDeclaration, SourceFile } from 'ts-morph'
 import type { AppContext } from '../app_context.js'
 import type { CollectedDataStore } from '../sources/data_stores.js'
 import { detectAccess, rootSymbolOf } from '../detectors/lucid.js'
-import type { StoreSymbols } from '../detectors/lucid.js'
+import type { RelationMap, StoreSymbols } from '../detectors/lucid.js'
 import { resolveCall } from '../resolvers/index.js'
 import type { ResolverContext } from '../resolvers/types.js'
 import type { HandlerRef, TraceStep, UnresolvedCall } from '../../types.js'
@@ -37,10 +37,99 @@ export type Behavior = {
   writes: boolean
   /** repositórios de dados alcançados */
   touches: string[]
+  /**
+   * Campos de entrada declarados: `request.validateUsing(x)` resolvido até os
+   * campos do schema VineJS — counting-decisions §7.
+   */
+  inputFields: string[]
   trace: TraceStep[]
   /** corpos alcançados, para o `fp:diff` */
   scope: ScopeEntry[]
   unresolved: UnresolvedCall[]
+}
+
+/**
+ * Campos declarados pelos validators usados neste corpo.
+ *
+ * `request.validateUsing(createBookValidator)` -> resolve o validator ->
+ * conta as folhas do `vine.object`, pela tabela de counting-decisions §7:
+ *
+ *   escalar                          1
+ *   objeto aninhado                  folhas contadas individualmente
+ *   array de escalar                 1  (grupo repetitivo)
+ *   array de objeto                  folhas, uma vez só
+ *   spread não resolvido             0, e vira pendência — nunca chuta
+ */
+function validatorFieldsIn(body: Node, file: SourceFile, app: AppContext): string[] {
+  const fields: string[] = []
+
+  for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const expression = call.getExpression()
+    if (!Node.isPropertyAccessExpression(expression)) continue
+    if (expression.getName() !== 'validateUsing') continue
+
+    const argument = call.getArguments()[0]
+    if (!argument || !Node.isIdentifier(argument)) continue
+
+    const name = argument.getText()
+    const declaration = findValidator(name, file, app)
+    if (!declaration) continue
+
+    for (const leaf of leavesOf(declaration)) fields.push(`${name}.${leaf}`)
+  }
+
+  return fields
+}
+
+/** declaração do validator: no próprio arquivo ou importada da aplicação */
+function findValidator(name: string, file: SourceFile, app: AppContext): Node | null {
+  const local = file.getVariableDeclaration(name)?.getInitializer()
+  if (local) return local
+
+  for (const declaration of file.getImportDeclarations()) {
+    const names = declaration.getNamedImports().map((named) => named.getName())
+    if (!names.includes(name)) continue
+
+    const target = app.resolveSpecifier(declaration.getModuleSpecifierValue())
+    if (!target) continue
+
+    const source = file.getProject().getSourceFile(target)
+    const initializer = source?.getVariableDeclaration(name)?.getInitializer()
+    if (initializer) return initializer
+  }
+
+  return null
+}
+
+/** folhas de um schema VineJS, pela tabela de §7 */
+function leavesOf(node: Node): string[] {
+  const object = node.getFirstDescendantByKind(SyntaxKind.ObjectLiteralExpression)
+  if (!object) return []
+
+  const leaves: string[] = []
+
+  const walk = (literal: typeof object, prefix: string) => {
+    for (const property of literal.getProperties()) {
+      // spread não resolvido conta 0: melhor faltar do que chutar
+      if (!Node.isPropertyAssignment(property)) continue
+
+      const name = property.getName().replace(/['"]/g, '')
+      const text = property.getText()
+      const nested = property.getFirstDescendantByKind(SyntaxKind.ObjectLiteralExpression)
+
+      // `vine.object({...})` aninhado: folhas contam individualmente
+      // `vine.array(vine.object({...}))`: grupo repetitivo, folhas uma vez só
+      if (nested && /vine\.object/.test(text)) {
+        walk(nested, prefix ? `${prefix}.${name}` : name)
+        continue
+      }
+
+      leaves.push(prefix ? `${prefix}.${name}` : name)
+    }
+  }
+
+  walk(object, '')
+  return leaves
 }
 
 /** nome do arquivo, para identificar a pendência sem despejar o caminho todo */
@@ -49,6 +138,8 @@ const pathOf = (file: string) => file.split('/').pop()?.replace(/\.ts$/, '') ?? 
 /** fatos de um corpo, independentes de quem o chamou */
 type BodyFacts = {
   accesses: { store: string; write: boolean }[]
+  /** validators usados neste corpo */
+  validators: string[]
   followUps: { ref: HandlerRef; by: string }[]
   unresolved: UnresolvedCall[]
   bodyHash: string
@@ -93,6 +184,9 @@ export function createAnalyzer(
   }
 
   const storesByName = new Map(stores.map((store) => [store.name, store]))
+  const relationsByStore: RelationMap = new Map(
+    stores.map((store) => [store.name, store.relations])
+  )
   const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH
 
   const files = new Map<string, SourceFile | null>()
@@ -154,11 +248,14 @@ export function createAnalyzer(
     const accesses: { store: string; write: boolean }[] = []
     const followUps: { ref: HandlerRef; by: string }[] = []
     const unresolved: UnresolvedCall[] = []
+    const validators = validatorFieldsIn(body, file, app)
 
     for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      const access = detectAccess(call, symbols)
+      const access = detectAccess(call, symbols, relationsByStore)
       if (access) {
         accesses.push({ store: access.store, write: access.mode === 'write' })
+        // tabela alcançada por relação é lida, nunca escrita por este acesso
+        if (access.viaRelation) accesses.push({ store: access.viaRelation, write: false })
         continue
       }
 
@@ -188,7 +285,7 @@ export function createAnalyzer(
       }
     }
 
-    return { accesses, followUps, unresolved, bodyHash: hashOf(body) }
+    return { accesses, followUps, unresolved, validators, bodyHash: hashOf(body) }
   }
 
   return {
@@ -199,6 +296,7 @@ export function createAnalyzer(
 
   function run(handler: HandlerRef): Behavior {
     const touches = new Set<string>()
+    const inputFields = new Set<string>()
     const trace: TraceStep[] = []
     const scope: ScopeEntry[] = []
     const unresolved: UnresolvedCall[] = []
@@ -241,6 +339,7 @@ export function createAnalyzer(
       }
 
       unresolved.push(...facts.unresolved)
+      for (const field of facts.validators) inputFields.add(field)
 
       trace.push({
         file: ref.file,
@@ -263,7 +362,14 @@ export function createAnalyzer(
 
     visit(handler, 0)
 
-    return { writes, touches: [...touches].sort(), trace, scope, unresolved }
+    return {
+      writes,
+      touches: [...touches].sort(),
+      inputFields: [...inputFields].sort(),
+      trace,
+      scope,
+      unresolved,
+    }
   }
 }
 
