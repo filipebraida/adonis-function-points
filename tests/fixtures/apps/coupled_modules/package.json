@@ -1,0 +1,11 @@
+{
+  "name": "coupled-modules",
+  "type": "module",
+  "dependencies": { "@adonisjs/core": "^7.5.0", "@adonisjs/lucid": "^22.4.2" },
+  "imports": {
+    "#app/*": "./app/*.js",
+    "#catalogo/*": "./app/catalogo/*.js",
+    "#faturamento/*": "./app/faturamento/*.js",
+    "#start/*": "./start/*.js"
+  }
+}

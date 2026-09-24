@@ -18,8 +18,8 @@ fixture Kysely fica pulada como sentinela delas.
 
 | | |
 |---|---|
-| feito | **Fases 1 a 7** — contagem validada e utilizável por linha de comando; 172 testes, nenhum pulado |
-| falta | Fase 8 (métricas estatísticas); `fp:calibrate` |
+| feito | **Fases 1 a 8** — o plano inteiro; 199 testes, nenhum pulado |
+| falta | nada do plano original; ver "Depois do v1" |
 
 ## Método: exemplo primeiro
 
@@ -425,10 +425,64 @@ alteração de uma linha sem dizer nada seria indefensável.
 que fazer (`fp:inventory` para ver as pendências). Um número com rastreamento
 ruim não deveria virar fatura.
 
-## Fase 8 — métricas estatísticas
+## Fase 8 — calibração e métricas estatísticas ✅
 
-Sobre o mesmo inventário: acoplamento entre módulos, hotspots churn ×
-complexidade, conformidade de convenção. Só depois da APF de pé.
+### `fp:calibrate`
+
+Mede o viés do contador contra contagem manual, **sem aplicar o fator**:
+calibrar é decisão de quem assina o contrato, e um fator aplicado em silêncio
+faria a contagem deixar de ser reproduzível a partir do código.
+
+O benchmark Vazquez serve como conjunto de calibração de teste — 10 funções com
+valor manual publicado. E revela o que o total esconde: com desvio total de 0%,
+o fator por tipo mostra **SE superestimado e EE subestimado**, porque as duas
+divergências se cancelam.
+
+Três guardas contra número enganoso, todas testadas:
+
+- **amostra pequena demais** (< 10 por tipo) avisa que o fator é ruído;
+- **amostra que não casa** é reportada, não descartada;
+- **tudo batendo exatamente** levanta suspeita de que a "contagem manual" saiu
+  da automática — calibrar contra si mesmo não mede nada.
+
+### Métricas estruturais
+
+Derivadas do mesmo inventário, sem coletar fato novo. É o que torna quase
+gratuito: se o grafo já sabe quais transações alcançam quais repositórios,
+acoplamento e densidade são aritmética.
+
+**Acoplamento é de USO, não de import.** O módulo A depende de B quando uma
+transação de A alcança um repositório declarado em B. Import de tipo não cria
+acoplamento funcional. Com instabilidade de Martin (`Ce/(Ca+Ce)`) e detecção de
+dependência mútua.
+
+**Conformidade** com a própria convenção: escrita com validator declarado, rota
+com handler resolvido, repositório alcançado por alguma transação.
+
+Medido em produção:
+
+| app | PF | PF/repositório | ciclos | escrita c/ validator |
+|---|---|---|---|---|
+| app A | 954 | 27,3 | 0 | 64% |
+| app C | 714 | 22,3 | **2** | 42% |
+
+Os dois ciclos entre módulos do `app C` e os 42% de escrita sem validator
+são achados reais, não ruído da ferramenta.
+
+### Por que isto anda junto com PF
+
+Se PF paga, o time otimiza PF: mais models, mais endpoints, menos reuso.
+Densidade e acoplamento no mesmo painel são o contrapeso — sem eles a métrica
+vira alvo, não medida.
+
+## Depois do v1
+
+- **Hooks de model** (§3) e **fronteira de `node_modules`** (§4), decididos e
+  não implementados.
+- **Fator de alteração graduado** no `fp:diff`: exige complexidade ciclomática,
+  que a AEP usa na Tabela 6.1. Hoje é 1 e avisa que superestima.
+- **Hotspots churn × complexidade**, que exigem histórico do git.
+- **Kysely**, com a fixture sentinela já no lugar.
 
 ---
 
