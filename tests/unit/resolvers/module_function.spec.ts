@@ -4,8 +4,8 @@ import { moduleFunctionResolver } from '../../../src/inventory/resolvers/module_
 import { loadFixture } from '../../helpers.js'
 
 test.group('resolver: função de módulo', () => {
-  test('segue `funcaoImportada()`', ({ assert }) => {
-    const fixture = loadFixture('module_function')
+  test('segue `funcaoImportada()`', async ({ assert }) => {
+    const fixture = await loadFixture('module_function')
     const controller = fixture.controller()
     const ctx = fixture.contextFor(controller)
 

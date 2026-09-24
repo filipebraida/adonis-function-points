@@ -18,8 +18,8 @@ fixture Kysely fica pulada como sentinela delas.
 
 | | |
 |---|---|
-| feito | scaffold; **Fase 1**, **Fase 2** e **Fase 3a** (rotas → `EntryPoint`); tabelas IFPUG; 5 resolvedores de chamada; 88 testes |
-| falta | Fase 3b (DETs de entrada), Fases 4–8 |
+| feito | scaffold; **Fase 1**, **Fase 2**, **Fase 3a** e **Fase 4a** (grafo sintático); tabelas IFPUG; 5 resolvedores; 110 testes |
+| falta | Fase 3b (DETs de entrada), **Fase 4b** (cobertura e desempenho), Fases 5–8 |
 
 ## Método: exemplo primeiro
 
@@ -169,56 +169,56 @@ presente, registry e validator têm que dar o mesmo número.
 
 ## Fase 4 — o grafo *(a fase cara)*
 
-É onde mora a incerteza: a detecção de escrita decide EE vs SE em ~40% das
-transações, e a qualidade do pacote é a qualidade deste rastreamento.
+### 4a — grafo sintático ✅ com lacuna medida
 
-**A decisão mais cara do projeto mora aqui, e tem que ser tomada às claras:**
-resolver `constructor(private q: GetArticleQuery)` exige o **type checker**. O
-`Project` do ts-morph deixa de ser leve (`skipFileDependencyResolution`) e passa
-a carregar o `tsconfig` da app e os tipos de `node_modules`. Isso multiplica o
-custo de toda a análise. Por isso:
+Entregue: `createAnalyzer` percorre da transação até as funções de dados em
+**nível de método**, seguindo o grafo de chamadas pelas estratégias
+registráveis. Produz `writes`, `touches`, `trace` com quem resolveu cada passo,
+`scope` com hash de AST normalizado (§5) e `unresolved`.
 
-- o grafo nasce **sintático** (todos os resolvedores exceto `property-service`),
-  e o desempenho é medido na app real da casa *antes* de o type checker entrar;
-- `property-service` entra em seguida, e o custo é medido de novo **no mesmo
-  dia**. Se estourar o teto, a alternativa é resolução por convenção de nome do
-  parâmetro (`private users: UserService` → `#…/user_service`) com o type
-  checker como opção — não o contrário.
+Detector do Lucid no **call site**, com o mapa de símbolos resolvendo: model
+importado, variável local derivada (`const invite = await Invite.find(...)`),
+parâmetro tipado, parâmetro desestruturado com tipo inline, e **caminho de
+propriedade sobre tipo nomeado** (`input.invite.save()` com
+`interface Input { invite: Invite }`) — este último o padrão dominante nas apps
+reais, que sozinho respondia por parte grande da subdetecção.
 
-**Fronteira de `node_modules`, decidida:** o grafo **não entra** em código de
-pacote, com uma exceção estreita: hooks e mixins registrados em models da
-aplicação (`compose(Base, Auditable)`) são seguidos **um nível** para dentro do
-pacote, e cada passo assim é marcado `vendor: true`. É o que torna executável o
-filtro técnico da decisão §4 ("escrita que nasce só em `node_modules`") sem
-transformar o pacote num analisador de dependências.
+Nas fixtures: os 7 padrões alcançam o dado e detectam a escrita, e quem chama só
+o método de leitura de um service não vira escritor.
 
-Exemplos primeiro:
+**Medição honesta contra app de produção**, e a lacuna é real:
 
-- as 7 fixtures de `patterns/` alcançam o data store e detectam a escrita —
-  **inclusive `property_service`**: `@inject()` é o padrão oficial do AdonisJS e,
-  numa app com DI, é o único caminho da rota até a escrita
-- **nível de método, não de arquivo**: fixture com um service que tem um método
-  de leitura e outro de escrita; quem chama só o de leitura não vira EE
-- **mapeamento data store → classe de model**: o hook mora em `class Book extends
-  BookSchema`, não no schema; sem esse mapa a decisão §3 é inexecutável
-- `edges/model_hook/`: escrita em `@afterCreate` entra na transação que a
-  disparou e soma FTR
-- `edges/static_route/` e `edges/vendor_route/`: não alcançam dado, não contam,
-  **e aparecem na cobertura** — sem precisar de lista de exclusão
-- `HandlerBehavior.scope` com `bodyHash` de AST normalizado (sem whitespace nem
-  comentário), exigido pelo `fp:diff` (§5)
-- chamada que nenhum resolvedor segue entra em `unresolved`, com arquivo e linha
+| app | rotas | EE detectado | rotas com verbo de escrita | tempo |
+|---|---|---|---|---|
+| app C | 161 | 40 | 107 | 42 s |
+| app D | 58 | 26 | 29 | 3,5 s |
 
-**Pronto quando:** cobertura de 100% nas fixtures — que é tautológico, as
-fixtures são escritas para resolver — **e cobertura ≥ 85% em duas apps reais da
-casa**, uma de cada layout. 85% é o `minCoverage` default: se o pacote não
-atinge o próprio limiar nas apps para as quais foi desenhado, o limiar está
-errado ou o grafo está. O relatório distingue "rota legitimamente estática" de
-"rastreador falhou".
+O verbo HTTP **não é gabarito** — parte dos POST só lê (um `POST .../export`
+que devolve PDF é SE, não EE). Mas a distância em `app C` é grande demais
+para ser só isso.
 
-**Medir aqui:** a sensibilidade à poda de ARs. A conclusão do spike — "move só
-2–7%" — foi obtida com o rastreamento quebrado, FTR médio 1,36, e não se
-sustenta. Refazer com o grafo funcionando.
+Dois defeitos corrigidos no caminho, e o segundo é de princípio:
+
+- **Um `Project` do ts-morph por handler.** Multiplicava o custo pelo número de
+  rotas: passava de dois minutos por app. Projeto e caches compartilhados no
+  `createAnalyzer`.
+- **O filtro de pendência escondia o buraco.** Só reportava `this.`, então toda
+  chamada não seguida a código da própria aplicação sumia em silêncio — o
+  oposto do princípio do pacote. Agora reporta símbolo importado da aplicação
+  também, e o número de pendências subiu porque passou a ser verdadeiro.
+
+### 4b — fechar cobertura e desempenho
+
+1. **Investigar a lacuna restante** em `app C` rota a rota, com o mesmo
+   método que achou o caso do tipo nomeado: rastrear uma rota conhecida, ver
+   onde o grafo para, transformar em fixture.
+2. **`property_service` / `@inject()`** — lacuna declarada em teste. Exige o
+   type checker; medir o custo no mesmo dia em que entrar.
+3. **Orçamento de desempenho.** 42 s numa app de 161 rotas, contra teto
+   proposto de 60 s para a análise inteira. Caches de corpo e de símbolos por
+   arquivo, e reaproveitar a análise entre rotas que compartilham handler.
+4. **Hooks de model** (§3) e **fronteira de `node_modules`** (§4) — ainda não
+   implementados.
 
 ## Fase 5 — `albrecht`: as regras
 

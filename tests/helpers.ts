@@ -3,6 +3,9 @@ import type { CallExpression, SourceFile } from 'ts-morph'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
+import { discoverApp } from '../src/inventory/app_context.js'
+import { collectDataStores } from '../src/inventory/sources/data_stores.js'
+import type { CollectedDataStore } from '../src/inventory/sources/data_stores.js'
 import type { ResolverContext } from '../src/inventory/resolvers/types.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -13,14 +16,19 @@ export const fixturePath = (...parts: string[]) => path.join(HERE, 'fixtures', .
 export const appFixturePath = (name: string) => fixturePath('apps', name)
 
 /**
- * Monta um projeto ts-morph a partir de uma fixture.
+ * Monta o contexto de uma fixture de padrão de código.
  *
- * Fixtures não precisam instalar, bootar nem ter banco — são só árvores de
- * arquivos que o ts-morph parseia. É o que torna barato ter um caso por padrão
- * de código em vez de um playground só.
+ * Usa `discoverApp` e `collectDataStores` de verdade, nunca uma reimplementação
+ * de teste. A versão anterior tinha um resolvedor de specifier próprio, e
+ * helper que diverge do código é a pior espécie de teste verde: passa enquanto
+ * o produto quebra.
+ *
+ * Fixtures não instalam, não bootam e não têm banco — são árvores de arquivos
+ * que o ts-morph parseia.
  */
-export function loadFixture(name: string) {
+export async function loadFixture(name: string) {
   const root = fixturePath('patterns', name)
+  const app = await discoverApp(root)
 
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
@@ -29,44 +37,38 @@ export function loadFixture(name: string) {
   })
   project.addSourceFilesAtPaths(`${root}/**/*.ts`)
 
-  /** `#collect/models/invite` -> caminho absoluto dentro da fixture */
-  const resolveSpecifier = (specifier: string): string | null => {
-    if (!specifier.startsWith('#')) return null
-    const withoutHash = specifier.replace(/^#/, '')
-    return path.join(root, 'app', withoutHash + '.ts')
-  }
-
   const sourceFile = (absPath: string): SourceFile | null => project.getSourceFile(absPath) ?? null
 
   /** imports do arquivo: identificador local -> caminho absoluto */
   const importsOf = (file: SourceFile): Map<string, string> => {
     const map = new Map<string, string>()
-    for (const decl of file.getImportDeclarations()) {
-      const target = resolveSpecifier(decl.getModuleSpecifierValue())
+    for (const declaration of file.getImportDeclarations()) {
+      const target = app.resolveSpecifier(declaration.getModuleSpecifierValue())
       if (!target) continue
-      const def = decl.getDefaultImport()?.getText()
-      if (def) map.set(def, target)
-      for (const named of decl.getNamedImports()) map.set(named.getName(), target)
+
+      const defaultImport = declaration.getDefaultImport()?.getText()
+      if (defaultImport) map.set(defaultImport, target)
+      for (const named of declaration.getNamedImports()) map.set(named.getName(), target)
     }
     return map
   }
 
   /**
-   * DataStores da fixture. O pipeline real coleta isto antes de analisar
-   * qualquer handler — ver a invariante de ordem em ResolverContext.
+   * INVARIANTE DE ORDEM: os DataStores são coletados antes de qualquer análise
+   * de handler, porque `Model.create()` e `Service.create()` são
+   * indistinguíveis pela forma.
    */
-  const dataStoresBySymbol = new Map<string, any>()
-  for (const file of project.getSourceFiles()) {
-    if (!file.getFilePath().includes('/models/')) continue
-    const cls = file.getClasses().find((c) => c.isDefaultExport()) ?? file.getClasses()[0]
-    if (cls?.getName()) dataStoresBySymbol.set(cls.getName()!, { id: cls.getName()! })
-  }
+  const { stores } = await collectDataStores(app)
+  const dataStoresBySymbol = new Map<string, CollectedDataStore>(
+    stores.map((store) => [store.name, store])
+  )
 
   return {
     root,
+    app,
     project,
+    stores,
     dataStoresBySymbol,
-    resolveSpecifier,
     sourceFile,
 
     /** o arquivo do controller da fixture */
@@ -83,7 +85,7 @@ export function loadFixture(name: string) {
         depth,
         imports: importsOf(file),
         dataStoresBySymbol,
-        resolveSpecifier,
+        resolveSpecifier: app.resolveSpecifier,
         sourceFile,
       }
     },

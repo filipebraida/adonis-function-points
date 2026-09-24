@@ -1,0 +1,6 @@
+{
+  "name": "pattern-static_service",
+  "type": "module",
+  "dependencies": { "@adonisjs/core": "^7.5.0", "@adonisjs/lucid": "^22.4.2" },
+  "imports": { "#collect/*": "./app/collect/*.js" }
+}

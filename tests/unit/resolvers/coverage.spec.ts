@@ -35,15 +35,17 @@ const patterns = fs
   .map((d) => d.name)
 
 test.group('cobertura de padrões', () => {
-  test('existe pelo menos uma fixture por padrão documentado', ({ assert }) => {
+  test('existe pelo menos uma fixture por padrão documentado', async ({ assert }) => {
     assert.isAbove(patterns.length, 4)
   })
 
   for (const pattern of patterns) {
     const esperado = !LACUNAS_CONHECIDAS.has(pattern) && !SEM_RESOLVEDOR_POR_DESIGN.has(pattern)
 
-    test(`padrão "${pattern}" ${esperado ? 'é resolvido' : 'é lacuna conhecida'}`, ({ assert }) => {
-      const fixture = loadFixture(pattern)
+    test(`padrão "${pattern}" ${esperado ? 'é resolvido' : 'é lacuna conhecida'}`, async ({
+      assert,
+    }) => {
+      const fixture = await loadFixture(pattern)
       const controller = fixture.controller()
       const ctx = fixture.contextFor(controller)
 
@@ -67,8 +69,8 @@ test.group('cobertura de padrões', () => {
    * job. Se alguém reordenar as estratégias, isto falha.
    */
   for (const [pattern, esperada] of Object.entries(ESTRATEGIA_ESPERADA)) {
-    test(`"${pattern}" é reivindicado por "${esperada}"`, ({ assert }) => {
-      const fixture = loadFixture(pattern)
+    test(`"${pattern}" é reivindicado por "${esperada}"`, async ({ assert }) => {
+      const fixture = await loadFixture(pattern)
       const controller = fixture.controller()
       const ctx = fixture.contextFor(controller)
 

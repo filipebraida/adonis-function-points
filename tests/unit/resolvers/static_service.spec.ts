@@ -4,8 +4,8 @@ import { staticServiceResolver } from '../../../src/inventory/resolvers/static_s
 import { loadFixture } from '../../helpers.js'
 
 test.group('resolver: service estático', () => {
-  test('segue `Service.metodo()`', ({ assert }) => {
-    const fixture = loadFixture('static_service')
+  test('segue `Service.metodo()`', async ({ assert }) => {
+    const fixture = await loadFixture('static_service')
     const controller = fixture.controller()
     const ctx = fixture.contextFor(controller)
 
@@ -18,8 +18,8 @@ test.group('resolver: service estático', () => {
     assert.equal(refs[0].member, 'expire')
   })
 
-  test('ignora chamadas em model, que são do detector de persistência', ({ assert }) => {
-    const fixture = loadFixture('fat_controller')
+  test('ignora chamadas em model, que são do detector de persistência', async ({ assert }) => {
+    const fixture = await loadFixture('fat_controller')
     const controller = fixture.controller()
     const ctx = fixture.contextFor(controller)
 
