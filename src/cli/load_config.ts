@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { createJiti } from 'jiti'
 
 import { DEFAULTS, defineConfig } from '../define_config.js'
+import { toPosix } from '../inventory/paths.js'
 import type { FunctionPointsConfig } from '../define_config.js'
 
 /**
@@ -65,5 +66,6 @@ export async function loadConfig(root: string): Promise<LoadedConfig> {
     throw new ConfigLoadError(found, new Error('the default export is not a configuration object'))
   }
 
-  return { config: defineConfig(loaded as Partial<FunctionPointsConfig>), file: found }
+  // this path is recorded in the count's `source`, so it leaves the process
+  return { config: defineConfig(loaded as Partial<FunctionPointsConfig>), file: toPosix(found) }
 }

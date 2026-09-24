@@ -134,13 +134,23 @@ export async function discoverApp(root: string): Promise<AppContext> {
   const scanRoots = await collectScanRoots(abs, subpathImports)
   const routeFiles = await collectRouteFiles(abs, resolveSpecifier)
 
+  /**
+   * Normalised here, at the one place every discovered path leaves: `abs` and
+   * `toSource` were normalised at creation, and the roots and generated
+   * artefacts were not — which Windows CI caught and Linux never could.
+   * Covering the whole return is what makes the omission impossible to repeat.
+   */
   return {
     root: abs,
     subpathImports,
-    generated,
+    generated: {
+      routeRegistry: generated.routeRegistry && toPosix(generated.routeRegistry),
+      controllersMap: generated.controllersMap && toPosix(generated.controllersMap),
+      dataSchema: generated.dataSchema && toPosix(generated.dataSchema),
+    },
     layout,
-    routeFiles,
-    scanRoots,
+    routeFiles: routeFiles.map(toPosix),
+    scanRoots: scanRoots.map(toPosix),
     framework: readFramework(pkg),
     resolveSpecifier,
     moduleOf: (absPath) => moduleOf(abs, absPath),

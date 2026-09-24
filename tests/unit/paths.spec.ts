@@ -10,8 +10,10 @@ import { appFixturePath } from '../helpers.js'
  * fixed list — so a path field added later is covered without anyone
  * remembering to come back here.
  */
+const PATH_KEYS = new Set(['file', 'app', 'config'])
+
 function pathsIn(value: unknown, key = ''): string[] {
-  if (typeof value === 'string') return key === 'file' || key === 'app' ? [value] : []
+  if (typeof value === 'string') return PATH_KEYS.has(key) ? [value] : []
   if (Array.isArray(value)) return value.flatMap((item) => pathsIn(item, key))
   if (value && typeof value === 'object') {
     return Object.entries(value).flatMap(([name, item]) => pathsIn(item, name))
@@ -32,8 +34,10 @@ function pathsIn(value: unknown, key = ''): string[] {
 test.group('paths: one canonical spelling', () => {
   test('every path the inventory emits is posix', async ({ assert }) => {
     for (const app of ['minimal_flat', 'minimal_nogen', 'model_hooks']) {
-      const { inventory } = await analyze(appFixturePath(app))
-      const found = pathsIn(inventory)
+      const { inventory, count } = await analyze(appFixturePath(app), {
+        configFile: `${appFixturePath(app)}/config/function_points.ts`,
+      })
+      const found = [...pathsIn(inventory), ...pathsIn(count)]
 
       assert.isNotEmpty(found, `${app}: no path collected, the walk is broken`)
       for (const file of found) {
@@ -51,10 +55,15 @@ test.group('paths: one canonical spelling', () => {
     const leaked = pathsIn({
       app: 'D:/app',
       behaviors: [{ trace: [{ file: 'D:\\app\\models\\book.ts' }] }],
+      source: { config: 'D:\\app\\config\\function_points.ts' },
       ignored: { name: 'not\\a\\path' },
     })
 
-    assert.deepEqual(leaked, ['D:/app', 'D:\\app\\models\\book.ts'])
+    assert.deepEqual(leaked, [
+      'D:/app',
+      'D:\\app\\models\\book.ts',
+      'D:\\app\\config\\function_points.ts',
+    ])
     assert.isTrue(
       leaked.some((file) => file.includes('\\')),
       'the collector has to see the backslash, or the group is decorative'
@@ -75,6 +84,14 @@ test.group('paths: one canonical spelling', () => {
     assert.notInclude(app.root, '\\')
     for (const root of app.scanRoots) assert.notInclude(root, '\\')
     for (const file of app.routeFiles) assert.notInclude(file, '\\')
+  })
+
+  test('so are the generated artefacts', async ({ assert }) => {
+    const app = await discoverApp(appFixturePath('minimal_flat'))
+
+    for (const artefact of Object.values(app.generated)) {
+      if (artefact) assert.notInclude(artefact, '\\')
+    }
   })
 })
 
