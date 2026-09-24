@@ -1,6 +1,6 @@
 import Item from '#models/item'
 
-/** A escrita mora aqui, alcançável só por um padrão que nenhum embutido cobre. */
+/** The write lives here, reachable only through a pattern no built-in covers. */
 export async function gravar(descricao: string) {
   return Item.create({ descricao })
 }

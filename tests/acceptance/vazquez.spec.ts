@@ -9,40 +9,41 @@ import type { CountResult } from '../../src/types.js'
 import { appFixturePath } from '../helpers.js'
 
 /**
- * BENCHMARK EXTERNO — Vazquez, Simões e Albert (2011)
+ * EXTERNAL BENCHMARK — Vazquez, Simões and Albert (2011)
  *
- * O único gabarito deste projeto que não foi produzido por nós: uma contagem
- * manual publicada, sobre uma especificação que não escrevemos.
+ * The only reference in this project that we did not produce: a published
+ * manual count, over a specification we did not write.
  *
- * A fixture e o gabarito (`fixtures/apps/vazquez/REFERENCIA.md`) foram
- * congelados em commit próprio ANTES de o contador ser rodado sobre eles, e as
- * escolhas de transcrição estão documentadas lá. Sem isso a independência seria
- * ilusória: nada impediria ajustar a fixture até bater o número.
+ * The fixture and the reference (`fixtures/apps/vazquez/REFERENCIA.md`) were
+ * frozen in their own commit BEFORE the counter was ever run against them, and
+ * the transcription choices are documented there. Without that the independence
+ * would be illusory: nothing would stop us adjusting the fixture until the
+ * number matched.
  *
- * Referências: gabarito 46 PF · Ligeiro automático 52 (+13%) · manual pelas
- * regras do Ligeiro 43 (−6,5%).
+ * References: reference count 46 FP · Ligeiro automatic 52 (+13%) · manual
+ * under Ligeiro's rules 43 (−6.5%).
  */
 
-/** gabarito, função por função — Tabela 6.7, coluna VAZQUEZ et al. (2011) */
-const GABARITO = {
+/** the reference, function by function — Table 6.7, VAZQUEZ et al. (2011) column */
+const REFERENCE = {
   total: 46,
-  dados: {
-    Pessoa: { tipo: 'EIF', det: 4, refs: 1, pf: 5 },
-    Justificativa: { tipo: 'ILF', det: 3, refs: 1, pf: 7 },
-    Apontamento: { tipo: 'ILF', det: 4, refs: 1, pf: 7 },
+  data: {
+    Pessoa: { type: 'EIF', det: 4, refs: 1, fp: 5 },
+    Justificativa: { type: 'ILF', det: 3, refs: 1, fp: 7 },
+    Apontamento: { type: 'ILF', det: 4, refs: 1, fp: 7 },
   },
-  transacoes: {
-    'GET /apontamentos': { rotulo: 'Consulta Apontamento Diário', pf: 3 },
-    'POST /apontamentos': { rotulo: 'Registro de Ponto', pf: 3 },
-    'PUT /apontamentos/:param': { rotulo: 'Alteração de Apontamento', pf: 4 },
-    'DELETE /apontamentos/:param': { rotulo: 'Exclusão de Apontamento', pf: 3 },
-    'POST /apontamentos/justificar': { rotulo: 'Apontamento c/ Justificativa', pf: 4 },
-    'GET /presenca': { rotulo: 'Acompanhar Presença', pf: 5 },
-    'GET /presenca/relatorio': { rotulo: 'Emitir Relatório de Presença', pf: 5 },
+  transactions: {
+    'GET /apontamentos': { label: 'Consulta Apontamento Diário', fp: 3 },
+    'POST /apontamentos': { label: 'Registro de Ponto', fp: 3 },
+    'PUT /apontamentos/:param': { label: 'Alteração de Apontamento', fp: 4 },
+    'DELETE /apontamentos/:param': { label: 'Exclusão de Apontamento', fp: 3 },
+    'POST /apontamentos/justificar': { label: 'Apontamento c/ Justificativa', fp: 4 },
+    'GET /presenca': { label: 'Acompanhar Presença', fp: 5 },
+    'GET /presenca/relatorio': { label: 'Emitir Relatório de Presença', fp: 5 },
   },
 } as const
 
-async function contar(): Promise<CountResult> {
+async function countFixture(): Promise<CountResult> {
   const app = await discoverApp(appFixturePath('vazquez'))
   const { stores } = await collectDataStores(app)
   const { entryPoints } = await collectEntryPoints(app)
@@ -54,118 +55,118 @@ async function contar(): Promise<CountResult> {
       .map((entry) => [entry.id, analyzer.analyze(entry.handler!)])
   )
 
-  // `Pessoa` é parte do controle de acesso, fora da fronteira — ver REFERENCIA.md
+  // `Pessoa` belongs to access control, outside the boundary — see REFERENCIA.md
   return count(
     { app, stores, entryPoints, behaviors },
     { boundary: { externallyMaintained: ['Pessoa'] } }
   )
 }
 
-const pf = (result: CountResult, name: string) => result.functions.find((f) => f.name === name)
+const fn = (result: CountResult, name: string) => result.functions.find((f) => f.name === name)
 
-test.group('benchmark Vazquez: funções de dados', () => {
+test.group('Vazquez benchmark: data functions', () => {
   /**
-   * As funções de dados são a metade previsível da contagem: saem das colunas,
-   * quase sem heurística. Exatidão aqui é o mínimo exigível.
+   * The data functions are the predictable half of the count: they come from
+   * the columns, with almost no heuristic. Exactness here is the minimum bar.
    */
-  test('as três funções de dados batem exatamente com o gabarito', async ({ assert }) => {
-    const result = await contar()
+  test('the three data functions match the reference exactly', async ({ assert }) => {
+    const result = await countFixture()
 
-    for (const [nome, esperado] of Object.entries(GABARITO.dados)) {
-      const contado = pf(result, nome)
-      assert.exists(contado, `${nome} não foi contada`)
-      assert.equal(contado!.type, esperado.tipo, `${nome}: tipo`)
-      assert.equal(contado!.det, esperado.det, `${nome}: DET`)
-      assert.equal(contado!.refs, esperado.refs, `${nome}: RET`)
-      assert.equal(contado!.points, esperado.pf, `${nome}: PF`)
+    for (const [name, expected] of Object.entries(REFERENCE.data)) {
+      const counted = fn(result, name)
+      assert.exists(counted, `${name} was not counted`)
+      assert.equal(counted!.type, expected.type, `${name}: type`)
+      assert.equal(counted!.det, expected.det, `${name}: DET`)
+      assert.equal(counted!.refs, expected.refs, `${name}: RET`)
+      assert.equal(counted!.points, expected.fp, `${name}: FP`)
     }
   })
 })
 
-test.group('benchmark Vazquez: funções transacionais', () => {
-  test('as sete transações do estudo de caso são identificadas', async ({ assert }) => {
-    const result = await contar()
+test.group('Vazquez benchmark: transactional functions', () => {
+  test('the seven transactions of the case study are identified', async ({ assert }) => {
+    const result = await countFixture()
 
-    for (const [identidade, esperado] of Object.entries(GABARITO.transacoes)) {
-      assert.exists(pf(result, identidade), `${esperado.rotulo} (${identidade}) não foi contada`)
+    for (const [identity, expected] of Object.entries(REFERENCE.transactions)) {
+      assert.exists(fn(result, identity), `${expected.label} (${identity}) was not counted`)
     }
   })
 
   /**
-   * As duas divergências foram PREVISTAS em REFERENCIA.md antes de rodar, e são
-   * da norma, não defeitos:
+   * The two divergences were PREDICTED in REFERENCIA.md before the run, and
+   * come from the standard, not from defects:
    *
-   *   +1  `Consulta Apontamento Diário` é CE no gabarito. O AFP §6.5.3 manda
-   *       colapsar CE em SE, porque intenção primária não é detectável — e SE
-   *       pesa mais que CE na mesma faixa.
-   *   −1  `Apontamento c/ Justificativa`: o manual do IFPUG conta 1 DET de
-   *       mensagem ao usuário, o AFP não. É a divergência sistemática que o
-   *       Ligeiro também mediu.
+   *   +1  `Consulta Apontamento Diário` is an EQ in the reference. AFP §6.5.3
+   *       requires collapsing EQ into EO, because primary intent is not
+   *       detectable — and an EO weighs more than an EQ in the same band.
+   *   −1  `Apontamento c/ Justificativa`: the IFPUG manual counts 1 DET for the
+   *       user message, AFP does not. This is the systematic divergence Ligeiro
+   *       measured as well.
    */
-  test('as divergências são exatamente as duas previstas', async ({ assert }) => {
-    const result = await contar()
+  test('the divergences are exactly the two predicted', async ({ assert }) => {
+    const result = await countFixture()
 
-    const divergentes = Object.entries(GABARITO.transacoes)
-      .map(([identidade, esperado]) => ({
-        identidade,
-        esperado: esperado.pf,
-        obtido: pf(result, identidade)?.points ?? 0,
+    const divergent = Object.entries(REFERENCE.transactions)
+      .map(([identity, expected]) => ({
+        identity,
+        expected: expected.fp,
+        obtained: fn(result, identity)?.points ?? 0,
       }))
-      .filter((item) => item.obtido !== item.esperado)
+      .filter((item) => item.obtained !== item.expected)
 
     assert.deepEqual(
-      divergentes.map((d) => `${d.identidade} ${d.esperado}->${d.obtido}`).sort(),
+      divergent.map((d) => `${d.identity} ${d.expected}->${d.obtained}`).sort(),
       ['GET /apontamentos 3->4', 'POST /apontamentos/justificar 4->3'],
-      'apareceu divergência não prevista, ou uma prevista desapareceu'
+      'an unpredicted divergence appeared, or a predicted one disappeared'
     )
   })
 
-  test('cinco das sete transações batem exatamente', async ({ assert }) => {
-    const result = await contar()
+  test('five of the seven transactions match exactly', async ({ assert }) => {
+    const result = await countFixture()
 
-    const exatas = Object.entries(GABARITO.transacoes).filter(
-      ([identidade, esperado]) => pf(result, identidade)?.points === esperado.pf
+    const exact = Object.entries(REFERENCE.transactions).filter(
+      ([identity, expected]) => fn(result, identity)?.points === expected.fp
     )
 
-    assert.lengthOf(exatas, 5)
+    assert.lengthOf(exact, 5)
   })
 })
 
-test.group('benchmark Vazquez: total', () => {
+test.group('Vazquez benchmark: total', () => {
   /**
-   * O total bate exatamente — mas em parte por CANCELAMENTO: as duas
-   * divergências previstas são +1 e −1.
+   * The total matches exactly — but partly by CANCELLATION: the two predicted
+   * divergences are +1 and −1.
    *
-   * Registrar isso importa. O spike já havia observado que o total é mais
-   * estável que a classificação individual, e aqui está a confirmação contra um
-   * gabarito externo: 8 de 10 funções exatas, e as duas que erram se anulam.
-   * Quem for defender a contagem função por função precisa saber disso.
+   * Recording that matters. The total is more stable than the individual
+   * classification, and here is the confirmation against an external reference:
+   * 8 of 10 functions exact, and the two that miss cancel out. Anyone defending
+   * the count function by function needs to know this.
    */
-  test('o total bate com o gabarito, com as divergências se cancelando', async ({ assert }) => {
-    const result = await contar()
+  test('the total matches the reference, with the divergences cancelling', async ({ assert }) => {
+    const result = await countFixture()
 
-    assert.equal(result.totals.unadjusted, GABARITO.total)
+    assert.equal(result.totals.unadjusted, REFERENCE.total)
 
-    const exatas = result.functions.filter((f) => {
-      const dado = GABARITO.dados[f.name as keyof typeof GABARITO.dados]
-      const tx = GABARITO.transacoes[f.name as keyof typeof GABARITO.transacoes]
-      return dado ? f.points === dado.pf : tx ? f.points === tx.pf : false
+    const exact = result.functions.filter((f) => {
+      const data = REFERENCE.data[f.name as keyof typeof REFERENCE.data]
+      const tx = REFERENCE.transactions[f.name as keyof typeof REFERENCE.transactions]
+      return data ? f.points === data.fp : tx ? f.points === tx.fp : false
     })
 
-    assert.lengthOf(exatas, 8, '8 das 10 funções batem exatamente')
+    assert.lengthOf(exact, 8, '8 of the 10 functions match exactly')
   })
 
-  /** Tolerância declarada: o Ligeiro ficou em +13%; exigimos bem menos. */
-  test('o desvio fica dentro da tolerância declarada de 5%', async ({ assert }) => {
-    const result = await contar()
-    const desvio = Math.abs(result.totals.unadjusted - GABARITO.total) / GABARITO.total
+  /** Declared tolerance: Ligeiro landed at +13%; we require far less. */
+  test('the deviation stays within the declared 5% tolerance', async ({ assert }) => {
+    const result = await countFixture()
+    const deviation = Math.abs(result.totals.unadjusted - REFERENCE.total) / REFERENCE.total
 
-    assert.isBelow(desvio, 0.05)
+    assert.isBelow(deviation, 0.05)
   })
 
-  /** Um total bom com rastreamento ruim não valeria nada. */
-  test('a contagem não depende de pendência nem de rota sem handler', async ({ assert }) => {
-    const result = await contar()
+  /** A good total with bad tracing would be worth nothing. */
+  test('the count depends on no unresolved call nor handler-less route', async ({ assert }) => {
+    const result = await countFixture()
 
     assert.equal(result.confidence.unresolvedCalls, 0)
     assert.equal(result.confidence.entryPointsWithoutHandler, 0)

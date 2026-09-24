@@ -13,19 +13,18 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 export const fixturePath = (...parts: string[]) => path.join(HERE, 'fixtures', ...parts)
 
-/** raiz de uma fixture de aplicação completa, em tests/fixtures/apps/ */
+/** root of a full application fixture, under tests/fixtures/apps/ */
 export const appFixturePath = (name: string) => fixturePath('apps', name)
 
 /**
- * Monta o contexto de uma fixture de padrão de código.
+ * Builds the context for a code-pattern fixture.
  *
- * Usa `discoverApp` e `collectDataStores` de verdade, nunca uma reimplementação
- * de teste. A versão anterior tinha um resolvedor de specifier próprio, e
- * helper que diverge do código é a pior espécie de teste verde: passa enquanto
- * o produto quebra.
+ * It uses the real `discoverApp` and `collectDataStores`, never a test-only
+ * reimplementation. A helper that drifts from the code is the worst kind of
+ * green test: it passes while the product breaks.
  *
- * Fixtures não instalam, não bootam e não têm banco — são árvores de arquivos
- * que o ts-morph parseia.
+ * Fixtures do not install, do not boot and have no database — they are file
+ * trees that ts-morph parses.
  */
 export async function loadFixture(name: string) {
   const root = fixturePath('patterns', name)
@@ -40,7 +39,7 @@ export async function loadFixture(name: string) {
 
   const sourceFile = (absPath: string): SourceFile | null => project.getSourceFile(absPath) ?? null
 
-  /** imports do arquivo: identificador local -> caminho absoluto */
+  /** file imports: local identifier -> absolute path */
   const importsOf = (file: SourceFile): Map<string, string> => {
     const map = new Map<string, string>()
     for (const declaration of file.getImportDeclarations()) {
@@ -55,9 +54,9 @@ export async function loadFixture(name: string) {
   }
 
   /**
-   * INVARIANTE DE ORDEM: os DataStores são coletados antes de qualquer análise
-   * de handler, porque `Model.create()` e `Service.create()` são
-   * indistinguíveis pela forma.
+   * ORDERING INVARIANT: data stores are collected before any handler analysis,
+   * because `Model.create()` and `Service.create()` are indistinguishable by
+   * shape.
    */
   const { stores } = await collectDataStores(app)
   const dataStoresBySymbol = new Map<string, CollectedDataStore>(
@@ -72,20 +71,20 @@ export async function loadFixture(name: string) {
     dataStoresBySymbol,
     sourceFile,
 
-    /** o arquivo do controller da fixture */
+    /** the fixture's controller file */
     controller(): SourceFile {
       const file = project.getSourceFiles().find((f) => f.getFilePath().includes('/controllers/'))
-      if (!file) throw new Error(`fixture "${name}" não tem controller`)
+      if (!file) throw new Error(`fixture "${name}" has no controller`)
       return file
     },
 
-    /** contexto de resolução para um arquivo da fixture */
+    /** resolution context for a file of the fixture */
     contextFor(file: SourceFile, depth = 0): ResolverContext {
       return {
         file,
         depth,
         imports: importsOf(file),
-        // mesma função do pipeline: helper que reimplementa é teste enganoso
+        // the same function the pipeline uses: a reimplementing helper misleads
         injected: injectedFor(file.getClasses()[0], file, app),
         dataStoresBySymbol,
         resolveSpecifier: app.resolveSpecifier,
@@ -93,13 +92,13 @@ export async function loadFixture(name: string) {
       }
     },
 
-    /** todas as chamadas `algo(...)` dentro do corpo de um método */
+    /** every `something(...)` call inside a method body */
     callsIn(file: SourceFile, methodName: string): CallExpression[] {
       for (const cls of file.getClasses()) {
         const method = cls.getMethod(methodName)
         if (method) return method.getDescendantsOfKind(SyntaxKind.CallExpression)
       }
-      throw new Error(`método "${methodName}" não encontrado em ${file.getBaseName()}`)
+      throw new Error(`method "${methodName}" not found in ${file.getBaseName()}`)
     },
   }
 }

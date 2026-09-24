@@ -5,23 +5,23 @@ import { resolveCall } from '../../../src/inventory/resolvers/index.js'
 import { fixturePath, loadFixture } from '../../helpers.js'
 
 /**
- * Cada fixture em `patterns/` é A MESMA transação escrita de um jeito
- * diferente. Toda uma deve ser alcançável por alguma estratégia embutida.
+ * Every fixture under `patterns/` is THE SAME transaction written in a
+ * different way. Each one must be reachable by some built-in strategy.
  *
- * Este teste é a lista de pendências do pacote, em forma executável: quando
- * alguém adiciona uma fixture sem o resolvedor correspondente, ele falha.
+ * This test is the package's gap list in executable form: when someone adds a
+ * fixture without the matching resolver, it fails.
  */
 
 /**
- * Padrões cujo resolvedor ainda não existe — ver docs/design/resolvers.md.
+ * Patterns whose resolver does not exist yet — see docs/design/resolvers.md.
  *
- * Vazia hoje. `property_service` saiu daqui quando se descobriu que o
- * `@inject()` obriga a anotação de tipo, então não precisa de type checker.
+ * Empty today. `property_service` left this list once it became clear that
+ * `@inject()` requires the type annotation, so no type checker is needed.
  */
-const LACUNAS_CONHECIDAS = new Set<string>()
+const KNOWN_GAPS = new Set<string>()
 
-/** qual estratégia DEVE reivindicar cada padrão — a ordem é parte do contrato */
-const ESTRATEGIA_ESPERADA: Record<string, string> = {
+/** which strategy MUST claim each pattern — the ordering is part of the contract */
+const EXPECTED_STRATEGY: Record<string, string> = {
   action_object: 'action-object',
   action_variable: 'action-object',
   job_dispatch: 'job-dispatch',
@@ -31,67 +31,68 @@ const ESTRATEGIA_ESPERADA: Record<string, string> = {
 }
 
 /**
- * Padrões cuja chamada característica NÃO está no controller.
+ * Patterns whose characteristic call is NOT in the controller.
  *
- * `fat_controller` escreve no próprio handler: é caso do detector de
- * persistência, não de resolvedor. `same_class_method` e `typed_input` têm a
- * chamada característica dentro do service ou da action — no controller usam
- * outra forma, e afirmar o contrário aqui seria um teste mentindo.
+ * `fat_controller` writes in the handler itself: that is a case for the
+ * persistence detector, not for a resolver. `same_class_method` and
+ * `typed_input` have their characteristic call inside the service or the
+ * action — in the controller they use another shape, and asserting otherwise
+ * here would be a lying test.
  */
-const SEM_RESOLVEDOR_POR_DESIGN = new Set(['fat_controller'])
+const NO_RESOLVER_BY_DESIGN = new Set(['fat_controller'])
 
 const patterns = fs
   .readdirSync(fixturePath('patterns'), { withFileTypes: true })
   .filter((d) => d.isDirectory())
   .map((d) => d.name)
 
-test.group('cobertura de padrões', () => {
-  test('existe pelo menos uma fixture por padrão documentado', async ({ assert }) => {
+test.group('pattern coverage', () => {
+  test('there is at least one fixture per documented pattern', async ({ assert }) => {
     assert.isAbove(patterns.length, 4)
   })
 
   for (const pattern of patterns) {
-    const esperado = !LACUNAS_CONHECIDAS.has(pattern) && !SEM_RESOLVEDOR_POR_DESIGN.has(pattern)
+    const expected = !KNOWN_GAPS.has(pattern) && !NO_RESOLVER_BY_DESIGN.has(pattern)
 
-    test(`padrão "${pattern}" ${esperado ? 'é resolvido' : 'é lacuna conhecida'}`, async ({
+    test(`pattern "${pattern}" ${expected ? 'is resolved' : 'is a known gap'}`, async ({
       assert,
     }) => {
       const fixture = await loadFixture(pattern)
       const controller = fixture.controller()
       const ctx = fixture.contextFor(controller)
 
-      const resolvido = fixture
+      const resolved = fixture
         .callsIn(controller, 'handle')
         .some((call) => resolveCall(call, ctx) !== null)
 
       assert.equal(
-        resolvido,
-        esperado,
-        esperado
-          ? `nenhuma estratégia seguiu "${pattern}"`
-          : `"${pattern}" passou a ser resolvido — remova de LACUNAS_CONHECIDAS`
+        resolved,
+        expected,
+        expected
+          ? `no strategy followed "${pattern}"`
+          : `"${pattern}" is now resolved — remove it from KNOWN_GAPS`
       )
     })
   }
 
   /**
-   * Regressão da armadilha que este teste descobriu: `Job.dispatch(p)` e
-   * `Service.create(p)` são sintaticamente idênticos, e a genérica engolia o
-   * job. Se alguém reordenar as estratégias, isto falha.
+   * Regression for the trap this test uncovered: `Job.dispatch(p)` and
+   * `Service.create(p)` are syntactically identical, and the generic strategy
+   * swallowed the job. If anyone reorders the strategies, this fails.
    */
-  for (const [pattern, esperada] of Object.entries(ESTRATEGIA_ESPERADA)) {
-    test(`"${pattern}" é reivindicado por "${esperada}"`, async ({ assert }) => {
+  for (const [pattern, expected] of Object.entries(EXPECTED_STRATEGY)) {
+    test(`"${pattern}" is claimed by "${expected}"`, async ({ assert }) => {
       const fixture = await loadFixture(pattern)
       const controller = fixture.controller()
       const ctx = fixture.contextFor(controller)
 
-      const reivindicacoes = fixture
+      const claims = fixture
         .callsIn(controller, 'handle')
         .map((call) => resolveCall(call, ctx))
         .filter((r): r is NonNullable<typeof r> => r !== null)
 
-      assert.isNotEmpty(reivindicacoes)
-      for (const r of reivindicacoes) assert.equal(r.by, esperada)
+      assert.isNotEmpty(claims)
+      for (const r of claims) assert.equal(r.by, expected)
     })
   }
 })

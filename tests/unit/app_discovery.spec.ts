@@ -6,13 +6,13 @@ import { appFixturePath } from '../helpers.js'
 
 const rel = (root: string, abs: string) => path.relative(root, abs).split(path.sep).join('/')
 
-test.group('AppContext: arquivos de rota', () => {
+test.group('AppContext: route files', () => {
   /**
-   * A lista de `preloads` do adonisrc é a fonte autoritativa — não convenção de
-   * caminho. Quatro topologias foram encontradas nas apps reais, e as três
-   * fixtures cobrem três delas.
+   * The adonisrc `preloads` list is the authoritative source — not a path
+   * convention. Real applications use several topologies; these fixtures cover
+   * the common ones.
    */
-  test('topologia: arquivo único em start/', async ({ assert }) => {
+  test('topology: a single file in start/', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_flat'))
     assert.deepEqual(
       app.routeFiles.map((f) => rel(app.root, f)),
@@ -20,7 +20,7 @@ test.group('AppContext: arquivos de rota', () => {
     )
   })
 
-  test('topologia: um arquivo por módulo', async ({ assert }) => {
+  test('topology: one file per module', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_modular'))
     assert.deepEqual(
       app.routeFiles.map((f) => rel(app.root, f)),
@@ -29,32 +29,32 @@ test.group('AppContext: arquivos de rota', () => {
   })
 
   /**
-   * Topologia mais difícil: o preload aponta para um hub que não define rota
-   * nenhuma, só reexporta. Parar no preload devolveria lista vazia.
+   * The hardest topology: the preload points at a hub that declares no route at
+   * all, it only re-exports. Stopping at the preload would return an empty list.
    *
-   * O hub é um passo de TRAVESSIA, não um arquivo de rota — não há `router.`
-   * nele para parsear. A distinção importa: `routeFiles` é o que o parser vai
-   * abrir, e abrir o hub seria trabalho sem resultado.
+   * The hub is a TRAVERSAL step, not a route file — there is no `router.` call
+   * in it to parse. The distinction matters: `routeFiles` is what the parser
+   * will open, and opening the hub would be work with no result.
    */
-  test('topologia: hub que só importa outros arquivos', async ({ assert }) => {
+  test('topology: a hub that only imports other files', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_nogen'))
     const files = app.routeFiles.map((f) => rel(app.root, f))
 
     assert.deepEqual(files, ['start/routes/web.ts'])
   })
 
-  test('não confunde preload que não é de rota', async ({ assert }) => {
+  test('does not mistake a non-route preload for one', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_flat'))
     assert.notInclude(app.routeFiles.join(' '), 'kernel')
   })
 })
 
-test.group('AppContext: raízes de varredura', () => {
+test.group('AppContext: scan roots', () => {
   /**
-   * Numa app externa levantada, 100% da escrita mora em `src/`. Varrer só
-   * `app/` perderia a aplicação inteira.
+   * An application can keep all of its writes outside `app/` — under `src/`,
+   * for instance. Scanning only `app/` would miss the whole application.
    */
-  test('inclui diretório fora de app/ quando um alias aponta para lá', async ({ assert }) => {
+  test('includes a directory outside app/ when an alias points there', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_nogen'))
     const roots = app.scanRoots.map((r) => rel(app.root, r)).sort()
 
@@ -63,18 +63,17 @@ test.group('AppContext: raízes de varredura', () => {
   })
 
   /**
-   * `#admin/*` aponta para `app/admin`, que já está dentro de `app`. Manter os
-   * dois faria cada arquivo de admin ser varrido duas vezes — e, pior, mudaria
-   * o módulo calculado.
+   * `#admin/*` points at `app/admin`, already inside `app`. Keeping both would
+   * scan every admin file twice — and, worse, change the computed module.
    */
-  test('colapsa raiz aninhada dentro de outra', async ({ assert }) => {
+  test('collapses a root nested inside another', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_nogen'))
     const roots = app.scanRoots.map((r) => rel(app.root, r))
 
     assert.notInclude(roots, 'app/admin')
   })
 
-  test('não inclui diretório inexistente', async ({ assert }) => {
+  test('does not include a directory that does not exist', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_flat'))
     for (const root of app.scanRoots) {
       assert.isTrue(rel(app.root, root).length > 0)
@@ -82,14 +81,13 @@ test.group('AppContext: raízes de varredura', () => {
   })
 
   /**
-   * Numa app real há `.insertInto()` em `tests/factories/`. Varrer isso
-   * contaria escrita de teste como função da aplicação — e o número vai para
-   * uma fatura.
+   * Test factories write to the database too. Scanning them would count test
+   * writes as application functions — and the number goes onto an invoice.
    *
-   * `config/` e `database/migrations` idem: não são código de negócio
-   * alcançável a partir de um ponto de entrada.
+   * `config/` and `database/migrations` likewise: they are not business code
+   * reachable from an entry point.
    */
-  test('exclui raízes que não são código de aplicação', async ({ assert }) => {
+  test('excludes roots that are not application code', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_flat'))
     const roots = app.scanRoots.map((r) => rel(app.root, r))
 
@@ -99,37 +97,37 @@ test.group('AppContext: raízes de varredura', () => {
   })
 })
 
-test.group('AppContext: módulo para agrupamento', () => {
-  test('layout plano não tem módulo', async ({ assert }) => {
+test.group('AppContext: module for grouping', () => {
+  test('a flat layout has no module', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_flat'))
     assert.equal(app.moduleOf(app.resolveSpecifier('#models/book')!), 'app')
   })
 
-  test('módulo simples', async ({ assert }) => {
+  test('a simple module', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_modular'))
     assert.equal(app.moduleOf(app.resolveSpecifier('#catalog/models/book')!), 'catalog')
   })
 
-  /** Módulos aninhados existem numa app do core team (`app/admin/taxonomies`). */
-  test('módulo aninhado preserva o caminho inteiro', async ({ assert }) => {
+  /** Nested modules exist in the wild (`app/admin/taxonomies`). */
+  test('a nested module keeps the whole path', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_nogen'))
     assert.equal(app.moduleOf(app.resolveSpecifier('#admin/catalog/models/book')!), 'admin/catalog')
   })
 
-  /** Arquivo fora de `app/` ainda pertence a um módulo reconhecível. */
-  test('arquivo em src/ recebe o módulo da própria raiz', async ({ assert }) => {
+  /** A file outside `app/` still belongs to a recognisable module. */
+  test('a file in src/ takes the module of its own root', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_nogen'))
     assert.equal(app.moduleOf(app.resolveSpecifier('#catalog/actions/create_book')!), 'catalog')
   })
 
-  test('arquivo fora de qualquer raiz não quebra', async ({ assert }) => {
+  test('a file outside every root does not break', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_flat'))
     assert.isString(app.moduleOf(path.join(app.root, 'start', 'routes.ts')))
   })
 })
 
 test.group('AppContext: framework', () => {
-  test('lê versões do package.json', async ({ assert }) => {
+  test('reads the versions from package.json', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('minimal_flat'))
 
     assert.equal(app.framework.core, 7)
@@ -138,10 +136,10 @@ test.group('AppContext: framework', () => {
   })
 
   /**
-   * Fora do escopo do v1 é reportado, nunca contado errado. Sem dependências
-   * declaradas não há o que afirmar.
+   * Out of v1 scope is reported, never counted wrong. With no declared
+   * dependencies there is nothing to assert.
    */
-  test('app sem dependências declaradas fica desconhecida', async ({ assert }) => {
+  test('an app with no declared dependencies stays unknown', async ({ assert }) => {
     const app = await discoverApp(appFixturePath('no_generated'))
 
     assert.isUndefined(app.framework.core)
@@ -149,10 +147,10 @@ test.group('AppContext: framework', () => {
     assert.isFalse(app.framework.supported)
   })
 
-  test('v7 + Lucid 22 é suportado no v1', async ({ assert }) => {
+  test('v7 + Lucid 22 is supported in v1', async ({ assert }) => {
     for (const name of ['minimal_flat', 'minimal_modular', 'minimal_nogen']) {
       const app = await discoverApp(appFixturePath(name))
-      assert.isTrue(app.framework.supported, `${name} deveria ser suportada`)
+      assert.isTrue(app.framework.supported, `${name} should be supported`)
     }
   })
 })

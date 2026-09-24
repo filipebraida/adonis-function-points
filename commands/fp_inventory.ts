@@ -6,10 +6,10 @@ import { analyze } from '../src/pipeline.js'
 
 export default class FpInventory extends BaseCommand {
   static commandName = 'fp:inventory'
-  static description = 'Extrai os fatos crus da aplicação: repositórios, rotas e rastreamento'
+  static description = 'Extract the raw facts of the application: stores, routes and tracing'
   static options: CommandOptions = { startApp: false }
 
-  @flags.string({ description: 'Salva o inventário como JSON no caminho indicado' })
+  @flags.string({ description: 'Write the inventory as JSON to the given path' })
   declare out?: string
 
   async run() {
@@ -17,16 +17,16 @@ export default class FpInventory extends BaseCommand {
 
     if (this.out) {
       await writeFile(this.out, JSON.stringify(inventory, null, 2))
-      this.logger.success(`inventário salvo em ${this.out}`)
+      this.logger.success(`inventory written to ${this.out}`)
       return
     }
 
     const { coverage } = inventory
-    this.logger.log(`repositórios de dados: ${inventory.dataStores.length}`)
-    this.logger.log(`pontos de entrada:     ${coverage.entryPointsTotal}`)
+    this.logger.log(`data stores:   ${inventory.dataStores.length}`)
+    this.logger.log(`entry points:  ${coverage.entryPointsTotal}`)
     this.logger.log(
-      `cobertura:             ${(coverage.ratio * 100).toFixed(1)}% ` +
-        `(${coverage.unresolvedCalls} chamadas não resolvidas)`
+      `coverage:      ${(coverage.ratio * 100).toFixed(1)}% ` +
+        `(${coverage.unresolvedCalls} unresolved calls)`
     )
   }
 }

@@ -1,8 +1,8 @@
 import type { HttpContext } from '@adonisjs/core/http'
 
 /**
- * Convenção própria desta aplicação: `repo('<specifier>')` devolve um objeto
- * cujo `gravar()` persiste. Nenhuma estratégia embutida reconhece isso.
+ * This application's own convention: `repo('<specifier>')` returns an object
+ * whose `gravar()` persists. No built-in strategy recognises it.
  */
 declare function repo(specifier: string): { gravar(descricao: string): Promise<unknown> }
 

@@ -8,26 +8,26 @@ import type { CallResolver } from './inventory/resolvers/types.js'
 import type { CountResult, Inventory } from './types.js'
 
 /**
- * O pipeline completo, num lugar só.
+ * The whole pipeline, in one place.
  *
- * Os comandos ace ficam finos de propósito: eles não têm lógica, só imprimem o
- * que este módulo devolve. Isso é o que permite testar a contagem sem bootar
- * uma aplicação AdonisJS — as fixtures não bootam.
+ * Ace commands stay thin on purpose: they hold no logic and only print what
+ * this module returns. That is what makes it possible to test counting without
+ * booting an AdonisJS application — fixtures do not boot.
  *
- * A ordem não é arbitrária. Os repositórios de dados vêm antes de qualquer
- * análise de handler, porque `Model.create()` e `Service.create()` são
- * indistinguíveis pela forma; e a contagem vem depois de tudo, porque ALI vs AIE
- * depende de COMO as transações usam cada repositório (AFP §6.5.4).
+ * The order is not arbitrary. Data stores come before any handler analysis,
+ * because `Model.create()` and `Service.create()` are indistinguishable by
+ * shape; and counting comes last, because ILF vs EIF depends on HOW
+ * transactions use each store (AFP §6.5.4).
  */
 
 export type AnalysisOptions = CountOptions & {
-  /** profundidade do grafo de chamadas a partir do handler */
+  /** call-graph depth from the handler */
   maxDepth?: number
-  /** estratégias de rastreamento próprias, rodando antes das embutidas */
+  /** custom tracing strategies, running before the built-in ones */
   resolvers?: { call?: CallResolver[] }
   /**
-   * Cobertura mínima do rastreamento. Abaixo dela a análise falha em vez de
-   * emitir um número que parece certo.
+   * Minimum tracing coverage. Below it the analysis fails rather than emitting
+   * a number that looks right.
    */
   minCoverage?: number
 }
@@ -43,9 +43,9 @@ export class CoverageTooLowError extends Error {
     readonly minimum: number
   ) {
     super(
-      `cobertura de rastreamento ${(ratio * 100).toFixed(1)}% abaixo do mínimo ` +
-        `de ${(minimum * 100).toFixed(0)}%: a contagem não é confiável o suficiente ` +
-        `para virar número. Rode \`fp:inventory\` e veja as pendências.`
+      `tracing coverage ${(ratio * 100).toFixed(1)}% is below the minimum of ` +
+        `${(minimum * 100).toFixed(0)}%: the count is not reliable enough to become ` +
+        `a number. Run \`fp:inventory\` to see what is unresolved.`
     )
     this.name = 'CoverageTooLowError'
   }

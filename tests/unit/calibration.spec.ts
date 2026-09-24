@@ -5,12 +5,12 @@ import { calibrate, parseSamples } from '../../src/albrecht/calibration.js'
 import { appFixturePath } from '../helpers.js'
 
 /**
- * O benchmark Vazquez é também o conjunto de calibração: 10 funções com valor
- * manual publicado. Calibrar contra ele mede o viés real do contador, e não
- * contra números que nós mesmos produzimos.
+ * The Vazquez benchmark doubles as the calibration set: 10 functions with a
+ * published manual value. Calibrating against it measures the counter's real
+ * bias, rather than against numbers we produced ourselves.
  */
-const AMOSTRAS_VAZQUEZ = `# funcao,pf — gabarito de Vazquez et al. (2011)
-funcao,pf
+const VAZQUEZ_SAMPLES = `# function,fp — reference from Vazquez et al. (2011)
+function,fp
 Pessoa,5
 Justificativa,7
 Apontamento,7
@@ -23,39 +23,42 @@ GET /presenca,5
 GET /presenca/relatorio,5
 `
 
-const calibrarVazquez = async () => {
+const calibrateVazquez = async () => {
   const { count } = await analyze(appFixturePath('vazquez'), {
     boundary: { externallyMaintained: ['Pessoa'] },
   })
-  return calibrate(count, parseSamples(AMOSTRAS_VAZQUEZ))
+  return calibrate(count, parseSamples(VAZQUEZ_SAMPLES))
 }
 
-test.group('calibração: leitura das amostras', () => {
-  test('lê CSV com cabeçalho e comentário', async ({ assert }) => {
-    const samples = parseSamples(AMOSTRAS_VAZQUEZ)
+test.group('calibration: reading the samples', () => {
+  test('reads a CSV with a header and a comment', async ({ assert }) => {
+    const samples = parseSamples(VAZQUEZ_SAMPLES)
 
     assert.lengthOf(samples, 10)
     assert.deepEqual(samples[0], { function: 'Pessoa', manual: 5 })
   })
 
-  /** Identidade de rota tem vírgula? Não — mas o nome pode ter, e o PF é o último campo. */
-  test('separa pelo último campo, não pelo primeiro', async ({ assert }) => {
-    const samples = parseSamples('funcao,pf\n"GET /a,b",4\n')
+  /** A function name may contain a comma, and the FP value is the last field. */
+  test('splits on the last field, not the first', async ({ assert }) => {
+    const samples = parseSamples('function,fp\n"GET /a,b",4\n')
     assert.deepEqual(samples, [{ function: 'GET /a,b', manual: 4 }])
   })
 
-  test('recusa linha com PF ilegível em vez de ignorar', async ({ assert }) => {
-    assert.throws(() => parseSamples('funcao,pf\nPOST /books,abc\n'), /unreadable function points/)
+  test('refuses a line with an unreadable FP value instead of ignoring it', async ({ assert }) => {
+    assert.throws(
+      () => parseSamples('function,fp\nPOST /books,abc\n'),
+      /unreadable function points/
+    )
   })
 
-  test('ignora linhas vazias', async ({ assert }) => {
-    assert.lengthOf(parseSamples('funcao,pf\n\nPessoa,5\n\n'), 1)
+  test('ignores empty lines', async ({ assert }) => {
+    assert.lengthOf(parseSamples('function,fp\n\nPessoa,5\n\n'), 1)
   })
 })
 
-test.group('calibração: viés medido', () => {
-  test('mede o desvio do total contra a contagem manual', async ({ assert }) => {
-    const calibration = await calibrarVazquez()
+test.group('calibration: measured bias', () => {
+  test('measures the deviation of the total against the manual count', async ({ assert }) => {
+    const calibration = await calibrateVazquez()
 
     assert.equal(calibration.overall.samples, 10)
     assert.equal(calibration.overall.manualPoints, 46)
@@ -64,68 +67,70 @@ test.group('calibração: viés medido', () => {
   })
 
   /**
-   * O total bate, mas duas funções divergem e se cancelam. A calibração por
-   * TIPO é o que revela isso — e é por tipo que o viés se corrige.
+   * The total matches, but two functions diverge and cancel out. Calibration by
+   * TYPE is what reveals that — and bias is corrected per type.
    */
-  test('o fator por tipo revela o viés que o total esconde', async ({ assert }) => {
-    const calibration = await calibrarVazquez()
+  test('the per-type factor reveals the bias the total hides', async ({ assert }) => {
+    const calibration = await calibrateVazquez()
 
     const eo = calibration.byType.find((item) => item.type === 'EO')!
     const ei = calibration.byType.find((item) => item.type === 'EI')!
 
-    // SE superestima (CE colapsado em SE vale mais), EE subestima (DET de mensagem)
-    assert.isBelow(eo.factor, 1, 'SE deveria estar superestimado')
-    assert.isAbove(ei.factor, 1, 'EE deveria estar subestimado')
+    // EO overestimates (an EQ collapsed into an EO weighs more), EI
+    // underestimates (the message DET)
+    assert.isBelow(eo.factor, 1, 'EO should be overestimated')
+    assert.isAbove(ei.factor, 1, 'EI should be underestimated')
   })
 
-  test('conta quantas funções batem exatamente', async ({ assert }) => {
-    const calibration = await calibrarVazquez()
+  test('counts how many functions match exactly', async ({ assert }) => {
+    const calibration = await calibrateVazquez()
     assert.equal(calibration.overall.exactMatches, 8)
   })
 
-  test('as funções de dados não têm viés nenhum', async ({ assert }) => {
-    const calibration = await calibrarVazquez()
+  test('the data functions carry no bias at all', async ({ assert }) => {
+    const calibration = await calibrateVazquez()
 
     for (const type of ['ILF', 'EIF'] as const) {
       const item = calibration.byType.find((entry) => entry.type === type)
       if (!item) continue
-      assert.equal(item.factor, 1, `${type} deveria bater exatamente`)
+      assert.equal(item.factor, 1, `${type} should match exactly`)
       assert.equal(item.meanAbsoluteDeviation, 0)
     }
   })
 })
 
-test.group('calibração: guardas contra número enganoso', () => {
+test.group('calibration: guards against a misleading number', () => {
   /**
-   * Um "fator" tirado de duas funções é ruído. Usá-lo para corrigir contagem é
-   * pior que não corrigir — e o número sairia numa fatura.
+   * A "factor" drawn from two functions is noise. Using it to correct a count
+   * is worse than not correcting — and the number would go onto an invoice.
    */
-  test('avisa quando a amostra é pequena demais para o fator valer', async ({ assert }) => {
-    const calibration = await calibrarVazquez()
+  test('warns when the sample is too small for the factor to mean anything', async ({ assert }) => {
+    const calibration = await calibrateVazquez()
 
     assert.isNotEmpty(calibration.warnings)
     assert.isTrue(
       calibration.warnings.some((w) => /below the minimum/.test(w)),
-      'amostra de 10 funções tem poucos casos por tipo'
+      'a 10-function sample has few cases per type'
     )
   })
 
-  test('amostra que não casa é reportada, não descartada', async ({ assert }) => {
+  test('an unmatched sample is reported, not discarded', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('vazquez'))
     const calibration = calibrate(count, [
-      { function: 'POST /inexistente', manual: 4 },
+      { function: 'POST /nonexistent', manual: 4 },
       { function: 'Apontamento', manual: 7 },
     ])
 
-    assert.deepEqual(calibration.unmatched, ['POST /inexistente'])
+    assert.deepEqual(calibration.unmatched, ['POST /nonexistent'])
     assert.isTrue(calibration.warnings.some((w) => /matched no counted function/.test(w)))
   })
 
   /**
-   * Se tudo bate exatamente, a suspeita mais provável não é que o contador seja
-   * perfeito — é que a "contagem manual" saiu da automática.
+   * If everything matches exactly, the likeliest explanation is not that the
+   * counter is perfect — it is that the "manual count" came from the automatic
+   * one.
    */
-  test('desconfia quando tudo bate exatamente', async ({ assert }) => {
+  test('is suspicious when everything matches exactly', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('minimal_flat'))
     const calibration = calibrate(
       count,
@@ -134,22 +139,22 @@ test.group('calibração: guardas contra número enganoso', () => {
 
     assert.isTrue(
       calibration.warnings.some((w) => /calibrating against itself/.test(w)),
-      'bater 100% deveria levantar suspeita, não comemoração'
+      'a 100% match should raise suspicion, not celebration'
     )
   })
 
-  test('não aplica o fator automaticamente', async ({ assert }) => {
+  test('does not apply the factor automatically', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('vazquez'), {
       boundary: { externallyMaintained: ['Pessoa'] },
     })
-    const antes = count.totals.unadjusted
+    const before = count.totals.unadjusted
 
-    calibrate(count, parseSamples(AMOSTRAS_VAZQUEZ))
+    calibrate(count, parseSamples(VAZQUEZ_SAMPLES))
 
     assert.equal(
       count.totals.unadjusted,
-      antes,
-      'calibrar é decisão de quem assina o contrato, não efeito colateral'
+      before,
+      'calibrating is a decision for whoever signs the contract, not a side effect'
     )
   })
 })

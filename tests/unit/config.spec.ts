@@ -7,35 +7,35 @@ import type { CallResolver } from '../../src/inventory/resolvers/types.js'
 import { appFixturePath } from '../helpers.js'
 
 /**
- * Configuração que o código não honra é pior que configuração ausente: quem a
- * define acha que mudou algo, e não mudou.
+ * Configuration the code does not honour is worse than no configuration at
+ * all: whoever sets it believes something changed when nothing did.
  *
- * Cada opção exposta em `defineConfig` tem um teste aqui provando que tem
- * efeito. Se uma opção não puder ser honrada, ela sai do tipo — não fica como
- * promessa.
+ * Every option exposed by `defineConfig` has a test here proving it has an
+ * effect. If an option cannot be honoured, it leaves the type — it does not
+ * stay as a promise.
  */
 
-test.group('config: fronteira da aplicação', () => {
+test.group('config: application boundary', () => {
   /**
-   * A fronteira é decisão de negócio, não heurística — é por isso que é
-   * configuração e não regra embutida.
+   * The boundary is a business decision, not a heuristic — which is why it is
+   * configuration and not a built-in rule.
    */
-  test('`infrastructure` tira o repositório da contagem', async ({ assert }) => {
-    const semConfig = await analyze(appFixturePath('minimal_flat'))
-    assert.exists(semConfig.count.functions.find((fn) => fn.name === 'Book'))
+  test('`infrastructure` removes the store from the count', async ({ assert }) => {
+    const withoutConfig = await analyze(appFixturePath('minimal_flat'))
+    assert.exists(withoutConfig.count.functions.find((fn) => fn.name === 'Book'))
 
-    const comConfig = await analyze(appFixturePath('minimal_flat'), {
+    const withConfig = await analyze(appFixturePath('minimal_flat'), {
       boundary: { infrastructure: ['Book'] },
     })
 
-    assert.notExists(comConfig.count.functions.find((fn) => fn.name === 'Book'))
+    assert.notExists(withConfig.count.functions.find((fn) => fn.name === 'Book'))
     assert.isTrue(
-      comConfig.count.confidence.warnings.some((w) => w.includes('Book')),
-      'exclusão por configuração também precisa aparecer no relatório'
+      withConfig.count.confidence.warnings.some((w) => w.includes('Book')),
+      'an exclusion by configuration must appear in the report too'
     )
   })
 
-  test('`externallyMaintained` transforma ALI em AIE', async ({ assert }) => {
+  test('`externallyMaintained` turns an ILF into an EIF', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('minimal_flat'), {
       boundary: { externallyMaintained: ['Book'] },
     })
@@ -43,7 +43,7 @@ test.group('config: fronteira da aplicação', () => {
     assert.equal(count.functions.find((fn) => fn.name === 'Book')!.type, 'EIF')
   })
 
-  test('`ignoreEntryPoints` tira a rota da contagem', async ({ assert }) => {
+  test('`ignoreEntryPoints` removes the route from the count', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('minimal_flat'), {
       boundary: { ignoreEntryPoints: ['books.index'] },
     })
@@ -52,70 +52,70 @@ test.group('config: fronteira da aplicação', () => {
     assert.exists(count.functions.find((fn) => fn.name === 'POST /books'))
   })
 
-  test('o nome pode ser a identidade ou o nome da rota', async ({ assert }) => {
-    const porIdentidade = await analyze(appFixturePath('minimal_flat'), {
+  test('the name may be the identity or the route name', async ({ assert }) => {
+    const byIdentity = await analyze(appFixturePath('minimal_flat'), {
       boundary: { ignoreEntryPoints: ['GET /books'] },
     })
 
-    assert.notExists(porIdentidade.count.functions.find((fn) => fn.name === 'GET /books'))
+    assert.notExists(byIdentity.count.functions.find((fn) => fn.name === 'GET /books'))
   })
 })
 
-test.group('config: tabelas de complexidade', () => {
+test.group('config: complexity tables', () => {
   /**
-   * As tabelas são configuráveis porque o estudo do Ligeiro mostrou que 1 DET
-   * de diferença — a mensagem que nenhuma análise estática vê — cruza a faixa e
-   * muda o valor. Calibrar as faixas é mais honesto que fingir que o viés não
-   * existe.
+   * The tables are configurable because a single DET of difference — the
+   * message no static analysis can see — crosses a band and changes the value.
+   * Calibrating the bands is more honest than pretending the bias is not there.
    */
-  test('`weights` muda o valor das funções', async ({ assert }) => {
-    const padrao = await analyze(appFixturePath('minimal_flat'))
-    const alterado = await analyze(appFixturePath('minimal_flat'), {
+  test('`weights` changes the value of the functions', async ({ assert }) => {
+    const standard = await analyze(appFixturePath('minimal_flat'))
+    const altered = await analyze(appFixturePath('minimal_flat'), {
       weights: { ILF: { low: 70, average: 100, high: 150 } },
     })
 
-    assert.isAbove(alterado.count.totals.unadjusted, padrao.count.totals.unadjusted)
+    assert.isAbove(altered.count.totals.unadjusted, standard.count.totals.unadjusted)
   })
 
-  test('`complexityTables` muda as faixas', async ({ assert }) => {
-    const padrao = await analyze(appFixturePath('minimal_flat'))
-    const apertado = await analyze(appFixturePath('minimal_flat'), {
-      // faixa de DET estreita: 5 colunas passam a cair na faixa mais alta
+  test('`complexityTables` changes the bands', async ({ assert }) => {
+    const standard = await analyze(appFixturePath('minimal_flat'))
+    const tight = await analyze(appFixturePath('minimal_flat'), {
+      // narrow DET band: 5 columns now fall into the higher band
       complexityTables: { ILF: { refBands: [1, 5], detBands: [1, 2] } },
     })
 
-    assert.equal(padrao.count.functions.find((fn) => fn.name === 'Book')!.complexity, 'low')
+    assert.equal(standard.count.functions.find((fn) => fn.name === 'Book')!.complexity, 'low')
 
     /**
-     * Com RET = 1 a grade do IFPUG não chega a "alta": a primeira faixa de
-     * RET vai até média. Subir a complexidade exige RET maior, não só DET.
+     * With RET = 1 the IFPUG grid never reaches "high": the first RET band tops
+     * out at average. Raising the complexity requires a higher RET, not just
+     * more DETs.
      */
-    assert.equal(apertado.count.functions.find((fn) => fn.name === 'Book')!.complexity, 'average')
-    assert.isAbove(apertado.count.totals.unadjusted, padrao.count.totals.unadjusted)
+    assert.equal(tight.count.functions.find((fn) => fn.name === 'Book')!.complexity, 'average')
+    assert.isAbove(tight.count.totals.unadjusted, standard.count.totals.unadjusted)
   })
 
-  test('`messageDet` acrescenta o DET que o IFPUG conta e o AFP não', async ({ assert }) => {
+  test('`messageDet` adds the DET IFPUG counts and AFP does not', async ({ assert }) => {
     const afp = await analyze(appFixturePath('minimal_flat'))
     const ifpug = await analyze(appFixturePath('minimal_flat'), { messageDet: 1 })
 
-    const antes = afp.count.functions.find((fn) => fn.name === 'POST /books')!
-    const depois = ifpug.count.functions.find((fn) => fn.name === 'POST /books')!
+    const before = afp.count.functions.find((fn) => fn.name === 'POST /books')!
+    const after = ifpug.count.functions.find((fn) => fn.name === 'POST /books')!
 
-    assert.equal(depois.det, antes.det + 1)
+    assert.equal(after.det, before.det + 1)
   })
 })
 
-test.group('config: resolvedor próprio', () => {
+test.group('config: custom resolver', () => {
   /**
-   * A afirmação central da arquitetura: AdonisJS não impõe padrão de
-   * organização, então o rastreamento é extensível. Se o resolvedor registrado
-   * na configuração não entrar no grafo, a afirmação é falsa.
+   * The architecture's central claim: AdonisJS imposes no organisation pattern,
+   * so tracing is extensible. If the resolver registered in the configuration
+   * does not enter the graph, the claim is false.
    *
-   * Este resolvedor reconhece um padrão que nenhum embutido cobre:
+   * This resolver recognises a pattern no built-in covers:
    * `repo<Model>().gravar()`.
    */
-  const repositorioFicticio: CallResolver = {
-    name: 'repo-ficticio',
+  const fictitiousRepository: CallResolver = {
+    name: 'repo-fictitious',
     order: 1,
     resolve(call, ctx) {
       const expression = call.getExpression()
@@ -126,56 +126,56 @@ test.group('config: resolvedor próprio', () => {
       if (!Node.isCallExpression(receiver)) return []
       if (receiver.getExpression().getText() !== 'repo') return []
 
-      const alvo = receiver.getArguments()[0]?.asKind(SyntaxKind.StringLiteral)?.getLiteralValue()
-      const arquivo = alvo ? ctx.resolveSpecifier(alvo) : null
-      return arquivo ? [{ file: arquivo, member: 'gravar' }] : []
+      const target = receiver.getArguments()[0]?.asKind(SyntaxKind.StringLiteral)?.getLiteralValue()
+      const file = target ? ctx.resolveSpecifier(target) : null
+      return file ? [{ file, member: 'gravar' }] : []
     },
   }
 
-  test('resolvedor da configuração entra no grafo', async ({ assert }) => {
-    const semEle = await analyze(appFixturePath('custom_resolver'))
-    const comEle = await analyze(appFixturePath('custom_resolver'), {
-      resolvers: { call: [repositorioFicticio] },
+  test('a resolver from the configuration enters the graph', async ({ assert }) => {
+    const withoutResolver = await analyze(appFixturePath('custom_resolver'))
+    const withResolver = await analyze(appFixturePath('custom_resolver'), {
+      resolvers: { call: [fictitiousRepository] },
     })
 
-    const rota = 'POST /itens'
+    const route = 'POST /itens'
     assert.notExists(
-      semEle.count.functions.find((fn) => fn.name === rota),
-      'sem o resolvedor a transação não alcança dado e não conta'
+      withoutResolver.count.functions.find((fn) => fn.name === route),
+      'without the resolver the transaction reaches no data and does not count'
     )
     assert.exists(
-      comEle.count.functions.find((fn) => fn.name === rota),
-      'com o resolvedor a transação alcança o dado'
+      withResolver.count.functions.find((fn) => fn.name === route),
+      'with the resolver the transaction reaches the data'
     )
-    assert.equal(comEle.count.functions.find((fn) => fn.name === rota)!.type, 'EI')
+    assert.equal(withResolver.count.functions.find((fn) => fn.name === route)!.type, 'EI')
   })
 
-  test('resolvedor da configuração roda antes dos embutidos', async ({ assert }) => {
+  test('a resolver from the configuration runs before the built-ins', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('custom_resolver'), {
-      resolvers: { call: [repositorioFicticio] },
+      resolvers: { call: [fictitiousRepository] },
     })
 
-    const trilha = count.functions.find((fn) => fn.name === 'POST /itens')!.rationale.trace!
+    const trace = count.functions.find((fn) => fn.name === 'POST /itens')!.rationale.trace!
     assert.isTrue(
-      trilha.some((passo) => passo.by === 'repo-ficticio'),
-      'o rastro tem que dizer que foi a estratégia do usuário'
+      trace.some((step) => step.by === 'repo-fictitious'),
+      'the trace must say it was the user strategy'
     )
   })
 })
 
 test.group('config: defineConfig', () => {
-  test('preenche os defaults sem apagar o que foi passado', async ({ assert }) => {
+  test('fills in the defaults without erasing what was passed', async ({ assert }) => {
     const config = defineConfig({ boundary: { infrastructure: ['audits'] } })
 
     assert.deepEqual(config.boundary.infrastructure, ['audits'])
     assert.equal(config.retStrategy, 'constant')
-    assert.equal(config.messageDet, 0, 'default segue o AFP, não o manual do IFPUG')
+    assert.equal(config.messageDet, 0, 'the default follows AFP, not the IFPUG manual')
   })
 
-  test('não expõe opção que o código não honra', async ({ assert }) => {
+  test('does not expose an option the code does not honour', async ({ assert }) => {
     const config = defineConfig({}) as Record<string, unknown>
 
-    // removidas por não terem efeito: ver docs/design/architecture.md
+    // removed for having no effect: see docs/design/architecture.md
     assert.notProperty(config, 'collapseInquiriesIntoOutputs')
     assert.notProperty(config, 'calibration')
   })

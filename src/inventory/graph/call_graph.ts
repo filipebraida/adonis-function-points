@@ -11,54 +11,55 @@ import type { CallResolver, ResolverContext } from '../resolvers/types.js'
 import type { HandlerRef, TraceStep, UnresolvedCall } from '../../types.js'
 
 /**
- * O grafo transação → funções de dados. É a espinha da contagem.
+ * The transaction → data function graph. It is the backbone of the count.
  *
- * Três das quatro decisões de borda se resolvem aqui: rota estática não conta
- * porque não alcança dado; rota de pacote idem; hook de model conta porque está
- * no caminho. E o AFP manda agregar TODOS os caminhos alcançáveis:
+ * Three of the four boundary decisions are settled here: a static route does
+ * not count because it reaches no data; a route from a package likewise; a
+ * model hook counts because it lies on the path. And AFP requires aggregating
+ * ALL reachable paths:
  *
  *   "When the static code analyzer finds multiple optional paths in the context
  *    of a transaction, it shall consider these multiple optional paths to be
  *    part of the same transaction."  — AFP §6.5.3
  *
- * Percorre em nível de MÉTODO, nunca de arquivo: um service de domínio de uma
- * app real tem 38 escritas, e perguntar pelo arquivo marcaria como escritor
- * todo mundo que o importa.
+ * Traversal is at METHOD level, never at file level: a domain service holds
+ * many writes, and asking about the file would mark everyone importing it as a
+ * writer.
  */
 
 export type ScopeEntry = {
   file: string
   member?: string
-  /** hash do AST normalizado — counting-decisions §5 */
+  /** hash of the normalised AST — counting-decisions §5 */
   bodyHash: string
 }
 
 export type Behavior = {
   writes: boolean
-  /** repositórios de dados alcançados */
+  /** data stores reached */
   touches: string[]
   /**
-   * Campos de entrada declarados: `request.validateUsing(x)` resolvido até os
-   * campos do schema VineJS — counting-decisions §7.
+   * Declared input fields: `request.validateUsing(x)` resolved down to the
+   * fields of the VineJS schema — counting-decisions §7.
    */
   inputFields: string[]
   trace: TraceStep[]
-  /** corpos alcançados, para o `fp:diff` */
+  /** bodies reached, for `fp:diff` */
   scope: ScopeEntry[]
   unresolved: UnresolvedCall[]
 }
 
 /**
- * Campos declarados pelos validators usados neste corpo.
+ * Fields declared by the validators used in this body.
  *
- * `request.validateUsing(createBookValidator)` -> resolve o validator ->
- * conta as folhas do `vine.object`, pela tabela de counting-decisions §7:
+ * `request.validateUsing(createBookValidator)` -> resolve the validator ->
+ * count the leaves of the `vine.object`, per the table in counting-decisions §7:
  *
- *   escalar                          1
- *   objeto aninhado                  folhas contadas individualmente
- *   array de escalar                 1  (grupo repetitivo)
- *   array de objeto                  folhas, uma vez só
- *   spread não resolvido             0, e vira pendência — nunca chuta
+ *   scalar                           1
+ *   nested object                    leaves counted individually
+ *   array of scalar                  1  (repeating group)
+ *   array of object                  leaves, counted once
+ *   unresolved spread                0, and reported — never guessed
  */
 function validatorFieldsIn(body: Node, file: SourceFile, app: AppContext): string[] {
   const fields: string[] = []
@@ -81,7 +82,7 @@ function validatorFieldsIn(body: Node, file: SourceFile, app: AppContext): strin
   return fields
 }
 
-/** declaração do validator: no próprio arquivo ou importada da aplicação */
+/** validator declaration: in this file, or imported from the application */
 function findValidator(name: string, file: SourceFile, app: AppContext): Node | null {
   const local = file.getVariableDeclaration(name)?.getInitializer()
   if (local) return local
@@ -101,7 +102,7 @@ function findValidator(name: string, file: SourceFile, app: AppContext): Node | 
   return null
 }
 
-/** folhas de um schema VineJS, pela tabela de §7 */
+/** leaves of a VineJS schema, per the table in §7 */
 function leavesOf(node: Node): string[] {
   const object = node.getFirstDescendantByKind(SyntaxKind.ObjectLiteralExpression)
   if (!object) return []
@@ -110,15 +111,15 @@ function leavesOf(node: Node): string[] {
 
   const walk = (literal: typeof object, prefix: string) => {
     for (const property of literal.getProperties()) {
-      // spread não resolvido conta 0: melhor faltar do que chutar
+      // an unresolved spread counts 0: better missing than guessed
       if (!Node.isPropertyAssignment(property)) continue
 
       const name = property.getName().replace(/['"]/g, '')
       const text = property.getText()
       const nested = property.getFirstDescendantByKind(SyntaxKind.ObjectLiteralExpression)
 
-      // `vine.object({...})` aninhado: folhas contam individualmente
-      // `vine.array(vine.object({...}))`: grupo repetitivo, folhas uma vez só
+      // nested `vine.object({...})`: leaves count individually
+      // `vine.array(vine.object({...}))`: repeating group, leaves counted once
       if (nested && /vine\.object/.test(text)) {
         walk(nested, prefix ? `${prefix}.${name}` : name)
         continue
@@ -132,10 +133,10 @@ function leavesOf(node: Node): string[] {
   return leaves
 }
 
-/** nome do arquivo, para identificar a pendência sem despejar o caminho todo */
+/** file name, to identify the unresolved call without dumping the full path */
 const pathOf = (file: string) => file.split('/').pop()?.replace(/\.ts$/, '') ?? file
 
-/** fatos de um corpo, independentes de quem o chamou */
+/** facts about a body, independent of who called it */
 type BodyFacts = {
   accesses: { store: string; write: boolean }[]
   /** validators usados neste corpo */
@@ -146,13 +147,13 @@ type BodyFacts = {
 }
 
 export type GraphOptions = {
-  /** quanto seguir a partir do handler; o default vem da configuração */
+  /** how far to follow from the handler; the default comes from configuration */
   maxDepth?: number
   /**
-   * Estratégias próprias, somadas às embutidas e ordenadas por `order`.
+   * Custom strategies, added to the built-in ones and ordered by `order`.
    *
-   * É o que torna o rastreamento extensível: AdonisJS não impõe padrão de
-   * organização, então um projeto com convenção própria registra a sua.
+   * This is what makes tracing extensible: AdonisJS imposes no organisation
+   * pattern, so a project with its own convention registers it here.
    */
   callResolvers?: CallResolver[]
 }
@@ -160,12 +161,12 @@ export type GraphOptions = {
 const DEFAULT_MAX_DEPTH = 3
 
 /**
- * Analisador com estado compartilhado entre handlers.
+ * Analyzer with state shared across handlers.
  *
- * O `Project` do ts-morph e o cache de símbolos são caros de montar e idênticos
- * para todos os handlers da mesma aplicação. Criar um por handler multiplicava
- * o custo pelo número de rotas — numa app de 160 rotas, passava de dois
- * minutos. Com o projeto compartilhado, cai para segundos.
+ * The ts-morph `Project` and the symbol cache are expensive to build and
+ * identical for every handler of the same application. Creating one per handler
+ * multiplies the cost by the number of routes, which is the difference between
+ * minutes and seconds on an application of a few hundred routes.
  */
 export function createAnalyzer(
   app: AppContext,
@@ -179,12 +180,11 @@ export function createAnalyzer(
   })
 
   /**
-   * Todos os arquivos entram de uma vez.
+   * Every file is loaded up front.
    *
-   * Adicionar arquivo no meio da análise invalida o programa do TypeScript, e a
-   * próxima consulta ao checker o reconstrói — com 161 rotas isso custava ~344
-   * ms por rota, uniformemente. Carregar tudo antes troca N reconstruções por
-   * uma.
+   * Adding a file part-way through the analysis invalidates the TypeScript
+   * program, and the next query to the checker rebuilds it — a cost paid once
+   * per route, uniformly. Loading everything first trades N rebuilds for one.
    */
   for (const root of app.scanRoots) {
     project.addSourceFilesAtPaths(`${root}/**/*.ts`)
@@ -211,7 +211,7 @@ export function createAnalyzer(
     return files.get(absPath) ?? null
   }
 
-  /** imports por arquivo, calculados uma vez só */
+  /** imports per file, computed once */
   const importCache = new Map<string, Map<string, string>>()
   const importsFor = (file: SourceFile): Map<string, string> => {
     const key = file.getFilePath()
@@ -224,11 +224,11 @@ export function createAnalyzer(
   }
 
   /**
-   * Fatos de um corpo: o que ele acessa e para onde ele chama.
+   * Facts about a body: what it accesses and where it calls into.
    *
-   * São INDEPENDENTES de quem chamou — só a decisão de seguir depende da
-   * profundidade. Sem este cache, um service compartilhado é reanalisado uma
-   * vez por rota que chega nele, e o custo cresce com rotas × profundidade.
+   * They are INDEPENDENT of the caller — only the decision to follow depends on
+   * depth. Without this cache a shared service is re-analysed once per route
+   * that reaches it, and the cost grows with routes × depth.
    */
   const factsCache = new Map<string, BodyFacts | null>()
 
@@ -265,7 +265,7 @@ export function createAnalyzer(
       const access = detectAccess(call, symbols, relationsByStore)
       if (access) {
         accesses.push({ store: access.store, write: access.mode === 'write' })
-        // tabela alcançada por relação é lida, nunca escrita por este acesso
+        // a table reached through a relation is read, never written by this access
         if (access.viaRelation) accesses.push({ store: access.viaRelation, write: false })
         continue
       }
@@ -291,7 +291,7 @@ export function createAnalyzer(
           file: ref.file,
           line: call.getStartLineNumber(),
           expression: call.getExpression().getText().replace(/\s+/g, ''),
-          reason: 'chamada que nenhuma estratégia soube seguir',
+          reason: 'call that no strategy knew how to follow',
         })
       }
     }
@@ -301,7 +301,7 @@ export function createAnalyzer(
 
   return {
     analyze: (handler: HandlerRef) => run(handler),
-    /** quantos arquivos o projeto carregou — usado para provar que não cresce */
+    /** how many files the project loaded — used to prove it does not grow */
     fileCount: () => project.getSourceFiles().length,
   }
 
@@ -323,19 +323,18 @@ export function createAnalyzer(
       const facts = factsFor(ref)
       if (!facts) {
         /**
-         * O resolvedor acertou o arquivo, mas o corpo não está lá — método
-         * herdado de classe de pacote, por exemplo (`Transformer.transform()`
-         * vem de `BaseTransformer`).
+         * The resolver got the file right, but the body is not there — an
+         * inherited method from a package class, for example
+         * (`Transformer.transform()` coming from `BaseTransformer`).
          *
-         * Descartar em silêncio é o pior defeito possível: a transação perde um
-         * caminho e ninguém sabe.
+         * Dropping it silently is the worst possible defect: the transaction
+         * loses a path and nobody knows.
          */
         unresolved.push({
           file: ref.file,
           line: ref.line ?? 0,
           expression: `${pathOf(ref.file)}.${ref.member ?? 'handle'}`,
-          reason:
-            'corpo não encontrado no arquivo resolvido: provavelmente herdado de classe de pacote',
+          reason: 'body not found in the resolved file: probably inherited from a package class',
         })
         return
       }
@@ -384,7 +383,7 @@ export function createAnalyzer(
   }
 }
 
-/** Conveniência para um handler só; para vários, use `createAnalyzer`. */
+/** Convenience for a single handler; for several, use `createAnalyzer`. */
 export function analyzeHandler(
   app: AppContext,
   stores: CollectedDataStore[],
@@ -395,14 +394,14 @@ export function analyzeHandler(
 }
 
 // ---------------------------------------------------------------------------
-// corpo a analisar
+// body to analyse
 // ---------------------------------------------------------------------------
 /**
- * Resolve `HandlerRef` para o corpo correspondente.
+ * Resolves a `HandlerRef` to the corresponding body.
  *
- * Três formas convivem: método nomeado, handler de ação única (`handle`), e
- * closure inline declarada na própria rota — esta última localizada por linha,
- * porque não tem nome.
+ * Three forms coexist: a named method, a single-action handler (`handle`), and
+ * an inline closure declared on the route itself — the last one located by
+ * line, because it has no name.
  */
 function findBody(file: SourceFile, ref: HandlerRef): Node | null {
   if (ref.line !== undefined) {
@@ -438,14 +437,14 @@ function findBody(file: SourceFile, ref: HandlerRef): Node | null {
 }
 
 // ---------------------------------------------------------------------------
-// símbolos que resolvem para um repositório de dados
+// symbols that resolve to a data store
 // ---------------------------------------------------------------------------
 /**
- * Monta o mapa de símbolos válido DENTRO deste corpo.
+ * Builds the symbol map valid INSIDE this body.
  *
- * Inclui os models importados no arquivo e as variáveis locais derivadas deles:
- * `const invite = await Invite.findOrFail(...)` faz `invite.save()` contar como
- * escrita em `Invite`.
+ * It includes the models imported in the file and the local variables derived
+ * from them: `const invite = await Invite.findOrFail(...)` makes `invite.save()`
+ * count as a write to `Invite`.
  */
 function storeSymbolsFor(
   body: Node,
@@ -468,7 +467,7 @@ function storeSymbolsFor(
     }
   }
 
-  // variáveis locais derivadas de um repositório já conhecido
+  // local variables derived from an already known store
   for (const declaration of body.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
     const initializer = declaration.getInitializer()
     const name = declaration.getNameNode()
@@ -479,13 +478,13 @@ function storeSymbolsFor(
     if (store) symbols.set(name.getText(), store)
   }
 
-  // parâmetros que carregam um repositório
+  // parameters carrying a store
   if (Node.isMethodDeclaration(body) || Node.isFunctionDeclaration(body)) {
     for (const parameter of body.getParameters()) {
       const typeNode = parameter.getTypeNode()
       const nameNode = parameter.getNameNode()
 
-      // forma direta: `expire(invite: Invite)`
+      // direct form: `expire(invite: Invite)`
       const typeName = typeNode?.getText()
       if (typeName && stores.has(typeName) && Node.isIdentifier(nameNode)) {
         symbols.set(nameNode.getText(), typeName)
@@ -493,11 +492,11 @@ function storeSymbolsFor(
       }
 
       /**
-       * Tipo nomeado: `handle(input: ExpireInviteInput)` com
+       * Named type: `handle(input: ExpireInviteInput)` with
        * `interface ExpireInviteInput { invite: Invite }`.
        *
-       * Registra o CAMINHO `input.invite`, porque é assim que a escrita
-       * aparece: `input.invite.save()`. Padrão dominante nas apps reais.
+       * Registers the PATH `input.invite`, because that is how the write
+       * appears: `input.invite.save()`.
        */
       if (typeNode && Node.isIdentifier(nameNode)) {
         for (const [property, propertyType] of membersOfType(typeNode, file, app)) {
@@ -508,11 +507,12 @@ function storeSymbolsFor(
       }
 
       /**
-       * Forma desestruturada: `handle({ invite }: { invite: Invite })`.
+       * Destructured form: `handle({ invite }: { invite: Invite })`.
        *
-       * É o padrão dominante em action object — o objeto de ação recebe um
-       * payload nomeado. Sem isto, `invite.save()` dentro da action não conta
-       * como escrita, e a transação inteira vira SE em vez de EE.
+       * This is the dominant shape in the action-object pattern — the action
+       * receives a named payload. Without it, `invite.save()` inside the action
+       * does not count as a write, and the whole transaction becomes an EO
+       * instead of an EI.
        */
       const binding = nameNode.asKind(SyntaxKind.ObjectBindingPattern)
       const literal = typeNode?.asKind(SyntaxKind.TypeLiteral)
@@ -537,16 +537,16 @@ function storeSymbolsFor(
 }
 
 /**
- * Dependências injetadas visíveis no corpo: nome da propriedade -> arquivo.
+ * Injected dependencies visible in the body: property name -> file.
  *
- * Duas formas, ambas com o tipo anotado explicitamente — o `@inject()` não
- * funciona sem isso:
+ * Two forms, both with the type annotated explicitly — `@inject()` does not
+ * work without it:
  *
  *   constructor(protected billing: BillingService) {}
  *   private declare billing: BillingService
  *
- * Como o tipo é um identificador importado, resolve pelo mesmo caminho de
- * qualquer import. Não precisa de type checker.
+ * Since the type is an imported identifier, it resolves through the same path
+ * as any import. No type checker is needed.
  */
 export function injectedFor(
   owner: ClassDeclaration | undefined,
@@ -573,7 +573,7 @@ export function injectedFor(
   return injected
 }
 
-/** identificador de tipo -> arquivo da aplicação onde ele é declarado */
+/** type identifier -> application file where it is declared */
 function resolveTypeToFile(typeName: string, file: SourceFile, app: AppContext): string | null {
   const bare = typeName.replace(/<.*/, '').trim()
 
@@ -593,10 +593,10 @@ function resolveTypeToFile(typeName: string, file: SourceFile, app: AppContext):
 }
 
 /**
- * Membros de um tipo declarado: `interface X { a: A }` -> { a: 'A' }.
+ * Members of a declared type: `interface X { a: A }` -> { a: 'A' }.
  *
- * Aceita tipo literal inline e tipo nomeado declarado no próprio arquivo ou
- * importado da aplicação. Fora disso devolve vazio — sem chutar.
+ * Accepts an inline type literal and a named type declared in this file or
+ * imported from the application. Anything else yields empty — no guessing.
  */
 function membersOfType(typeNode: Node, file: SourceFile, app: AppContext): Map<string, string> {
   const members = new Map<string, string>()
@@ -666,19 +666,18 @@ function importsOf(file: SourceFile, app: AppContext): Map<string, string> {
 }
 
 // ---------------------------------------------------------------------------
-// ruído vs pendência
+// noise vs unresolved
 // ---------------------------------------------------------------------------
 /**
- * Nem toda chamada não seguida é pendência — mas o filtro tem que errar para o
- * lado de reportar.
+ * Not every unfollowed call is an unresolved call — but the filter must err on
+ * the side of reporting.
  *
- * `response.redirect()` e `inertia.render()` não levam a dado nenhum e só
- * afogariam o relatório. Mas chamada sobre símbolo importado da PRÓPRIA
- * aplicação pode esconder acesso a dados, e silenciá-la é o pior defeito
- * possível aqui: a transação vira SE sem ninguém saber.
+ * `response.redirect()` and `inertia.render()` lead to no data at all and would
+ * only drown the report. But a call on a symbol imported from the APPLICATION
+ * itself may hide a data access, and silencing it is the worst possible defect
+ * here: the transaction becomes an EO and nobody knows.
  *
- * A primeira versão deste filtro só reportava `this.` — e escondia o tamanho
- * real da lacuna numa app de produção.
+ * A filter that only reported `this.` would hide most of the real gap.
  */
 function isWorthReporting(
   call: CallExpression,
@@ -687,7 +686,7 @@ function isWorthReporting(
 ): boolean {
   const expression = call.getExpression()
 
-  // função de módulo importada da aplicação: `expireInvite(...)`
+  // module function imported from the application: `expireInvite(...)`
   if (Node.isIdentifier(expression)) return imports.has(expression.getText())
 
   if (!Node.isPropertyAccessExpression(expression)) return false
@@ -695,24 +694,25 @@ function isWorthReporting(
   const root = rootSymbolOf(expression.getExpression())
   if (!root) return false
 
-  // já contabilizado como acesso a dados
+  // already accounted for as a data access
   if (symbols.has(root)) return false
 
-  // `this.algo()` pode ser dependência injetada — lacuna conhecida da 4a
+  // `this.something()` may be an injected dependency — a known gap
   if (root === 'this') return true
 
-  // símbolo da própria aplicação que nenhuma estratégia seguiu
+  // a symbol of the application itself that no strategy followed
   return imports.has(root)
 }
 
 // ---------------------------------------------------------------------------
-// hash do escopo
+// scope hash
 // ---------------------------------------------------------------------------
 /**
- * Hash do corpo NORMALIZADO: sem comentário e sem whitespace.
+ * Hash of the NORMALISED body: comments and whitespace removed.
  *
- * counting-decisions §5 mede modificação por checksum do escopo de
- * implementação. Se o hash fosse dos bytes, rodar o prettier viraria fatura.
+ * counting-decisions §5 measures modification by a checksum of the
+ * implementation scope. If the hash were over the raw bytes, running Prettier
+ * would turn into an invoice.
  */
 function hashOf(body: Node): string {
   const normalized = body

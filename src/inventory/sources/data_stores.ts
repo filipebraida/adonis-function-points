@@ -5,44 +5,44 @@ import type { AppContext } from '../app_context.js'
 import type { Attribute, DataStore, UnresolvedCall } from '../../types.js'
 
 /**
- * Coleta os repositórios lógicos de dados — candidatos a ALI/AIE.
+ * Collects the logical data stores — ILF/EIF candidates.
  *
- * A falha que este módulo existe para tornar impossível: numa aplicação
- * levantada há 35 arquivos de model e ZERO `extends BaseModel` do Lucid, porque
- * os models estendem classes de schema geradas das migrations. Ler só o arquivo
- * do model contaria zero para a aplicação inteira, **em silêncio**.
+ * The failure this module exists to make impossible: an application can hold
+ * dozens of model files and ZERO `extends BaseModel` from Lucid, because the
+ * models extend schema classes generated from migrations. Reading only the
+ * model file would count zero for the whole application, **in silence**.
  *
- * Por isso a unidade de trabalho é a CADEIA DE HERANÇA, não o arquivo:
+ * The unit of work is therefore the INHERITANCE CHAIN, not the file:
  *
- *   class User extends BaseModel                        (direto)
- *   class User extends UserSchema                       (schema gerado)
+ *   class User extends BaseModel                        (direct)
+ *   class User extends UserSchema                       (generated schema)
  *   class User extends compose(UserSchema, Auditable)   (mixin)
  *
- * Onde a cadeia sai da aplicação — um mixin vindo de pacote — a coleta para e
- * **reporta**. Um mixin de soft-delete acrescenta `deletedAt`; fingir que não
- * existe seria contar errado sem avisar.
+ * Where the chain leaves the application — a mixin coming from a package —
+ * collection stops and **reports**. A soft-delete mixin adds `deletedAt`;
+ * pretending it does not exist would be counting wrong without warning.
  */
 
 export type ColumnSource = 'ast' | 'generated-schema'
 
 export type CollectedDataStore = DataStore & {
-  /** de onde as colunas vieram; contagens de fontes diferentes não são equivalentes */
+  /** where the columns came from; counts from different sources are not equivalent */
   columnSource: ColumnSource
 }
 
 export type DataStoreCollection = {
   stores: CollectedDataStore[]
-  /** cadeias que saíram da aplicação, exigido pelo AFP §6.5.3 */
+  /** chains that left the application, required by AFP §6.5.3 */
   unresolved: UnresolvedCall[]
 }
 
 const LUCID_ORM = '@adonisjs/lucid/orm'
 const BASE_MODEL = 'BaseModel'
 
-/** decorators que marcam relação de composição — candidatos a subgrupo (RET) */
+/** decorators marking a composition relation — RET subgroup candidates */
 const COMPOSITION_RELATIONS = new Set(['hasMany', 'hasOne'])
 
-/** todos os decorators de relação do Lucid */
+/** every Lucid relation decorator */
 const ALL_RELATIONS = new Set(['belongsTo', 'hasMany', 'hasOne', 'manyToMany', 'hasManyThrough'])
 
 export async function collectDataStores(app: AppContext): Promise<DataStoreCollection> {
@@ -61,16 +61,16 @@ export async function collectDataStores(app: AppContext): Promise<DataStoreColle
   const unresolved: UnresolvedCall[] = []
 
   /**
-   * Classes que aparecem como ANCESTRAL de algum model.
+   * Classes appearing as an ANCESTOR of some model.
    *
-   * Uma base não tem tabela; contá-la inventa um repositório de dados que não
-   * existe. E não é caso de laboratório: 17 dos 34 models de uma app real
-   * estendem um `BaseModel` próprio.
+   * A base class has no table; counting it invents a data store that does not
+   * exist. Applications commonly define their own `BaseModel`, so this is the
+   * normal case rather than an edge case.
    */
   const ancestors = new Set<string>()
 
   for (const file of project.getSourceFiles()) {
-    // o arquivo gerado é BASE dos models, não um model em si
+    // the generated file is a BASE for models, not a model itself
     if (app.generated.dataSchema && file.getFilePath() === app.generated.dataSchema) continue
 
     for (const cls of file.getClasses()) {
@@ -86,13 +86,13 @@ export async function collectDataStores(app: AppContext): Promise<DataStoreColle
   return { stores: stores.sort(byName), unresolved }
 }
 
-/** identidade estável de uma classe, para separar base de repositório */
+/** stable identity of a class, to separate a base from a store */
 const classKey = (cls: ClassDeclaration) => `${cls.getSourceFile().getFilePath()}#${cls.getName()}`
 
 const byName = (a: DataStore, b: DataStore) => a.name.localeCompare(b.name)
 
 // ---------------------------------------------------------------------------
-// uma classe -> um repositório de dados, se a cadeia levar ao Lucid
+// one class -> one data store, if the chain leads to Lucid
 // ---------------------------------------------------------------------------
 function describeStore(
   cls: ClassDeclaration,
@@ -109,7 +109,7 @@ function describeStore(
   unresolved.push(...chain.unresolved)
   const file = cls.getSourceFile().getFilePath()
 
-  // a própria classe é chain.classes[0]; o resto são ancestrais
+  // the class itself is chain.classes[0]; the rest are ancestors
   const store: CollectedDataStore = {
     id: classKey(cls),
     name,
@@ -118,7 +118,7 @@ function describeStore(
     attributes: chain.attributes,
     subgroups: subgroupsOf(chain.classes),
     relations: relationsOf(chain.classes),
-    // decidido pela configuração de fronteira, não por heurística
+    // decided by boundary configuration, not by heuristic
     maintainedExternally: false,
     columnSource: chain.columnSource,
     provenance: { file, line: cls.getStartLineNumber(), by: 'data-stores' },
@@ -128,7 +128,7 @@ function describeStore(
 }
 
 type Chain = {
-  /** a cadeia chega ao BaseModel do Lucid? só então é repositório de dados */
+  /** does the chain reach Lucid's BaseModel? only then is it a data store */
   reachesLucid: boolean
   classes: ClassDeclaration[]
   attributes: Attribute[]
@@ -137,11 +137,12 @@ type Chain = {
 }
 
 /**
- * Sobe a cadeia de herança acumulando colunas.
+ * Walks up the inheritance chain accumulating columns.
  *
- * `extends compose(A, B)` tem mais de um pai: os dois entram. Quem não for
- * resolvível dentro da aplicação vira pendência — e não é detalhe, é a
- * diferença entre "não tem coluna" e "não sei se tem".
+ * `extends compose(A, B)` has more than one parent: both are followed. Anything
+ * not resolvable inside the application becomes an unresolved entry — that is
+ * not a detail, it is the difference between "has no column" and "I don't know
+ * whether it has one".
  */
 function walkChain(start: ClassDeclaration, app: AppContext, project: Project): Chain {
   const classes: ClassDeclaration[] = []
@@ -149,9 +150,10 @@ function walkChain(start: ClassDeclaration, app: AppContext, project: Project): 
   const seen = new Set<string>()
 
   /**
-   * Pendências ficam locais à cadeia e só sobem se ela for mesmo de model.
-   * Sem isso, toda classe da aplicação que estende algo de pacote — controller,
-   * exception, middleware — viraria ruído no relatório de cobertura.
+   * Unresolved entries stay local to the chain and only bubble up if the chain
+   * really is a model's. Otherwise every application class extending something
+   * from a package — controller, exception, middleware — would become noise in
+   * the coverage report.
    */
   const unresolved: UnresolvedCall[] = []
   let reachesLucid = false
@@ -174,7 +176,7 @@ function walkChain(start: ClassDeclaration, app: AppContext, project: Project): 
     for (const parent of parentsOf(cls)) {
       const origin = originOf(parent.getText(), cls.getSourceFile())
 
-      // chegou ao Lucid?
+      // did we reach Lucid?
       if (origin?.specifier === LUCID_ORM && origin.exportedName === BASE_MODEL) {
         reachesLucid = true
         continue
@@ -207,28 +209,28 @@ function walkChain(start: ClassDeclaration, app: AppContext, project: Project): 
 }
 
 /**
- * Por que a base não foi resolvida.
+ * Why the base class could not be resolved.
  *
- * A razão certa importa tanto quanto o fato: dizer "fora da aplicação" para
- * código que está dentro dela manda o usuário procurar no lugar errado, e o
- * relatório de cobertura existe justamente para ser acionável.
+ * The right reason matters as much as the fact: saying "outside the
+ * application" about code that is inside it sends the reader to the wrong
+ * place, and the coverage report exists precisely to be actionable.
  */
 function reasonFor(parent: Node, file: SourceFile, app: AppContext): string {
   if (Node.isCallExpression(parent)) {
-    return 'fábrica de mixin: a coluna só existe na classe que a função retorna, e avaliar o retorno está fora do alcance da análise estática atual'
+    return 'mixin factory: the column only exists on the class the function returns, and evaluating that return is beyond the current static analysis'
   }
 
   const origin = originOf(parent.getText(), file)
   if (origin && !app.resolveSpecifier(origin.specifier)) {
-    return `classe base fora da aplicação (${origin.specifier}): o pacote não sabe quais colunas ela acrescenta`
+    return `base class outside the application (${origin.specifier}): the package cannot know which columns it adds`
   }
 
-  return 'classe base não encontrada na aplicação'
+  return 'base class not found in the application'
 }
 
 /**
- * Pais de uma classe. `extends compose(A, B)` devolve A e B; `extends X`
- * devolve X.
+ * Parents of a class. `extends compose(A, B)` yields A and B; `extends X`
+ * yields X.
  */
 function parentsOf(cls: ClassDeclaration): Node[] {
   const extended = cls.getExtends()
@@ -260,7 +262,7 @@ function resolveClass(
   const file = project.getSourceFile(target) ?? project.addSourceFileAtPathIfExists(target)
   if (!file) return null
 
-  // export default pode ter nome diferente do binding local
+  // a default export may carry a different name from the local binding
   if (origin.exportedName === 'default') {
     return file.getClasses().find((candidate) => candidate.isDefaultExport()) ?? null
   }
@@ -268,13 +270,13 @@ function resolveClass(
 }
 
 /**
- * Origem de um identificador local: de qual módulo veio e com que nome foi
- * exportado lá.
+ * Origin of a local identifier: which module it came from, and under which name
+ * it was exported there.
  *
- * A distinção não é preciosismo. Numa app real o base customizado faz
- * `import { BaseModel as AdonisBaseModel }` — comparar o nome do identificador
- * local falharia, e o model inteiro sumiria da contagem. O que identifica é o
- * par (specifier, nome exportado).
+ * The distinction is not pedantry. A custom base commonly does
+ * `import { BaseModel as AdonisBaseModel }` — comparing the local identifier
+ * name would fail and the whole model would vanish from the count. What
+ * identifies it is the pair (specifier, exported name).
  */
 type ImportOrigin = { specifier: string; exportedName: string }
 
@@ -295,14 +297,15 @@ function originOf(local: string, file: SourceFile): ImportOrigin | null {
 }
 
 // ---------------------------------------------------------------------------
-// colunas
+// columns
 // ---------------------------------------------------------------------------
 /**
- * `@column()`, `@column({ isPrimary: true })` e `@column.dateTime(...)`.
+ * `@column()`, `@column({ isPrimary: true })` and `@column.dateTime(...)`.
  *
- * `static $columns` é a lista canônica gerada das migrations, mas não diz qual
- * é a chave primária nem a linha de cada campo — então serve para CONFERIR, e
- * os decorators continuam sendo a leitura principal.
+ * `static $columns` is the canonical list generated from migrations, but it
+ * says nothing about which field is the primary key nor where each one is
+ * declared — so it serves to CROSS-CHECK, while the decorators remain the
+ * primary reading.
  */
 function columnsOf(cls: ClassDeclaration): Attribute[] {
   const file = cls.getSourceFile().getFilePath()
@@ -310,8 +313,8 @@ function columnsOf(cls: ClassDeclaration): Attribute[] {
 
   for (const property of cls.getProperties()) {
     for (const decorator of property.getDecorators()) {
-      // `getName()` devolve 'dateTime' para `@column.dateTime()`; é preciso o
-      // nome completo, senão toda coluna de data some da contagem em silêncio
+      // `getName()` returns 'dateTime' for `@column.dateTime()`; the full name
+      // is required, otherwise every date column silently drops from the count
       const full = decorator.getFullName()
       if (full !== 'column' && !full.startsWith('column.')) continue
 
@@ -329,10 +332,10 @@ function columnsOf(cls: ClassDeclaration): Attribute[] {
 }
 
 /**
- * Relações declaradas: propriedade -> repositório alvo.
+ * Declared relations: property -> target store.
  *
- * `@belongsTo(() => Author) declare author` produz `{ author: 'Author' }`, o
- * que permite resolver `.preload('author')` mais tarde.
+ * `@belongsTo(() => Author) declare author` yields `{ author: 'Author' }`,
+ * which is what lets `.preload('author')` resolve later.
  */
 function relationsOf(classes: ClassDeclaration[]): Record<string, string> {
   const relations: Record<string, string> = {}
@@ -353,7 +356,7 @@ function relationsOf(classes: ClassDeclaration[]): Record<string, string> {
   return relations
 }
 
-/** relações de composição, candidatas a subgrupo lógico (RET) */
+/** composition relations, candidates for a logical subgroup (RET) */
 function subgroupsOf(classes: ClassDeclaration[]): string[] {
   const subgroups = new Set<string>()
 
@@ -374,7 +377,7 @@ function subgroupsOf(classes: ClassDeclaration[]): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// tabela
+// table
 // ---------------------------------------------------------------------------
 function tableOf(cls: ClassDeclaration): string | undefined {
   const declared = cls.getStaticProperty('table')
@@ -382,7 +385,7 @@ function tableOf(cls: ClassDeclaration): string | undefined {
   return declared.getInitializer()?.asKind(SyntaxKind.StringLiteral)?.getLiteralValue()
 }
 
-/** convenção do Lucid quando `static table` não é declarado */
+/** Lucid convention when `static table` is not declared */
 function tableFromName(name: string): string {
   const snake = name.replace(/([a-z\d])([A-Z])/g, '$1_$2').toLowerCase()
   return snake.endsWith('s') ? snake : `${snake}s`

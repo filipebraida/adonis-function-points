@@ -11,7 +11,7 @@ export default class ExpireInviteVerboseController {
       request.param('uuid')
     )
 
-    // Delega a expiração ao service.
+    // Delegates the expiration to the service.
     await InviteService.expire(invite)
 
     return response.redirect().back()

@@ -181,7 +181,8 @@ export function parseSamples(csv: string): CalibrationSample[] {
 
     // header row, or a line with an unreadable value
     if (!Number.isFinite(manual)) {
-      if (index > 0 && name !== 'funcao' && name !== 'função') {
+      // accepts a Portuguese header too, since counts often come from PT-BR sheets
+      if (index > 0 && !['function', 'funcao', 'função'].includes(name)) {
         throw new Error(`line ${index + 1}: unreadable function points in "${trimmed}"`)
       }
       continue

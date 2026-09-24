@@ -4,7 +4,7 @@ import { actionObjectResolver } from '../../../src/inventory/resolvers/action_ob
 import { loadFixture } from '../../helpers.js'
 
 test.group('resolver: action object', () => {
-  test('segue `new Action().handle()` instanciado inline', async ({ assert }) => {
+  test('follows `new Action().handle()` instantiated inline', async ({ assert }) => {
     const fixture = await loadFixture('action_object')
     const controller = fixture.controller()
     const ctx = fixture.contextFor(controller)
@@ -18,7 +18,7 @@ test.group('resolver: action object', () => {
     assert.equal(refs[0].member, 'handle')
   })
 
-  test('segue a action guardada numa variável local', async ({ assert }) => {
+  test('follows an action held in a local variable', async ({ assert }) => {
     const fixture = await loadFixture('action_variable')
     const controller = fixture.controller()
     const ctx = fixture.contextFor(controller)
@@ -32,7 +32,7 @@ test.group('resolver: action object', () => {
     assert.equal(refs[0].member, 'handle')
   })
 
-  test('não reclama de padrões que não são dele', async ({ assert }) => {
+  test('does not claim patterns that are not its own', async ({ assert }) => {
     for (const pattern of ['fat_controller', 'module_function']) {
       const fixture = await loadFixture(pattern)
       const controller = fixture.controller()
@@ -42,7 +42,7 @@ test.group('resolver: action object', () => {
         .callsIn(controller, 'handle')
         .flatMap((call) => actionObjectResolver.resolve(call, ctx))
 
-      assert.lengthOf(refs, 0, `${pattern} não deveria casar com action-object`)
+      assert.lengthOf(refs, 0, `${pattern} should not match action-object`)
     }
   })
 })

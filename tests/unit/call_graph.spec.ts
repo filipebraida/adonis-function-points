@@ -7,7 +7,7 @@ import { analyzeHandler, createAnalyzer } from '../../src/inventory/graph/call_g
 import type { HandlerRef } from '../../src/types.js'
 import { fixturePath } from '../helpers.js'
 
-/** analisa o handler `handle` do controller indicado, dentro de uma fixture */
+/** analyses the `handle` handler of the given controller, inside a fixture */
 async function analyze(pattern: string, controller = 'expire_invite_controller.ts') {
   const root = fixturePath('patterns', pattern)
   const app = await discoverApp(root)
@@ -22,13 +22,13 @@ async function analyze(pattern: string, controller = 'expire_invite_controller.t
 }
 
 /**
- * Os sete padrões são A MESMA transação escrita de formas diferentes: ler um
- * convite e expirá-lo. Todas têm que alcançar o repositório de dados e detectar
- * a escrita — senão a transação vira SE em vez de EE, e a decisão de EE vs SE
- * muda ~40% da contagem.
+ * These patterns are THE SAME transaction written in different ways: read an
+ * invite and expire it. Every one must reach the data store and detect the
+ * write — otherwise the transaction becomes an EO instead of an EI, and the
+ * EI vs EO decision moves a large share of the count.
  */
-test.group('grafo: alcança o dado em cada padrão de código', () => {
-  const RESOLVIDOS = [
+test.group('graph: reaches the data in every code pattern', () => {
+  const RESOLVED = [
     'fat_controller',
     'action_object',
     'action_variable',
@@ -40,137 +40,137 @@ test.group('grafo: alcança o dado em cada padrão de código', () => {
     'same_class_method',
   ]
 
-  for (const pattern of RESOLVIDOS) {
-    test(`"${pattern}" alcança o dado e detecta a escrita`, async ({ assert }) => {
+  for (const pattern of RESOLVED) {
+    test(`"${pattern}" reaches the data and detects the write`, async ({ assert }) => {
       const behavior = await analyze(pattern)
 
-      assert.include(behavior.touches, 'Invite', `${pattern} não alcançou o repositório`)
-      assert.isTrue(behavior.writes, `${pattern} não detectou escrita`)
+      assert.include(behavior.touches, 'Invite', `${pattern} did not reach the store`)
+      assert.isTrue(behavior.writes, `${pattern} did not detect the write`)
     })
   }
 
   /**
-   * Era declarado como lacuna, sob a suposição de que exigiria o type checker.
-   * A suposição estava errada: o `@inject()` do AdonisJS só funciona com a
-   * anotação de tipo explícita, então o tipo está sempre no AST como
-   * identificador importado.
+   * Resolving this does NOT require the TypeScript type checker: AdonisJS
+   * `@inject()` only works with an explicit type annotation, so the type is
+   * always in the AST as an imported identifier.
    *
-   * Importava muito: numa app de produção, 68 rotas de escrita paravam no
-   * primeiro passo com `this.algumServiço.metodo()`.
+   * It matters a great deal — in applications that use DI, `this.someService
+   * .method()` is the only path from the route to the write.
    */
-  test('dependência injetada resolve pela anotação, sem type checker', async ({ assert }) => {
+  test('an injected dependency resolves from the annotation, no type checker', async ({
+    assert,
+  }) => {
     const behavior = await analyze('property_service')
 
     assert.isTrue(behavior.writes)
-    assert.isEmpty(behavior.unresolved, 'não deveria sobrar pendência')
+    assert.isEmpty(behavior.unresolved, 'no unresolved call should be left')
 
-    const servico = behavior.trace.find((step) => step.file.includes('services/'))
-    assert.exists(servico, 'não percorreu o service injetado')
-    assert.equal(servico!.by, 'property-service')
+    const service = behavior.trace.find((step) => step.file.includes('services/'))
+    assert.exists(service, 'did not walk into the injected service')
+    assert.equal(service!.by, 'property-service')
   })
 })
 
 /**
- * Padrão dominante nas apps reais e o que mais escondia escrita: a action
- * recebe `input: ExpireInviteInput` — interface NOMEADA — e escreve em
+ * A dominant shape, and the one that most often hides a write: the action takes
+ * `input: ExpireInviteInput` — a NAMED interface — and writes through
  * `input.invite.save()`.
  *
- * O receptor não é um identificador, é um caminho de propriedade; e o model
- * chega por `import type`, nunca usado como valor. Sem resolver isso, o grafo
- * chega na action e não vê a escrita.
+ * The receiver is not an identifier, it is a property path; and the model
+ * arrives through `import type`, never used as a value. Without resolving that,
+ * the graph reaches the action and does not see the write.
  */
-test.group('grafo: repositório alcançado por tipo de parâmetro', () => {
-  test('escrita em `input.invite.save()` é detectada', async ({ assert }) => {
+test.group('graph: store reached through a parameter type', () => {
+  test('a write in `input.invite.save()` is detected', async ({ assert }) => {
     const behavior = await analyze('typed_input')
 
-    assert.isTrue(behavior.writes, 'escrita via caminho de propriedade não foi vista')
+    assert.isTrue(behavior.writes, 'the write through a property path was not seen')
     assert.include(behavior.touches, 'Invite')
   })
 
-  test('a escrita é atribuída ao corpo certo', async ({ assert }) => {
+  test('the write is attributed to the right body', async ({ assert }) => {
     const behavior = await analyze('typed_input')
-    const acao = behavior.trace.find((step) => step.file.includes('actions/'))
+    const action = behavior.trace.find((step) => step.file.includes('actions/'))
 
-    assert.exists(acao)
-    assert.isTrue(acao!.writes, 'a escrita acontece na action, não no controller')
+    assert.exists(action)
+    assert.isTrue(action!.writes, 'the write happens in the action, not the controller')
   })
 })
 
 /**
- * O achado que motivou a fase: um service de domínio de uma app real tem 38
- * escritas. Detecção em nível de ARQUIVO marcaria como escritor todo mundo que
- * o importa.
+ * A domain service typically holds many writes. FILE-level detection would mark
+ * everyone who imports it as a writer.
  */
-test.group('grafo: nível de método, não de arquivo', () => {
-  test('quem chama só o método de leitura não vira escritor', async ({ assert }) => {
+test.group('graph: method level, not file level', () => {
+  test('calling only the read method does not make you a writer', async ({ assert }) => {
     const behavior = await analyze('method_level', 'list_invites_controller.ts')
 
-    assert.include(behavior.touches, 'Invite', 'deveria alcançar o dado para ler')
-    assert.isFalse(behavior.writes, 'método de leitura não pode marcar escrita')
+    assert.include(behavior.touches, 'Invite', 'it should reach the data to read it')
+    assert.isFalse(behavior.writes, 'a read method must not flag a write')
   })
 
-  test('quem chama o método de escrita vira escritor', async ({ assert }) => {
+  test('calling the write method does make you a writer', async ({ assert }) => {
     const behavior = await analyze('method_level')
     assert.isTrue(behavior.writes)
   })
 
-  test('o mesmo arquivo de service serve aos dois casos', async ({ assert }) => {
-    const leitura = await analyze('method_level', 'list_invites_controller.ts')
-    const escrita = await analyze('method_level')
+  test('the same service file serves both cases', async ({ assert }) => {
+    const reading = await analyze('method_level', 'list_invites_controller.ts')
+    const writing = await analyze('method_level')
 
-    const servico = (steps: typeof leitura.trace) =>
+    const service = (steps: typeof reading.trace) =>
       steps.find((step) => step.file.includes('invite_service'))
 
-    assert.exists(servico(leitura.trace), 'leitura não percorreu o service')
-    assert.exists(servico(escrita.trace), 'escrita não percorreu o service')
-    assert.notEqual(servico(leitura.trace)!.member, servico(escrita.trace)!.member)
+    assert.exists(service(reading.trace), 'the read did not walk into the service')
+    assert.exists(service(writing.trace), 'the write did not walk into the service')
+    assert.notEqual(service(reading.trace)!.member, service(writing.trace)!.member)
   })
 })
 
-test.group('grafo: rastro e procedência', () => {
-  test('o rastro começa no handler e registra quem resolveu cada passo', async ({ assert }) => {
+test.group('graph: trace and provenance', () => {
+  test('the trace starts at the handler and records who resolved each step', async ({ assert }) => {
     const behavior = await analyze('action_object')
 
-    assert.isAbove(behavior.trace.length, 1, 'rastro deveria ter mais de um passo')
+    assert.isAbove(behavior.trace.length, 1, 'the trace should have more than one step')
     assert.equal(behavior.trace[0].depth, 0)
     assert.include(behavior.trace[0].file, 'expire_invite_controller')
 
-    const acao = behavior.trace.find((step) => step.file.includes('actions/'))
-    assert.exists(acao, 'não percorreu a action')
-    assert.equal(acao!.by, 'action-object', 'o rastro tem que dizer QUEM resolveu')
-    assert.isTrue(acao!.writes, 'a escrita acontece na action')
+    const action = behavior.trace.find((step) => step.file.includes('actions/'))
+    assert.exists(action, 'did not walk into the action')
+    assert.equal(action!.by, 'action-object', 'the trace must say WHO resolved it')
+    assert.isTrue(action!.writes, 'the write happens in the action')
   })
 
   /**
-   * counting-decisions §5: modificação é medida por checksum do escopo de
-   * implementação. Rodar o prettier não pode virar fatura, então o hash é do
-   * AST normalizado — sem whitespace e sem comentário.
+   * counting-decisions §5: modification is measured by a checksum of the
+   * implementation scope. Running Prettier must not turn into an invoice, so
+   * the hash is over the normalised AST — no whitespace, no comments.
    */
-  test('o hash do escopo ignora formatação e comentário', async ({ assert }) => {
-    const compacto = await analyze('method_level', 'expire_invite_controller.ts')
-    const verboso = await analyze('method_level', 'expire_invite_verbose_controller.ts')
+  test('the scope hash ignores formatting and comments', async ({ assert }) => {
+    const compact = await analyze('method_level', 'expire_invite_controller.ts')
+    const verbose = await analyze('method_level', 'expire_invite_verbose_controller.ts')
 
-    const hashDoHandler = (behavior: typeof compacto) =>
+    const handlerHash = (behavior: typeof compact) =>
       behavior.scope.find((entry) => entry.file.includes('controllers/'))!.bodyHash
 
     assert.equal(
-      hashDoHandler(verboso),
-      hashDoHandler(compacto),
-      'corpos logicamente iguais têm que ter o mesmo hash — senão rodar o prettier vira fatura'
+      handlerHash(verbose),
+      handlerHash(compact),
+      'logically equal bodies must hash the same — otherwise running Prettier bills'
     )
   })
 
-  test('corpo diferente muda o hash', async ({ assert }) => {
-    const expirar = await analyze('method_level', 'expire_invite_controller.ts')
-    const listar = await analyze('method_level', 'list_invites_controller.ts')
+  test('a different body changes the hash', async ({ assert }) => {
+    const expire = await analyze('method_level', 'expire_invite_controller.ts')
+    const list = await analyze('method_level', 'list_invites_controller.ts')
 
-    const hashDoHandler = (behavior: typeof expirar) =>
+    const handlerHash = (behavior: typeof expire) =>
       behavior.scope.find((entry) => entry.file.includes('controllers/'))!.bodyHash
 
-    assert.notEqual(hashDoHandler(expirar), hashDoHandler(listar))
+    assert.notEqual(handlerHash(expire), handlerHash(list))
   })
 
-  test('o hash é hexadecimal estável', async ({ assert }) => {
+  test('the hash is stable hexadecimal', async ({ assert }) => {
     const behavior = await analyze('action_object')
 
     assert.isNotEmpty(behavior.scope)
@@ -179,77 +179,77 @@ test.group('grafo: rastro e procedência', () => {
     }
   })
 
-  test('escopo e rastro cobrem os mesmos corpos', async ({ assert }) => {
+  test('scope and trace cover the same bodies', async ({ assert }) => {
     const behavior = await analyze('action_object')
     assert.lengthOf(behavior.scope, behavior.trace.length)
   })
 })
 
-test.group('grafo: método da própria classe e fronteira de pacote', () => {
+test.group('graph: same-class method and package boundary', () => {
   /**
-   * `this.metodoPrivado()` foi o padrão dominante entre as rotas que não
-   * alcançavam dado nenhum numa app de produção. Nenhum resolvedor o cobria:
-   * `property-service` exige `this.prop.metodo()`, com dois níveis.
+   * `this.privateMethod()` is a dominant shape among routes that otherwise
+   * reach no data at all. `property-service` does not cover it: that one
+   * requires `this.prop.method()`, with two levels.
    */
-  test('escrita em método privado da mesma classe é alcançada', async ({ assert }) => {
+  test('a write in a private method of the same class is reached', async ({ assert }) => {
     const behavior = await analyze('same_class_method')
 
     assert.isTrue(behavior.writes)
     assert.include(behavior.touches, 'Invite')
 
-    const privado = behavior.trace.find((step) => step.member === 'persistExpiration')
-    assert.exists(privado, 'não percorreu o método privado')
-    assert.equal(privado!.by, 'same-class-method')
+    const privateStep = behavior.trace.find((step) => step.member === 'persistExpiration')
+    assert.exists(privateStep, 'did not walk into the private method')
+    assert.equal(privateStep!.by, 'same-class-method')
   })
 
   /**
-   * `this.audit()` é propriedade que guarda função, não método da classe.
+   * `this.audit()` is a property holding a function, not a method of the class.
    *
-   * Sem a guarda, `same-class-method` a reivindicaria, `findBody` falharia e o
-   * relatório diria "herdado de classe de pacote" — mentira. A razão errada
-   * manda o usuário procurar no lugar errado, e o relatório existe para ser
-   * acionável.
+   * Without the guard, `same-class-method` would claim it, `findBody` would
+   * fail, and the report would say "inherited from a package class" — a lie.
+   * The wrong reason sends the reader to the wrong place, and the report exists
+   * to be actionable.
    */
-  test('propriedade-função não é reivindicada como método da classe', async ({ assert }) => {
+  test('a function-valued property is not claimed as a class method', async ({ assert }) => {
     const behavior = await analyze('same_class_method')
-    const pendencia = behavior.unresolved.find((u) => u.expression.includes('audit'))
+    const unresolved = behavior.unresolved.find((u) => u.expression.includes('audit'))
 
-    assert.exists(pendencia, 'a chamada deveria aparecer como pendência')
+    assert.exists(unresolved, 'the call should appear as unresolved')
     assert.notMatch(
-      pendencia!.reason,
-      /classe de pacote/i,
-      'razão errada: não é herança de pacote, é propriedade-função'
+      unresolved!.reason,
+      /package class/i,
+      'wrong reason: this is not package inheritance, it is a function-valued property'
     )
   })
 
   /**
-   * `InviteTransformer.transform()` resolve para o arquivo da aplicação, mas o
-   * método é herdado de classe de PACOTE — não existe ali.
+   * `InviteTransformer.transform()` resolves to the application file, but the
+   * method is inherited from a PACKAGE class — it is not there.
    *
-   * Antes isso era descartado em silêncio: o resolvedor produzia a referência,
-   * `findBody` falhava e ninguém sabia. Silêncio é o pior defeito possível
-   * aqui; tem que virar pendência com o motivo certo.
+   * Dropping it silently would be the worst possible defect: the resolver
+   * produces the reference, `findBody` fails and nobody knows. It has to become
+   * an unresolved entry with the right reason.
    */
-  test('método herdado de pacote vira pendência, não silêncio', async ({ assert }) => {
+  test('a method inherited from a package is reported, not silenced', async ({ assert }) => {
     const behavior = await analyze('same_class_method')
-    const pendencia = behavior.unresolved.find((u) => u.expression.includes('transform'))
+    const unresolved = behavior.unresolved.find((u) => u.expression.includes('transform'))
 
-    assert.exists(pendencia, 'corpo não encontrado foi descartado em silêncio')
-    assert.match(pendencia!.reason, /corpo não encontrado/i)
+    assert.exists(unresolved, 'a body that was not found got dropped in silence')
+    assert.match(unresolved!.reason, /body not found/i)
   })
 })
 
-test.group('grafo: custo', () => {
+test.group('graph: cost', () => {
   /**
-   * Adicionar arquivo ao projeto DEPOIS de consultar o checker invalida o
-   * programa do TypeScript, e a consulta seguinte o reconstrói. Numa app de
-   * 161 rotas isso custava ~344 ms por rota, uniformemente — 56 s no total.
-   * Carregando tudo antes, caiu para 1 ms por rota.
+   * Adding a file to the project AFTER querying the checker invalidates the
+   * TypeScript program, and the next query rebuilds it — a cost paid once per
+   * route, uniformly, and the difference between minutes and seconds on a large
+   * application.
    *
-   * Este teste não mede tempo (seria instável em CI). Mede a causa: depois da
-   * primeira análise, nenhum arquivo novo entra no projeto.
+   * This test does not measure time (that would be flaky in CI). It measures
+   * the cause: after the first analysis, no new file enters the project.
    */
-  test('nenhum arquivo entra no projeto depois da primeira análise', async ({ assert }) => {
+  test('no file enters the project after the first analysis', async ({ assert }) => {
     const root = fixturePath('patterns', 'action_object')
     const app = await discoverApp(root)
     const { stores } = await collectDataStores(app)
@@ -260,45 +260,46 @@ test.group('grafo: custo', () => {
       member: 'handle',
     }
 
-    const antes = analyzer.fileCount()
-    assert.isAbove(antes, 0, 'o projeto deveria nascer carregado')
+    const before = analyzer.fileCount()
+    assert.isAbove(before, 0, 'the project should be born loaded')
 
     analyzer.analyze(handler)
 
     assert.equal(
       analyzer.fileCount(),
-      antes,
-      'arquivo entrou no projeto durante a análise: isso invalida o programa do ' +
-        'TypeScript e a próxima consulta ao checker o reconstrói'
+      before,
+      'a file entered the project during the analysis: that invalidates the ' +
+        'TypeScript program and the next query to the checker rebuilds it'
     )
   })
 })
 
-test.group('grafo: fronteira', () => {
+test.group('graph: boundary', () => {
   /**
-   * counting-decisions §1: rota que não alcança dado nenhum não é função
-   * transacional. Cai da regra geral, sem caso especial.
+   * counting-decisions §1: a route that reaches no data at all is not a
+   * transactional function. It falls out of the general rule, with no special
+   * case.
    */
-  test('handler que não toca dado não alcança repositório nenhum', async ({ assert }) => {
+  test('a handler that touches no data reaches no store', async ({ assert }) => {
     const root = fixturePath('patterns', 'fat_controller')
     const app = await discoverApp(root)
     const { stores } = await collectDataStores(app)
 
     const behavior = analyzeHandler(app, stores, {
       file: path.join(root, 'app/collect/models/invite.ts'),
-      member: 'inexistente',
+      member: 'nonexistent',
     })
 
     assert.isEmpty(behavior.touches)
     assert.isFalse(behavior.writes)
   })
 
-  test('profundidade máxima é respeitada', async ({ assert }) => {
+  test('the maximum depth is respected', async ({ assert }) => {
     const root = fixturePath('patterns', 'action_object')
     const app = await discoverApp(root)
     const { stores } = await collectDataStores(app)
 
-    const raso = analyzeHandler(
+    const shallow = analyzeHandler(
       app,
       stores,
       {
@@ -308,7 +309,7 @@ test.group('grafo: fronteira', () => {
       { maxDepth: 0 }
     )
 
-    assert.lengthOf(raso.trace, 1, 'com profundidade 0 só o próprio handler')
-    assert.isFalse(raso.writes, 'a escrita está um nível abaixo')
+    assert.lengthOf(shallow.trace, 1, 'at depth 0, only the handler itself')
+    assert.isFalse(shallow.writes, 'the write is one level below')
   })
 })

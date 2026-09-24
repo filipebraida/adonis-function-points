@@ -2,36 +2,36 @@ import { Node, SyntaxKind } from 'ts-morph'
 import type { CallExpression } from 'ts-morph'
 
 /**
- * Reconhece acesso a dados via Lucid num call site.
+ * Recognises Lucid data access at a call site.
  *
- * **Nível de call site, nunca de arquivo.** Um service de domínio de uma app
- * real tem 38 escritas; perguntar "este arquivo contém escrita?" marcaria como
- * escritor todo mundo que o importa.
+ * **Call-site level, never file level.** A large domain service can hold dozens
+ * of writes; asking "does this file contain a write?" would mark every importer
+ * as a writer.
  *
- * Falsos positivos já medidos no spike, e por isso evitados aqui:
+ * False positives deliberately avoided here:
  *
- *   `.related('x')`    acessor de relação, usado para ler E para escrever —
- *                      só conta se terminar em attach/detach/sync/save/create
- *   `.create(`         aparece em `vine.create(` e em vários builders; só vale
- *                      quando o receptor resolve para um repositório conhecido
- *   `preIntake.save()` instância em minúscula não casa com o nome do model se
- *                      a comparação for por texto — daí o mapa de variáveis
+ *   `.related('x')`   a relation accessor, used both to read and to write — it
+ *                     only counts when it ends in attach/detach/sync/save/create
+ *   `.create(`        also appears in `vine.create(` and various builders; it
+ *                     only counts when the receiver resolves to a known store
+ *   `invite.save()`   a lower-case instance does not match the model name under
+ *                     textual comparison — hence the symbol map
  */
 
 export type AccessMode = 'read' | 'write'
 
 export type PersistenceAccess = {
   mode: AccessMode
-  /** id do repositório de dados alcançado */
+  /** id of the data store reached */
   store: string
   method: string
   line: number
   /**
-   * Repositório alcançado por RELAÇÃO, não diretamente.
+   * Store reached through a RELATION rather than directly.
    *
-   * `Book.query().preload('author')` lê a tabela de autores. Pela AFP isso é um
-   * FTR sobre `Author`, e ignorá-lo faria uma tabela lida só por relação cair
-   * fora da contagem (§6.5.4) quando é um AIE legítimo.
+   * `Book.query().preload('author')` reads the authors table. Under AFP that is
+   * an FTR on `Author`, and ignoring it would drop a table read only through a
+   * relation out of the count (§6.5.4) when it is a legitimate EIF.
    */
   viaRelation?: string
 }
@@ -79,14 +79,14 @@ const READ_METHODS = new Set([
 ])
 
 /**
- * Símbolos que resolvem para um repositório de dados no escopo de um corpo.
+ * Symbols that resolve to a data store within a body's scope.
  *
- * Inclui o nome do model (`Invite`) e as variáveis locais derivadas dele
+ * Includes the model name (`Invite`) and local variables derived from it
  * (`const invite = await Invite.findOrFail(...)`).
  */
 export type StoreSymbols = Map<string, string>
 
-/** repositório -> suas relações declaradas */
+/** store -> its declared relations */
 export type RelationMap = Map<string, Record<string, string>>
 
 export function detectAccess(
@@ -104,11 +104,11 @@ export function detectAccess(
   const receiver = expression.getExpression()
 
   /**
-   * Procura pelo CAMINHO antes da raiz: `input.invite.save()` tem raiz
-   * `input`, que não é repositório nenhum — quem é, é `input.invite`.
+   * Looks up the PATH before the root: `input.invite.save()` has root `input`,
+   * which is no store at all — `input.invite` is.
    *
-   * É o padrão dominante em action object com input tipado, e sem ele o grafo
-   * chega na action e não enxerga a escrita.
+   * This is the dominant shape in action objects with a typed input, and
+   * without it the graph reaches the action and sees no write.
    */
   const store =
     symbols.get(pathSymbolOf(receiver) ?? '') ?? symbols.get(rootSymbolOf(receiver) ?? '')
@@ -126,7 +126,7 @@ export function detectAccess(
 const RELATION_ACCESSORS = new Set(['preload', 'load', 'related', 'withCount'])
 
 /**
- * `.preload('author')` sobre um repositório com `{ author: 'Author' }` alcança
+ * `.preload('author')` on a store declaring `{ author: 'Author' }` reaches
  * `Author`.
  */
 function relationTargetOf(
@@ -144,9 +144,9 @@ function relationTargetOf(
 }
 
 /**
- * Caminho pontuado de um receptor feito só de acessos a propriedade:
- * `input.invite` devolve "input.invite". Qualquer chamada no meio invalida o
- * caminho, porque aí o valor deixa de ser rastreável estaticamente.
+ * Dotted path of a receiver made only of property accesses: `input.invite`
+ * yields "input.invite". Any call in between invalidates the path, because the
+ * value stops being statically traceable.
  */
 export function pathSymbolOf(node: Node): string | null {
   const parts: string[] = []
@@ -164,11 +164,11 @@ export function pathSymbolOf(node: Node): string | null {
 }
 
 /**
- * Raiz de uma cadeia `a.b().c()` — o identificador mais à esquerda.
+ * Root of an `a.b().c()` chain — the left-most identifier.
  *
- * Precisa atravessar `await`, chamada, acesso a propriedade e `new`, senão
- * `await new Action().handle()` e `Invite.query().where().update()` param no
- * primeiro nó e a escrita some.
+ * It must traverse `await`, calls, property access and `new`, otherwise
+ * `await new Action().handle()` and `Invite.query().where().update()` stop at
+ * the first node and the write disappears.
  */
 export function rootSymbolOf(node: Node): string | null {
   let current: Node | undefined = node

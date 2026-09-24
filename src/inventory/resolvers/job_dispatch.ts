@@ -20,7 +20,7 @@ const DISPATCH_METHODS = new Set(['dispatch', 'dispatchLater', 'enqueue', 'later
  * SAME transactional function, because IFPUG counts what the user recognises —
  * they click and the effect happens, even if execution is asynchronous. A
  * SCHEDULED job, which nobody dispatches, is a different thing: it is an entry
- * point of its own and comes from an `EntryPointCollector`.
+ * point of its own, and out of v1 scope — only HTTP routes are collected.
  */
 export const jobDispatchResolver: CallResolver = {
   name: 'job-dispatch',

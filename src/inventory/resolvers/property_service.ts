@@ -10,7 +10,7 @@ import type { CallResolver, ResolverContext } from './types.js'
  *     @inject()
  *     class InvoiceController {
  *       constructor(protected billing: BillingService) {}
- *       async queue() { await this.billing.enqueue(intake) }
+ *       async queue() { await this.billing.enqueue(invoice) }
  *     }
  *
  * This is the official AdonisJS pattern, and in applications that use it, it is

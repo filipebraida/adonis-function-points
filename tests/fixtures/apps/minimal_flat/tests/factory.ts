@@ -1,4 +1,4 @@
 import Book from '#models/book'
 
-// Escrita que existe só no teste: não pode virar função da aplicação.
+// A write that exists only in the test: it must not become an application function.
 export const makeBook = () => Book.create({ title: 'x', authorId: 1 })

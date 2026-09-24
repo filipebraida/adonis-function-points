@@ -9,7 +9,7 @@ export default class NotesController {
     return inertia.render('notes/index', { notes })
   }
 
-  /** alcança a tabela técnica: ela é usada, mas não deve contar */
+  /** reaches the technical table: it is used, but must not count */
   async touchSession({ response }: HttpContext) {
     await UserSession.create({ token: 'x' })
     return response.redirect().back()

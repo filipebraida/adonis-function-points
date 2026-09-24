@@ -5,32 +5,32 @@ import { analyze } from '../src/pipeline.js'
 import { renderExplain } from '../src/reporters/table.js'
 
 /**
- * Por que uma função foi contada assim.
+ * Why a function was counted the way it was.
  *
- * Não é conveniência: se PF vira fatura, alguém vai contestar um número, e um
- * número sem procedência é indefensável.
+ * Not a convenience: if function points get invoiced, someone will dispute a
+ * number, and a number without provenance is indefensible.
  */
 export default class FpExplain extends BaseCommand {
   static commandName = 'fp:explain'
-  static description = 'Mostra a procedência da contagem de uma função'
+  static description = "Show the provenance of a function's count"
   static options: CommandOptions = { startApp: false }
 
-  @args.string({ description: 'Nome da função, ex.: "POST /books" ou "Invite"' })
-  declare funcao: string
+  @args.string({ description: 'Function name, e.g. "POST /books" or "Invite"' })
+  declare name: string
 
   async run() {
     const { count } = await analyze(this.app.makePath())
 
-    const alvo = count.functions.filter((fn) =>
-      fn.name.toLowerCase().includes(this.funcao.toLowerCase())
+    const matched = count.functions.filter((fn) =>
+      fn.name.toLowerCase().includes(this.name.toLowerCase())
     )
 
-    if (alvo.length === 0) {
-      this.logger.error(`nenhuma função contida em "${this.funcao}"`)
+    if (matched.length === 0) {
+      this.logger.error(`no function matching "${this.name}"`)
       this.exitCode = 1
       return
     }
 
-    this.logger.log(alvo.map(renderExplain).join('\n\n' + '-'.repeat(70) + '\n\n'))
+    this.logger.log(matched.map(renderExplain).join('\n\n' + '-'.repeat(70) + '\n\n'))
   }
 }

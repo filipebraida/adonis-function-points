@@ -27,46 +27,47 @@ const fn = (result: CountResult, name: string) => {
   const found = result.functions.find((f) => f.name === name)
   if (!found)
     throw new Error(
-      `função "${name}" não contada; existem: ${result.functions.map((f) => f.name).join(', ')}`
+      `function "${name}" not counted; present: ${result.functions.map((f) => f.name).join(', ')}`
     )
   return found
 }
 
 /**
- * A app das fixtures é pequena o bastante para ter a contagem conferida à mão,
- * que é a única forma de saber que o motor está certo:
+ * The fixture application is small enough for the count to be checked by hand,
+ * which is the only way to know the engine is right:
  *
- *   Author  3 DET (name, country, createdAt) · lido por relação, nunca escrito
- *   Book    5 DET (authorId, title, isbn, publishedYear, createdAt) · escrito
+ *   Author  3 DET (name, country, createdAt) · read through a relation, never written
+ *   Book    5 DET (authorId, title, isbn, publishedYear, createdAt) · written
  *
- *   GET    /books      lê Book e Author            -> SE
- *   POST   /books      escreve Book                 -> EE
- *   DELETE /books/:id  escreve Book                 -> EE
+ *   GET    /books      reads Book and Author       -> EO
+ *   POST   /books      writes Book                 -> EI
+ *   DELETE /books/:id  writes Book                 -> EI
  */
-test.group('contagem: funções de dados', () => {
+test.group('count: data functions', () => {
   /**
-   * AFP §6.5.4: se alguma transação da aplicação escreve, é ALI. Se só lê, AIE.
+   * AFP §6.5.4: if any transaction of the application writes it, it is an ILF.
+   * If it is only read, an EIF.
    */
-  test('escrito pela aplicação é ALI; só lido é AIE', async ({ assert }) => {
+  test('written by the application is an ILF; only read is an EIF', async ({ assert }) => {
     const result = await countApp('minimal_flat')
 
     assert.equal(fn(result, 'Book').type, 'ILF')
     assert.equal(fn(result, 'Author').type, 'EIF')
   })
 
-  test('DET exclui o identificador técnico', async ({ assert }) => {
+  test('DET excludes the technical identifier', async ({ assert }) => {
     const result = await countApp('minimal_flat')
 
     assert.equal(fn(result, 'Author').det, 3)
     assert.equal(fn(result, 'Book').det, 5)
   })
 
-  test('RET começa em 1, conforme a estratégia padrão', async ({ assert }) => {
+  test('RET starts at 1, per the default strategy', async ({ assert }) => {
     const result = await countApp('minimal_flat')
     assert.equal(fn(result, 'Book').refs, 1)
   })
 
-  test('ALI de baixa complexidade vale 7; AIE vale 5', async ({ assert }) => {
+  test('a low-complexity ILF is worth 7; an EIF is worth 5', async ({ assert }) => {
     const result = await countApp('minimal_flat')
 
     assert.equal(fn(result, 'Book').complexity, 'low')
@@ -75,9 +76,9 @@ test.group('contagem: funções de dados', () => {
   })
 })
 
-test.group('contagem: funções transacionais', () => {
-  /** AFP §6.5.3: transação que modifica dado é EE; as outras são SE. */
-  test('quem escreve é EE, quem só lê é SE', async ({ assert }) => {
+test.group('count: transactional functions', () => {
+  /** AFP §6.5.3: a transaction that modifies data is an EI; the rest are EOs. */
+  test('a writer is an EI, a reader is an EO', async ({ assert }) => {
     const result = await countApp('minimal_flat')
 
     assert.equal(fn(result, 'POST /books').type, 'EI')
@@ -85,8 +86,8 @@ test.group('contagem: funções transacionais', () => {
     assert.equal(fn(result, 'GET /books').type, 'EO')
   })
 
-  /** O AFP colapsa CE em SE: intenção primária não é detectável. */
-  test('nenhuma função é classificada como CE', async ({ assert }) => {
+  /** AFP collapses EQ into EO: primary intent is not detectable. */
+  test('no function is classified as an EQ', async ({ assert }) => {
     const result = await countApp('minimal_flat')
     assert.notInclude(
       result.functions.map((f) => f.type),
@@ -94,115 +95,116 @@ test.group('contagem: funções transacionais', () => {
     )
   })
 
-  test('FTR conta os repositórios alcançados', async ({ assert }) => {
+  test('FTR counts the stores reached', async ({ assert }) => {
     const result = await countApp('minimal_flat')
 
-    // a listagem alcança Book e, por preload, Author
+    // the listing reaches Book and, through the preload, Author
     assert.equal(fn(result, 'GET /books').refs, 2)
     assert.equal(fn(result, 'POST /books').refs, 1)
   })
 
-  /** counting-decisions §1: sem acesso a dado, não é função transacional. */
-  test('transação que não alcança dado não é contada', async ({ assert }) => {
+  /** counting-decisions §1: with no data access, it is not a transaction. */
+  test('a transaction that reaches no data is not counted', async ({ assert }) => {
     const result = await countApp('edges_boundary')
 
     assert.exists(result.functions.find((f) => f.name === 'GET /notes'))
     assert.notExists(
       result.functions.find((f) => f.name === 'GET /about'),
-      'rota que não alcança dado não é função transacional'
+      'a route that reaches no data is not a transactional function'
     )
   })
 })
 
 /**
- * As bordas decididas em counting-decisions, cada uma com uma tabela na fixture
- * que a exercita. Sem elas, as guardas do contador passam mutação: em
- * `minimal_flat` toda tabela é alcançada e toda rota alcança dado.
+ * The edges decided in counting-decisions, each with a table in the fixture
+ * that exercises it. Without them the counter's guards survive mutation: in
+ * `minimal_flat` every table is reached and every route reaches data.
  */
-test.group('contagem: bordas', () => {
-  /** AFP §6.5.4: repositório que nenhuma transação alcança não entra. */
-  test('repositório órfão não é contado', async ({ assert }) => {
+test.group('count: edges', () => {
+  /** AFP §6.5.4: a store no transaction reaches does not enter the count. */
+  test('an orphan store is not counted', async ({ assert }) => {
     const result = await countApp('edges_boundary')
 
     assert.exists(result.functions.find((f) => f.name === 'Note'))
     assert.notExists(
       result.functions.find((f) => f.name === 'OrphanLog'),
-      'tabela que ninguém alcança não é função de dados'
+      'a table nobody reaches is not a data function'
     )
   })
 
   /**
-   * AFP §6.5.2.1.1: tabela técnica sai da contagem — e o relatório tem que
-   * dizer POR QUE, não só omitir.
+   * AFP §6.5.2.1.1: a technical table leaves the count — and the report has to
+   * say WHY, not merely omit it.
    */
-  test('tabela técnica sai da contagem e aparece no relatório', async ({ assert }) => {
+  test('a technical table leaves the count and appears in the report', async ({ assert }) => {
     const result = await countApp('edges_boundary')
 
     assert.notExists(
       result.functions.find((f) => f.name === 'UserSession'),
-      'tabela de sessão é dado temporário pelo spec'
+      'a session table is temporary data per the spec'
     )
     assert.isTrue(
       result.confidence.warnings.some((w) => w.includes('UserSession')),
-      'a exclusão precisa aparecer no relatório'
+      'the exclusion must appear in the report'
     )
   })
 
   /**
-   * A transação que só toca tabela técnica perde o FTR e, por §1, deixa de ser
-   * função transacional — a exclusão da tabela propaga.
+   * A transaction touching only a technical table loses its FTR and, by §1,
+   * stops being a transactional function — the table's exclusion propagates.
    */
-  test('transação que só toca tabela técnica não é contada', async ({ assert }) => {
+  test('a transaction touching only a technical table is not counted', async ({ assert }) => {
     const result = await countApp('edges_boundary')
     assert.notExists(result.functions.find((f) => f.name === 'POST /sessions/touch'))
   })
 })
 
-test.group('contagem: total e procedência', () => {
-  test('o total é a soma das funções', async ({ assert }) => {
+test.group('count: totals and provenance', () => {
+  test('the total is the sum of the functions', async ({ assert }) => {
     const result = await countApp('minimal_flat')
-    const soma = result.functions.reduce((total, f) => total + f.points, 0)
+    const sum = result.functions.reduce((total, f) => total + f.points, 0)
 
-    assert.equal(result.totals.unadjusted, soma)
+    assert.equal(result.totals.unadjusted, sum)
     assert.isAbove(result.totals.unadjusted, 0)
   })
 
-  test('os totais por tipo fecham com o total geral', async ({ assert }) => {
+  test('the per-type totals close with the overall total', async ({ assert }) => {
     const result = await countApp('minimal_flat')
-    const porTipo = Object.values(result.totals.byType).reduce((t, v) => t + v.points, 0)
+    const byType = Object.values(result.totals.byType).reduce((t, v) => t + v.points, 0)
 
-    assert.equal(porTipo, result.totals.unadjusted)
+    assert.equal(byType, result.totals.unadjusted)
   })
 
   /**
-   * A procedência é requisito, não enfeite: se PF vira fatura, alguém vai
-   * contestar um número, e um número sem origem é indefensável.
+   * Provenance is a requirement, not decoration: if function points get
+   * invoiced, someone will dispute a number, and a number without an origin is
+   * indefensible.
    */
-  test('toda função contada diz a regra que a classificou', async ({ assert }) => {
+  test('every counted function states the rule that classified it', async ({ assert }) => {
     const result = await countApp('minimal_flat')
 
     for (const counted of result.functions) {
-      assert.isNotEmpty(counted.rationale.rule, `${counted.name} sem regra`)
-      assert.match(counted.rationale.rule, /afp:/, 'a regra deve citar a norma')
+      assert.isNotEmpty(counted.rationale.rule, `${counted.name} has no rule`)
+      assert.match(counted.rationale.rule, /afp:/, 'the rule must cite the standard')
     }
   })
 
-  test('DET e FTR dizem de onde vieram', async ({ assert }) => {
+  test('DET and FTR say where they came from', async ({ assert }) => {
     const result = await countApp('minimal_flat')
 
     assert.isNotEmpty(fn(result, 'Book').rationale.detSources)
     assert.isNotEmpty(fn(result, 'GET /books').rationale.refSources)
   })
 
-  /** O ruleset versionado é o que torna duas contagens comparáveis. */
-  test('o resultado declara o ruleset e a versão', async ({ assert }) => {
+  /** The versioned ruleset is what makes two counts comparable. */
+  test('the result declares the ruleset and its version', async ({ assert }) => {
     const result = await countApp('minimal_flat')
 
     assert.equal(result.ruleset, 'afp')
     assert.match(result.rulesetVersion, /^\d+\.\d+\.\d+$/)
   })
 
-  test('a confiança reporta pendências e rotas sem handler', async ({ assert }) => {
+  test('confidence reports unresolved calls and handler-less routes', async ({ assert }) => {
     const result = await countApp('minimal_flat')
 
     assert.isNumber(result.confidence.unresolvedCalls)

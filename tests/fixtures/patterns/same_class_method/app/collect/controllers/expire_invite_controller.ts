@@ -7,7 +7,7 @@ export default class ExpireInviteController {
   public async handle({ request, response }: HttpContext) {
     await new InviteService().expire(request.param('uuid'))
 
-    // `transform` é herdado de classe de pacote: não existe neste projeto
+    // `transform` is inherited from a package class: it is not in this project
     InviteTransformer.transform({})
 
     return response.redirect().back()

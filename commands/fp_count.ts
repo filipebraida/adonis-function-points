@@ -7,16 +7,16 @@ import { renderCount } from '../src/reporters/table.js'
 
 export default class FpCount extends BaseCommand {
   static commandName = 'fp:count'
-  static description = 'Conta pontos de função não ajustados da aplicação'
+  static description = 'Count the unadjusted function points of the application'
   static options: CommandOptions = { startApp: false }
 
-  @flags.string({ description: 'Salva o resultado como JSON no caminho indicado' })
+  @flags.string({ description: 'Write the result as JSON to the given path' })
   declare out?: string
 
-  @flags.boolean({ description: 'Imprime JSON em vez de tabela' })
+  @flags.boolean({ description: 'Print JSON instead of a table' })
   declare json?: boolean
 
-  @flags.number({ description: 'Cobertura mínima de rastreamento (0 a 1)' })
+  @flags.number({ description: 'Minimum tracing coverage (0 to 1)' })
   declare minCoverage?: number
 
   async run() {
@@ -26,7 +26,7 @@ export default class FpCount extends BaseCommand {
 
     if (this.out) {
       await writeFile(this.out, JSON.stringify(count, null, 2))
-      this.logger.success(`contagem salva em ${this.out}`)
+      this.logger.success(`count written to ${this.out}`)
     }
 
     this.logger.log(this.json ? JSON.stringify(count, null, 2) : renderCount(count))

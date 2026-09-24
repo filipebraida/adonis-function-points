@@ -1,51 +1,51 @@
 /**
- * Modelo de domínio do pacote.
+ * Domain model of the package.
  *
- * Duas camadas, deliberadamente independentes:
+ * Two deliberately independent layers:
  *
- *   Inventory  — fatos crus extraídos da aplicação. NÃO conhece APF.
- *   Albrecht   — regras IFPUG/AFP aplicadas sobre o inventário.
+ *   Inventory  — raw facts extracted from the application. Knows nothing of FPA.
+ *   Albrecht   — IFPUG/AFP rules applied over the inventory.
  *
- * `src/inventory/**` nunca deve importar de `src/albrecht/**`.
+ * `src/inventory/**` must never import from `src/albrecht/**`.
  */
 
 // ---------------------------------------------------------------------------
-// Procedência — toda medida precisa saber de onde veio.
-// Sem isto, uma contagem é um número mágico e ninguém consegue contestá-la.
+// Provenance — every measurement must know where it came from.
+// Without it a count is a magic number and nobody can contest it.
 // ---------------------------------------------------------------------------
 export type Provenance = {
   file: string
   line?: number
-  /** nome do coletor/resolvedor/detector que produziu o fato */
+  /** name of the collector/resolver/detector that produced the fact */
   by: string
 }
 
 // ---------------------------------------------------------------------------
-// INVENTÁRIO — fatos crus
+// INVENTORY — raw facts
 // ---------------------------------------------------------------------------
 
-/** Um repositório lógico de dados persistido pela aplicação. */
+/** A logical data store persisted by the application. */
 export type DataStore = {
   id: string
-  /** nome como o usuário o reconheceria (model, tabela) */
+  /** name as the user would recognise it (model, table) */
   name: string
   module: string
-  /** tabela física, quando conhecida */
+  /** physical table, when known */
   table?: string
-  /** atributos persistidos, excluindo identificadores técnicos */
+  /** persisted attributes, excluding technical identifiers */
   attributes: Attribute[]
-  /** subgrupos lógicos candidatos (relações de composição) */
+  /** candidate logical subgroups (composition relations) */
   subgroups: string[]
   /**
-   * Relações declaradas: nome da propriedade -> nome do repositório alvo.
+   * Declared relations: property name -> target store name.
    *
-   * É o que permite resolver `.preload('author')` para o repositório `Author`.
-   * Sem isso, uma tabela lida só por relação não é alcançada por transação
-   * nenhuma e cai fora da contagem pela AFP §6.5.4 — quando na verdade é um
-   * AIE legítimo.
+   * This is what allows `.preload('author')` to resolve to the `Author` store.
+   * Without it, a table read only through a relation is reached by no
+   * transaction and drops out of the count under AFP §6.5.4 — when it is in
+   * fact a legitimate EIF.
    */
   relations: Record<string, string>
-  /** mantido por esta aplicação, ou por um sistema externo? */
+  /** maintained by this application, or by an external system? */
   maintainedExternally: boolean
   provenance: Provenance
 }
@@ -58,19 +58,19 @@ export type Attribute = {
 }
 
 /**
- * Um ponto de entrada da aplicação: rota HTTP, comando ace, job, listener.
- * Transações não são só HTTP — um comando agendado que importa um arquivo
- * é tão transacional quanto um POST.
+ * An application entry point: HTTP route, ace command, job, listener.
+ * Transactions are not only HTTP — a scheduled command that imports a file is
+ * as transactional as a POST.
  */
 export type EntryPoint = {
   id: string
   kind: 'http' | 'command' | 'job' | 'listener'
   module: string
-  /** verbo HTTP, nome do comando, nome do evento… */
+  /** HTTP verb, command name, event name… */
   trigger: string
-  /** padrão da rota, assinatura do comando… */
+  /** route pattern, command signature… */
   signature: string
-  /** nome da rota quando existir — é a identidade estável entre versões */
+  /** route name when present; not the identity used across versions */
   name?: string
   handler: HandlerRef | null
   provenance: Provenance
@@ -78,32 +78,31 @@ export type EntryPoint = {
 
 export type HandlerRef = {
   file: string
-  /** método da classe; ausente em handler de ação única */
+  /** class method; absent for single-action handlers */
   member?: string
   /**
-   * Linha do corpo, para handler que não tem nome: closure inline declarada na
-   * própria rota (`router.get('/', ({ response }) => …)`).
+   * Body line, for a handler with no name: an inline closure declared on the
+   * route itself (`router.get('/', ({ response }) => …)`).
    *
-   * Aparece em 3 das 5 aplicações de produção levantadas, e o corpo dela é
-   * código de negócio como qualquer outro — precisa ser percorrido pelo grafo.
+   * Its body is business code like any other and must be walked by the graph.
    */
   line?: number
 }
 
-/** O que o código alcançável a partir de um EntryPoint efetivamente faz. */
+/** What the code reachable from an EntryPoint actually does. */
 export type HandlerBehavior = {
   entryPointId: string
-  /** escreve em algum DataStore dentro da fronteira? */
+  /** does it write to any DataStore inside the boundary? */
   writes: boolean
-  /** DataStores alcançados (ids) */
+  /** DataStores reached (ids) */
   touches: string[]
-  /** campos de entrada declarados (validators) */
+  /** declared input fields (validators) */
   inputFields: Field[]
-  /** campos de saída declarados (transformers, DTOs) */
+  /** declared output fields (transformers, DTOs) */
   outputFields: Field[]
-  /** caminho percorrido no grafo de chamadas — é o que `fp:explain` mostra */
+  /** path walked through the call graph — what `fp:explain` prints */
   trace: TraceStep[]
-  /** chamadas que nenhum resolvedor soube seguir */
+  /** calls no resolver knew how to follow */
   unresolved: UnresolvedCall[]
 }
 
@@ -117,17 +116,17 @@ export type TraceStep = {
   file: string
   member?: string
   depth: number
-  /** resolvedor que produziu este passo */
+  /** resolver that produced this step */
   by: string
   writes: boolean
 }
 
 /**
- * Chamada que o grafo não conseguiu seguir.
+ * A call the graph could not follow.
  *
- * Isto NÃO é ruído de log — é a métrica de cobertura do inventário.
- * Muitas não resolvidas significa contagem não confiável, e o relatório
- * precisa dizer isso em vez de fingir precisão.
+ * This is NOT log noise — it is the inventory's coverage metric. Many
+ * unresolved calls mean an unreliable count, and the report must say so rather
+ * than feign precision.
  */
 export type UnresolvedCall = {
   file: string
@@ -137,11 +136,11 @@ export type UnresolvedCall = {
 }
 
 export type Inventory = {
-  /** versão do formato, para diffs entre releases */
+  /** format version, for diffs across releases */
   version: 1
   generatedAt: string
   app: string
-  /** versões do framework em que a contagem foi feita — vai para o relatório */
+  /** framework versions the count was made against — goes into the report */
   framework: { core?: number; lucid?: number; orm: string }
   dataStores: DataStore[]
   entryPoints: EntryPoint[]
@@ -150,13 +149,13 @@ export type Inventory = {
     entryPointsTotal: number
     entryPointsResolved: number
     unresolvedCalls: number
-    /** fração de pontos de entrada cujo handler foi rastreado até o fim */
+    /** fraction of entry points whose handler was traced to completion */
     ratio: number
   }
 }
 
 // ---------------------------------------------------------------------------
-// ALBRECHT — contagem
+// ALBRECHT — counting
 // ---------------------------------------------------------------------------
 
 export type FunctionType = 'ILF' | 'EIF' | 'EI' | 'EO' | 'EQ'
@@ -169,38 +168,38 @@ export type CountedFunction = {
   type: FunctionType
   /** DET — data element types */
   det: number
-  /** RET para funções de dados, FTR para transacionais */
+  /** RET for data functions, FTR for transactional ones */
   refs: number
   complexity: Complexity
   points: number
   /**
-   * Hash do escopo de implementação — counting-decisions §5.
+   * Hash of the implementation scope.
    *
-   * É o que o `fp:diff` compara para decidir se a função foi ALTERADA. Combina
-   * os hashes de AST normalizado dos corpos alcançados, então formatação e
-   * comentário não entram: rodar o prettier não pode virar fatura.
+   * This is what `fp:diff` compares to decide whether a function CHANGED. It
+   * combines normalised-AST hashes of the bodies reached, so formatting and
+   * comments are excluded: running a formatter must not produce an invoice.
    *
-   * Ausente em função de dados, cujo escopo é a própria declaração.
+   * Absent for data functions, whose scope is the declaration itself.
    */
   scopeHash?: string
-  /** por que foi classificada assim — alimenta `fp:explain` */
+  /** why it was classified this way — feeds `fp:explain` */
   rationale: Rationale
 }
 
 export type Rationale = {
-  /** regra aplicada, ex.: 'afp:transaction-writes -> EI' */
+  /** rule applied, e.g. 'afp:6.5.3 modifies a data store -> EI' */
   rule: string
-  /** de onde vieram os DETs, um a um */
+  /** where each DET came from */
   detSources: string[]
-  /** de onde vieram os FTR/RET */
+  /** where the FTR/RET came from */
   refSources: string[]
-  /** ajustes manuais aplicados via config, com a justificativa exigida */
+  /** manual overrides applied via config, with the required justification */
   overrides?: { reason: string; by: string }[]
   trace?: TraceStep[]
 }
 
 export type CountResult = {
-  /** identifica o conjunto de regras — contagens só são comparáveis se bater */
+  /** identifies the rule set — counts are comparable only if these match */
   ruleset: string
   rulesetVersion: string
   functions: CountedFunction[]
@@ -209,7 +208,7 @@ export type CountResult = {
     byType: Record<FunctionType, { count: number; points: number }>
     byModule: Record<string, number>
   }
-  /** sinaliza quando a contagem não merece confiança */
+  /** flags when the count does not deserve confidence */
   confidence: {
     unresolvedCalls: number
     entryPointsWithoutHandler: number
@@ -217,7 +216,7 @@ export type CountResult = {
   }
 }
 
-/** Tipo de manutenção, para contagem de projetos de melhoria. */
+/** Maintenance type, for enhancement-project counting. */
 export type ChangeType = 'added' | 'changed' | 'removed' | 'unchanged'
 
 export type DiffEntry = {

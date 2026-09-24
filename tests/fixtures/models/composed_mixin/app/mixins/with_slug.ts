@@ -1,7 +1,7 @@
 import { BaseModel, column } from '@adonisjs/lucid/orm'
 import type { NormalizeConstructor } from '@adonisjs/core/types/helpers'
 
-/** Fábrica de mixin: local à aplicação, mas a coluna só existe no retorno. */
+/** Mixin factory: local to the app, but the column only exists on the return. */
 export function withSlug() {
   return <T extends NormalizeConstructor<typeof BaseModel>>(superclass: T) => {
     class WithSlug extends superclass {

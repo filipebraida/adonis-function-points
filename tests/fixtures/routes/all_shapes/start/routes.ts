@@ -10,7 +10,7 @@ const { catalog, admin } = controllers
 // 1. uma linha
 router.get('/health', [catalog.Books, 'index']).as('health')
 
-// 2. multi-linha encadeada: a quebra fica DENTRO do texto da expressão
+// 2. chained multi-line: the break sits INSIDE the expression text
 router
   .post('/books/:id/export', [ExportController])
   .where('id', router.matchers.number())
@@ -19,7 +19,7 @@ router
 // 3. resource com .only()
 router.resource('/books', catalog.Books).only(['index', 'show', 'store']).as('books')
 
-// 4. grupo com prefixo e nome — o prefixo tem que chegar ao padrão final
+// 4. group with prefix and name — the prefix must reach the final pattern
 router
   .group(() => {
     router.get('/books', [admin.Books, 'index']).as('books.index')
@@ -37,10 +37,10 @@ router
 // 6. resource apiOnly (sem create/edit)
 router.resource('/api/books', admin.Books).apiOnly().as('api.books')
 
-// 7. rota estática: nenhum handler para analisar
+// 7. static route: no handler to analyse
 router.on('/about').renderInertia('pages/about').as('pages.about')
 
-// 8. closure inline: é handler de verdade, com corpo a analisar
+// 8. inline closure: a real handler, with a body to analyse
 router
   .get('/ping', ({ response }) => {
     return response.send('pong')

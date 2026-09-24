@@ -1,7 +1,7 @@
 import Invite from '#collect/models/invite'
 
 export default class InviteService {
-  /** propriedade que guarda função: NÃO é método da classe */
+  /** a property holding a function: NOT a method of the class */
   private audit = (message: string) => message.trim()
 
   async expire(uuid: string) {
@@ -14,7 +14,7 @@ export default class InviteService {
     return Invite.findByOrFail('uuid', uuid)
   }
 
-  /** a escrita está aqui, alcançável só por `this.` */
+  /** the write is here, reachable only through `this.` */
   private async persistExpiration(invite: Invite) {
     invite.expiresAt = null
     await invite.save()

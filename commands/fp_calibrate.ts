@@ -6,37 +6,37 @@ import { analyze } from '../src/pipeline.js'
 import { calibrate, parseSamples } from '../src/albrecht/calibration.js'
 
 /**
- * Mede o viés do contador contra contagem manual.
+ * Measures the counter's bias against a manual count.
  *
- * NÃO aplica o fator: calibrar é decisão de quem assina o contrato, e um fator
- * aplicado em silêncio faria a contagem deixar de ser reproduzível a partir do
- * código.
+ * It does NOT apply the factor: calibrating is a decision for whoever signs the
+ * contract, and a factor applied silently would stop the count from being
+ * reproducible from the code.
  */
 export default class FpCalibrate extends BaseCommand {
   static commandName = 'fp:calibrate'
-  static description = 'Compara a contagem automática com contagens manuais'
+  static description = 'Compare the automatic count against manual counts'
   static options: CommandOptions = { startApp: false }
 
-  @args.string({ description: 'CSV com `funcao,pf` apurados manualmente' })
-  declare amostras: string
+  @args.string({ description: 'CSV of `function,fp` counted by hand' })
+  declare samples: string
 
   async run() {
-    const samples = parseSamples(await readFile(this.amostras, 'utf8'))
+    const samples = parseSamples(await readFile(this.samples, 'utf8'))
     const { count } = await analyze(this.app.makePath())
     const calibration = calibrate(count, samples)
 
     const { overall } = calibration
     this.logger.log(
-      `amostras: ${overall.samples} · manual ${overall.manualPoints} PF · ` +
-        `automático ${overall.automaticPoints} PF · desvio ${(overall.deviation * 100).toFixed(1)}%`
+      `samples: ${overall.samples} · manual ${overall.manualPoints} FP · ` +
+        `automatic ${overall.automaticPoints} FP · deviation ${(overall.deviation * 100).toFixed(1)}%`
     )
-    this.logger.log(`batem exatamente: ${overall.exactMatches}/${overall.samples}`)
+    this.logger.log(`exact matches: ${overall.exactMatches}/${overall.samples}`)
     this.logger.log('')
 
     for (const item of calibration.byType) {
       this.logger.log(
         `${item.type.padEnd(4)} n=${String(item.samples).padStart(3)} ` +
-          `fator ${item.factor.toFixed(3)} · desvio médio ${item.meanAbsoluteDeviation} PF`
+          `factor ${item.factor.toFixed(3)} · mean deviation ${item.meanAbsoluteDeviation} FP`
       )
     }
 

@@ -2,33 +2,33 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 
 /**
- * Descobre a forma da aplicação analisada, em vez de assumir convenção.
+ * Discovers the shape of the analysed application instead of assuming a
+ * convention.
  *
- * O levantamento em docs/research/adonisjs-variation.md mostrou que layout de
- * pastas, aliases de subpath e estilo de model variam entre aplicações, mas
- * que os artefatos GERADOS existem em todas. É neles que a descoberta se
- * apoia — por isso este pacote quase não precisa de configuração.
+ * Folder layout, subpath aliases and model style all vary between AdonisJS
+ * applications. What does not vary is that the facts are discoverable — which
+ * is why this package needs almost no configuration.
  */
 export type AppLayout = 'flat' | 'module-per-domain' | 'unknown'
 
 export type AppContext = {
-  /** raiz da aplicação (onde está o adonisrc.ts) */
+  /** application root (where adonisrc.ts lives) */
   root: string
 
   /**
-   * Mapa `imports` do package.json, já normalizado.
+   * The package.json `imports` map, normalised.
    *
-   * Tem que ser LIDO, nunca deduzido: existem duas convenções incompatíveis em
-   * uso — por tipo (`#models/*`) e por módulo (`#catalog/*`).
+   * It must be READ, never inferred: two incompatible conventions are in use —
+   * by artefact type (`#models/*`) and by domain module (`#catalog/*`).
    */
   subpathImports: Map<string, string>
 
   /**
-   * Artefatos gerados encontrados.
+   * Generated artefacts found.
    *
-   * Ausência é um fato reportável, não algo a contornar em silêncio: sem
-   * registry a contagem cai para o parser de rotas, que erra mais, e o
-   * relatório tem que dizer isso.
+   * Absence is a reportable fact, not something to work around silently:
+   * without the registry the count falls back to the route parser, which is
+   * less precise, and the report must say so.
    */
   generated: {
     routeRegistry?: string
@@ -36,55 +36,55 @@ export type AppContext = {
     dataSchema?: string
   }
 
-  /** detectado; usado para AGRUPAR relatório, nunca para encontrar arquivos */
+  /** detected; used to GROUP the report, never to find files */
   layout: AppLayout
 
   /**
-   * Arquivos que registram rotas, a partir dos `preloads` do adonisrc,
-   * seguindo os `import` estáticos que eles alcançam.
+   * Files that register routes, starting from the adonisrc `preloads` and
+   * following the static imports they reach.
    *
-   * A lista de preloads é a fonte autoritativa — não convenção de caminho.
-   * Quatro topologias foram encontradas: arquivo único, um por módulo, um
-   * diretório, e um hub que só reexporta.
+   * The preload list is the authoritative source, not a path convention. Four
+   * topologies occur in practice: a single file, one per module, a directory,
+   * and a hub that only re-exports.
    */
   routeFiles: string[]
 
   /**
-   * Diretórios a varrer, derivados dos alvos dos aliases.
+   * Directories to scan, derived from the alias targets.
    *
-   * Não é `app/`: numa app levantada, 100% da escrita mora em `src/`.
-   * Raízes aninhadas em outras são colapsadas.
+   * Not simply `app/`: applications exist where all writes live under `src/`.
+   * Roots nested inside other roots are collapsed.
    */
   scanRoots: string[]
 
-  /** versões e ORM — escolhem a estratégia e vão para o relatório */
+  /** versions and ORM — they pick the strategy and go into the report */
   framework: FrameworkInfo
 
-  /** `#catalog/models/book` -> caminho absoluto, ou null */
+  /** `#catalog/models/book` -> absolute path, or null */
   resolveSpecifier(specifier: string): string | null
 
-  /** módulo ao qual um arquivo pertence, para agrupar o relatório */
+  /** module a file belongs to, for grouping the report */
   moduleOf(absPath: string): string
 }
 
 export type FrameworkInfo = {
-  /** major do @adonisjs/core, quando declarado */
+  /** major of @adonisjs/core, when declared */
   core?: number
-  /** major do @adonisjs/lucid, quando declarado */
+  /** major of @adonisjs/lucid, when declared */
   lucid?: number
   orm: 'lucid' | 'kysely' | 'unknown'
-  /** Tuyau dá DETs de entrada tipados; opcional */
+  /** Tuyau provides typed input DETs; optional */
   tuyau: boolean
   /**
-   * Dentro do escopo do v1 (core 7 + Lucid 22).
+   * Within the v1 scope (core 7 + Lucid 22).
    *
-   * Fora dele o pacote reporta em vez de contar — contar errado em silêncio é
-   * a pior falha possível num número que vira fatura.
+   * Outside it the package reports instead of counting — counting wrong in
+   * silence is the worst possible failure for a number that becomes an invoice.
    */
   supported: boolean
 }
 
-/** pastas que nomeiam um TIPO de artefato, em qualquer dos dois layouts */
+/** folders naming an artefact TYPE, in either layout */
 const ARTIFACT_KINDS = new Set([
   'models',
   'controllers',
@@ -173,14 +173,15 @@ function readFramework(pkg: Record<string, unknown> | null): FrameworkInfo {
 }
 
 // ---------------------------------------------------------------------------
-// raízes de varredura
+// scan roots
 // ---------------------------------------------------------------------------
 /**
- * Deriva os diretórios a varrer dos ALVOS dos aliases, e colapsa os aninhados.
+ * Derives the directories to scan from the alias TARGETS, collapsing nested
+ * ones.
  *
- * Manter `app/admin` ao lado de `app` faria cada arquivo ser varrido duas vezes
- * e, pior, mudaria o módulo calculado: `app/admin/catalog/...` viraria
- * "catalog" em vez de "admin/catalog".
+ * Keeping `app/admin` alongside `app` would scan each file twice and, worse,
+ * change the computed module: `app/admin/catalog/...` would become "catalog"
+ * instead of "admin/catalog".
  */
 async function collectScanRoots(root: string, imports: Map<string, string>): Promise<string[]> {
   const candidates = new Set<string>()
@@ -198,7 +199,7 @@ async function collectScanRoots(root: string, imports: Map<string, string>): Pro
     if (await isDirectory(full)) existing.push(dir)
   }
 
-  // remove o que estiver dentro de outra raiz
+  // drop anything nested inside another root
   const collapsed = existing.filter(
     (dir) => !existing.some((other) => other !== dir && isInside(dir, other))
   )
@@ -209,14 +210,11 @@ async function collectScanRoots(root: string, imports: Map<string, string>): Pro
 const isInside = (child: string, parent: string) => child.startsWith(parent + '/')
 
 /**
- * Raízes que um alias alcança mas que NÃO são código de aplicação.
+ * Roots an alias reaches that are NOT application code.
  *
- * Não é preciosismo: numa app real há `.insertInto()` em `tests/factories/`.
- * Varrer isso contaria escrita de teste como função da aplicação — e o número
- * vai para uma fatura.
- *
- * É decisão de fronteira, então o default é conservador e a lista fica
- * sobrescrevível pela configuração (`boundary`), como manda a arquitetura.
+ * Not pedantry: test factories routinely contain real persistence calls.
+ * Scanning them would count test writes as application functions — and the
+ * number goes into an invoice.
  */
 const NON_APPLICATION_ROOTS = [
   /^tests?(\/|$)/,
@@ -231,15 +229,15 @@ const NON_APPLICATION_ROOTS = [
 ]
 
 // ---------------------------------------------------------------------------
-// arquivos de rota
+// route files
 // ---------------------------------------------------------------------------
 const ROUTE_CALL = /\brouter\s*\.\s*(get|post|put|patch|delete|any|resource|on|group)\s*\(/
 
 /**
- * Parte dos `preloads` do adonisrc e segue os `import` estáticos.
+ * Starts from the adonisrc `preloads` and follows static imports.
  *
- * Um preload pode ser um hub que não define rota nenhuma, só reexporta — foi o
- * que a app do core team fez. Seguir só o preload devolveria um arquivo vazio.
+ * A preload may be a hub that defines no route at all and only re-exports.
+ * Stopping at the preload would return an empty file.
  */
 async function collectRouteFiles(
   root: string,
@@ -281,13 +279,13 @@ function preloadSpecifiersOf(adonisrc: string): string[] {
   return [...block[1].matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g)].map((m) => m[1])
 }
 
-/** imports estáticos, incluindo `import '#x'` sem binding */
+/** static imports, including `import '#x'` with no binding */
 function staticImportsOf(source: string): string[] {
   return [...source.matchAll(/\bimport\s+(?:[^'"]*?\bfrom\s*)?['"]([^'"]+)['"]/g)].map((m) => m[1])
 }
 
 // ---------------------------------------------------------------------------
-// aliases de subpath
+// subpath aliases
 // ---------------------------------------------------------------------------
 function readSubpathImports(pkg: Record<string, unknown> | null): Map<string, string> {
   const map = new Map<string, string>()
@@ -300,7 +298,7 @@ function readSubpathImports(pkg: Record<string, unknown> | null): Map<string, st
   return map
 }
 
-/** entradas condicionais: { "import": "./x.js", "default": "./x.js" } */
+/** conditional entries: { "import": "./x.js", "default": "./x.js" } */
 function pickDefault(value: unknown): string | null {
   if (!value || typeof value !== 'object') return null
   const obj = value as Record<string, unknown>
@@ -311,11 +309,11 @@ function pickDefault(value: unknown): string | null {
 }
 
 /**
- * Resolve um specifier contra o mapa `imports`.
+ * Resolves a specifier against the `imports` map.
  *
- * O mapa aponta para `.js` (é o que o Node executa), mas nós analisamos código
- * fonte — daí a tradução para `.ts`. Entradas mais específicas ganham das mais
- * genéricas: `#core/*` tem que vencer `#app/*` quando as duas casam.
+ * The map points at `.js` (what Node executes) while we analyse source, hence
+ * the translation to `.ts`. More specific entries win over generic ones:
+ * `#app/legacy/*` must beat `#app/*` when both match.
  */
 function resolveWithImports(
   root: string,
@@ -357,11 +355,11 @@ function toSource(root: string, target: string): string {
 // layout
 // ---------------------------------------------------------------------------
 /**
- * Decide pelo peso das evidências, não pela primeira pasta que aparece.
+ * Decides by weight of evidence, not by the first folder encountered.
  *
- * `app/models` direto é evidência de layout plano; `app/catalog/models` é
- * evidência de módulo por domínio. Uma app pode ter as duas coisas (um
- * `app/middleware` solto num projeto modular), então conta-se os dois lados.
+ * `app/models` directly is evidence of a flat layout; `app/catalog/models` is
+ * evidence of module-per-domain. An application can show both (a loose
+ * `app/middleware` in a modular project), so both sides are counted.
  */
 async function detectLayout(root: string): Promise<AppLayout> {
   const appDir = path.join(root, 'app')
@@ -385,23 +383,23 @@ async function detectLayout(root: string): Promise<AppLayout> {
   return 'unknown'
 }
 
-/** contêineres de topo que não nomeiam domínio — só abrigam código */
+/** top-level containers that name no domain — they only hold code */
 const CODE_CONTAINERS = new Set(['app', 'src'])
 
 /**
- * Módulo = segmentos entre o contêiner de topo e o primeiro segmento que nomeia
- * um TIPO de artefato.
+ * Module = the segments between the top-level container and the first segment
+ * naming an artefact TYPE.
  *
- *   app/models/book.ts                 -> 'app'           (nada antes do tipo)
+ *   app/models/book.ts                 -> 'app'            (nothing before the type)
  *   app/catalog/models/book.ts         -> 'catalog'
- *   app/admin/catalog/models/book.ts   -> 'admin/catalog'  (aninhado)
- *   src/catalog/actions/create_book.ts -> 'catalog'         (fora de app/)
+ *   app/admin/catalog/models/book.ts   -> 'admin/catalog'  (nested)
+ *   src/catalog/actions/create_book.ts -> 'catalog'        (outside app/)
  *
- * Deliberadamente NÃO usa `scanRoots`: em layout plano não existe alias
- * `#app/*`, e as raízes acabam sendo as próprias pastas de tipo
- * (`app/models`), o que faria o módulo virar "models".
+ * Deliberately does NOT use `scanRoots`: in a flat layout there is no `#app/*`
+ * alias, so the roots end up being the artefact-type folders themselves
+ * (`app/models`), which would make the module "models".
  *
- * Serve só para agrupar relatório. Nunca para encontrar arquivo.
+ * Used only to group the report. Never to find a file.
  */
 function moduleOf(root: string, absPath: string): string {
   const segments = path.relative(root, absPath).split(path.sep).slice(0, -1)
@@ -414,15 +412,15 @@ function moduleOf(root: string, absPath: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// schema de dados gerado
+// generated data schema
 // ---------------------------------------------------------------------------
 /**
- * Acha `database/schema.ts` pelo que ele É, não por onde está.
+ * Finds `database/schema.ts` by what it IS, not by where it sits.
  *
- * Nas apps levantadas ele aparece em `database/schema.ts` e em
- * `app/core/database/schema.ts`. Tentamos o alias `#database/schema` primeiro,
- * depois os caminhos conhecidos, e por fim uma varredura curta procurando o
- * cabeçalho de geração — porque o caminho é o detalhe menos confiável.
+ * It appears as `database/schema.ts` and as `app/core/database/schema.ts`
+ * depending on the project. The `#database/schema` alias is tried first, then
+ * the known paths, then a shallow scan for the generation header — because the
+ * path is the least reliable signal.
  */
 async function findDataSchema(
   root: string,
@@ -471,7 +469,7 @@ async function scanForSchema(dir: string, depth: number): Promise<string | undef
 }
 
 // ---------------------------------------------------------------------------
-// utilidades
+// utilities
 // ---------------------------------------------------------------------------
 async function readJson(file: string): Promise<Record<string, unknown> | null> {
   try {
@@ -518,7 +516,7 @@ async function firstExisting(root: string, candidates: string[]): Promise<string
       await fs.access(full)
       return full
     } catch {
-      /* segue */
+      /* keep looking */
     }
   }
   return undefined

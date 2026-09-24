@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon'
 
-// import de TIPO: o model nunca é usado como valor aqui
+// TYPE import: the model is never used as a value here
 import type Invite from '#collect/models/invite'
 
 export interface ExpireInviteInput {

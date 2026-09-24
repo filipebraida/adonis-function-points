@@ -12,7 +12,7 @@ import type { CallResolver, ResolverContext } from './types.js'
  *
  * Careful: `Order.findByOrFail(...)` has exactly the same syntactic shape. The
  * difference is semantic — a model is a data store, not a body to walk into,
- * and the `PersistenceDetector` handles it. Hence this resolver depends on
+ * and the persistence detector handles it. Hence this resolver depends on
  * `ctx.dataStoresBySymbol` already being populated.
  */
 export const staticServiceResolver: CallResolver = {

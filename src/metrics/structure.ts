@@ -2,53 +2,54 @@ import type { Inventory } from '../types.js'
 import type { CountResult } from '../types.js'
 
 /**
- * Métricas estruturais e de densidade, derivadas do MESMO inventário.
+ * Structural and density metrics, derived from the SAME inventory.
  *
- * Nada aqui coleta fato novo: se o grafo já sabe quais transações alcançam quais
- * repositórios e por quais módulos passam, acoplamento e densidade são
- * aritmética sobre isso. É o que torna estas métricas quase gratuitas — e é a
- * razão da camada de inventário não conhecer APF.
+ * Nothing here collects a new fact: once the graph knows which transactions
+ * reach which stores and which modules they pass through, coupling and density
+ * are arithmetic over that. It is also why the inventory layer knows nothing of
+ * FPA.
  *
- * Por que importam junto com PF: se PF paga, o time otimiza PF. Mais models,
- * mais endpoints, menos reuso. Densidade e acoplamento no mesmo painel são o
- * contrapeso — sem eles a métrica vira alvo, não medida.
+ * Why they belong beside function points: if function points pay, the team
+ * optimises function points — more models, more endpoints, less reuse. Density
+ * and coupling on the same dashboard are the counterweight; without them the
+ * measure becomes a target.
  */
 
 export type ModuleMetrics = {
   module: string
   functionPoints: number
-  /** transações que este módulo expõe */
+  /** transactions this module exposes */
   transactions: number
-  /** repositórios de dados que este módulo declara */
+  /** data stores this module declares */
   dataStores: number
-  /** módulos de que este depende: transações daqui alcançam dados de lá */
+  /** modules this one depends on: its transactions reach their data */
   dependsOn: string[]
-  /** módulos que dependem deste */
+  /** modules that depend on this one */
   dependedOnBy: string[]
   /**
-   * Instabilidade de Martin: `Ce / (Ca + Ce)`.
+   * Martin's instability: `Ce / (Ca + Ce)`.
    *
-   * 0 = estável (todos dependem dele, ele de ninguém); 1 = instável. Módulo
-   * estável que muda muito é onde a mudança dói.
+   * 0 means stable (everyone depends on it, it depends on nobody); 1 means
+   * unstable. A stable module that changes often is where change hurts.
    */
   instability: number
 }
 
 export type StructureMetrics = {
   modules: ModuleMetrics[]
-  /** pares de módulos com dependência mútua — candidatos a ciclo */
+  /** module pairs with mutual dependency — cycle candidates */
   mutualDependencies: [string, string][]
-  /** PF por repositório de dados: densidade funcional */
+  /** function points per data store: functional density */
   pointsPerDataStore: number
-  /** transações por repositório: quanto cada entidade é exercitada */
+  /** transactions per store: how much each entity is exercised */
   transactionsPerDataStore: number
 }
 
 export function measureStructure(inventory: Inventory, count: CountResult): StructureMetrics {
-  /** repositório -> módulo que o declara */
+  /** store -> module that declares it */
   const storeModule = new Map(inventory.dataStores.map((store) => [store.name, store.module]))
 
-  /** ponto de entrada -> módulo */
+  /** entry point -> module */
   const entryModule = new Map(inventory.entryPoints.map((entry) => [entry.id, entry.module]))
 
   const modules = new Set<string>([...storeModule.values(), ...entryModule.values()])
@@ -57,9 +58,9 @@ export function measureStructure(inventory: Inventory, count: CountResult): Stru
   for (const module of modules) dependsOn.set(module, new Set())
 
   /**
-   * A dependência que interessa é de USO, não de import: o módulo A depende de B
-   * quando uma transação de A alcança um repositório declarado em B. Import de
-   * tipo não cria acoplamento funcional.
+   * The dependency that matters is USE, not import: module A depends on B when
+   * a transaction of A reaches a store declared in B. A type-only import
+   * creates no functional coupling.
    */
   for (const behavior of inventory.behaviors) {
     const from = entryModule.get(behavior.entryPointId)
@@ -123,17 +124,18 @@ export function measureStructure(inventory: Inventory, count: CountResult): Stru
 }
 
 /**
- * Conformidade com a própria convenção da aplicação.
+ * Conformance to the application's own conventions.
  *
- * Não mede tamanho nem qualidade: mede se o time segue o que combinou. Sai de
- * graça do inventário, e numa fábrica é o que vira auditoria de padrão.
+ * Measures neither size nor quality: it measures whether the team follows what
+ * it agreed on. It comes free from the inventory, and in a software factory it
+ * is what turns into a standards audit.
  */
 export type Conformance = {
-  /** transações de escrita cujos campos de entrada vêm de um validator */
+  /** write transactions whose input fields come from a validator */
   writesWithValidator: { ok: number; total: number; ratio: number }
-  /** pontos de entrada cujo handler foi resolvido */
+  /** entry points whose handler was resolved */
   entryPointsWithHandler: { ok: number; total: number; ratio: number }
-  /** repositórios de dados que alguma transação alcança */
+  /** data stores reached by at least one transaction */
   dataStoresReached: { ok: number; total: number; ratio: number }
 }
 

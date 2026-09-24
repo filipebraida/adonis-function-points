@@ -6,7 +6,7 @@ import { renderCount, renderDiff, renderExplain } from '../../src/reporters/tabl
 import { appFixturePath } from '../helpers.js'
 
 test.group('pipeline', () => {
-  test('produz inventário e contagem numa passada', async ({ assert }) => {
+  test('produces inventory and count in one pass', async ({ assert }) => {
     const { inventory, count } = await analyze(appFixturePath('minimal_flat'))
 
     assert.equal(inventory.version, 1)
@@ -15,7 +15,7 @@ test.group('pipeline', () => {
     assert.isAbove(count.totals.unadjusted, 0)
   })
 
-  test('o inventário registra em que framework a contagem foi feita', async ({ assert }) => {
+  test('the inventory records which framework the count was made on', async ({ assert }) => {
     const { inventory } = await analyze(appFixturePath('minimal_flat'))
 
     assert.equal(inventory.framework.core, 7)
@@ -23,127 +23,132 @@ test.group('pipeline', () => {
   })
 
   /**
-   * Um número com rastreamento ruim não deveria virar fatura. O pacote prefere
-   * falhar a emitir algo que parece certo.
+   * A number resting on poor tracing should not become an invoice. The package
+   * prefers to fail over emitting something that merely looks right.
    */
-  test('falha quando a cobertura fica abaixo do mínimo', async ({ assert }) => {
+  test('fails when coverage falls below the minimum', async ({ assert }) => {
     await assert.rejects(
       () => analyze(appFixturePath('minimal_flat'), { minCoverage: 1.01 }),
       CoverageTooLowError
     )
   })
 
-  test('a mensagem diz o que fazer, não só que falhou', async ({ assert }) => {
+  test('the message says what to do, not just that it failed', async ({ assert }) => {
     try {
       await analyze(appFixturePath('minimal_flat'), { minCoverage: 1.01 })
-      assert.fail('deveria ter falhado')
+      assert.fail('should have failed')
     } catch (error) {
       assert.match((error as Error).message, /fp:inventory/)
     }
   })
 
-  test('sem mínimo configurado, não bloqueia', async ({ assert }) => {
+  test('with no minimum configured, it does not block', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('edges_boundary'))
     assert.isAbove(count.totals.unadjusted, 0)
   })
 
   /**
-   * As três apps da invariante passam pelo pipeline inteiro com o mesmo total —
-   * a invariante de ouro valendo de ponta a ponta, não só no motor.
+   * The three invariant apps go through the whole pipeline with the same total
+   * — the golden invariant holding end to end, not only inside the engine.
    */
-  test('as três apps da invariante dão o mesmo total pelo pipeline', async ({ assert }) => {
-    const totais = await Promise.all(
+  test('the three invariant apps give the same total through the pipeline', async ({ assert }) => {
+    const totals = await Promise.all(
       ['minimal_flat', 'minimal_modular', 'minimal_nogen'].map(async (name) => {
         const { count } = await analyze(appFixturePath(name))
         return count.totals.unadjusted
       })
     )
 
-    assert.deepEqual(totais, [totais[0], totais[0], totais[0]])
+    assert.deepEqual(totals, [totals[0], totals[0], totals[0]])
   })
 })
 
-test.group('relatório: contagem', () => {
-  test('mostra total, ruleset e as funções', async ({ assert }) => {
+test.group('report: count', () => {
+  test('shows the total, the ruleset and the functions', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('minimal_flat'))
-    const texto = renderCount(count)
+    const text = renderCount(count)
 
-    assert.match(texto, /Contagem não ajustada: \d+ PF/)
-    assert.include(texto, 'afp@')
-    assert.include(texto, 'POST /books')
+    assert.match(text, /Unadjusted count: \d+ FP/)
+    assert.include(text, 'afp@')
+    assert.include(text, 'POST /books')
   })
 
   /**
-   * O AFP §6.5.3 exige que o que faltou apareça no relatório. Um total sem a
-   * confiança ao lado convida a tratá-lo como exato.
+   * AFP §6.5.3 requires that what was missing appears in the report. A total
+   * with no confidence beside it invites being treated as exact.
    */
-  test('a confiança aparece junto do número quando há o que reportar', async ({ assert }) => {
+  test('confidence appears beside the number when there is something to report', async ({
+    assert,
+  }) => {
     const { count } = await analyze(appFixturePath('edges_boundary'))
-    const texto = renderCount(count)
+    const text = renderCount(count)
 
-    assert.include(texto, 'Confiança:')
-    assert.include(texto, 'UserSession', 'a exclusão técnica precisa estar visível')
+    assert.include(text, 'Confidence:')
+    assert.include(text, 'UserSession', 'the technical exclusion must be visible')
   })
 })
 
-test.group('relatório: explain', () => {
+test.group('report: explain', () => {
   /**
-   * `fp:explain` é o que sustenta contestação. Tem que mostrar a regra da
-   * norma, a origem de cada DET e de cada FTR, e o caminho percorrido.
+   * `fp:explain` is what supports a dispute. It has to show the rule from the
+   * standard, the origin of each DET and each FTR, and the path walked.
    */
-  test('mostra regra, origem dos DETs e origem dos FTRs', async ({ assert }) => {
+  test('shows the rule, the DET origins and the FTR origins', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('minimal_flat'))
-    const texto = renderExplain(count.functions.find((f) => f.name === 'POST /books')!)
+    const text = renderExplain(count.functions.find((f) => f.name === 'POST /books')!)
 
-    assert.match(texto, /Regra aplicada: afp:/)
-    assert.include(texto, 'DET =')
-    assert.include(texto, 'FTR =')
-    assert.include(texto, 'validator:')
+    assert.match(text, /Rule applied: afp:/)
+    assert.include(text, 'DET =')
+    assert.include(text, 'FTR =')
+    assert.include(text, 'validator:')
   })
 
-  test('mostra o caminho percorrido, com quem resolveu cada passo', async ({ assert }) => {
+  test('shows the path walked, with who resolved each step', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('minimal_flat'))
-    const texto = renderExplain(count.functions.find((f) => f.name === 'POST /books')!)
+    const text = renderExplain(count.functions.find((f) => f.name === 'POST /books')!)
 
-    assert.include(texto, 'Caminho percorrido:')
-    assert.include(texto, 'action-object', 'o rastro tem que dizer qual estratégia resolveu')
-    assert.include(texto, '[escreve]', 'e onde a escrita acontece')
+    assert.include(text, 'Path walked:')
+    assert.include(text, 'action-object', 'the trace must say which strategy resolved it')
+    assert.include(text, '[writes]', 'and where the write happens')
   })
 
-  test('função de dados mostra RET, não FTR', async ({ assert }) => {
+  test('a data function shows RET, not FTR', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('minimal_flat'))
-    const texto = renderExplain(count.functions.find((f) => f.name === 'Book')!)
+    const text = renderExplain(count.functions.find((f) => f.name === 'Book')!)
 
-    assert.include(texto, 'RET =')
-    assert.notInclude(texto, 'FTR =')
+    assert.include(text, 'RET =')
+    assert.notInclude(text, 'FTR =')
   })
 })
 
-test.group('relatório: diff', () => {
-  test('mostra faturável e detalha só o que mudou', async ({ assert }) => {
+test.group('report: diff', () => {
+  const BILLABLE = 'Billable FP'
+
+  test('shows the billable total and details only what changed', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('minimal_flat'))
-    const reduzida = { ...count, functions: count.functions.slice(1) }
+    const reduced = { ...count, functions: count.functions.slice(1) }
 
-    const texto = renderDiff(diffCounts(count, reduzida))
+    const text = renderDiff(diffCounts(count, reduced))
 
-    assert.match(texto, /PF faturável: [\d.]+/)
-    assert.include(texto, 'removed')
+    assert.match(text, /Billable FP: [\d.]+/)
+    assert.include(text, 'removed')
 
-    // o RESUMO mostra quantas ficaram inalteradas — isso é informação útil;
-    // o DETALHE lista só o que mudou, senão uma release pequena vira parede
-    const detalhe = texto.slice(texto.indexOf('PF faturável'))
-    assert.notInclude(detalhe, 'unchanged')
-    assert.include(texto.slice(0, texto.indexOf('PF faturável')), 'unchanged')
+    // the SUMMARY shows how many stayed unchanged — that is useful information;
+    // the DETAIL lists only what changed, otherwise a small release is a wall
+    const cut = text.indexOf(BILLABLE)
+    assert.isAbove(cut, -1, 'the billable line anchors this assertion')
+    assert.notInclude(text.slice(cut), 'unchanged')
+    assert.include(text.slice(0, cut), 'unchanged')
   })
 
-  test('o aviso sobre o fator de alteração aparece no texto', async ({ assert }) => {
+  test('the warning about the modification factor appears in the text', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('minimal_flat'))
-    const alterada = {
+    const modified = {
       ...count,
-      functions: count.functions.map((fn) => ({ ...fn, scopeHash: 'outro' })),
+      functions: count.functions.map((fn) => ({ ...fn, scopeHash: 'other' })),
     }
 
-    const texto = renderDiff(diffCounts(count, alterada))
-    assert.match(texto, /Atenção:.*Effort Complexity/s)
+    const text = renderDiff(diffCounts(count, modified))
+    assert.match(text, /Warning:.*Effort Complexity/s)
   })
 })

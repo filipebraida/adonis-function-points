@@ -3,8 +3,8 @@ import { test } from '@japa/runner'
 import { moduleFunctionResolver } from '../../../src/inventory/resolvers/module_function.js'
 import { loadFixture } from '../../helpers.js'
 
-test.group('resolver: função de módulo', () => {
-  test('segue `funcaoImportada()`', async ({ assert }) => {
+test.group('resolver: module function', () => {
+  test('follows `importedFunction()`', async ({ assert }) => {
     const fixture = await loadFixture('module_function')
     const controller = fixture.controller()
     const ctx = fixture.contextFor(controller)

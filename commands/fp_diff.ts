@@ -8,30 +8,30 @@ import { renderDiff } from '../src/reporters/table.js'
 import type { CountResult } from '../src/types.js'
 
 /**
- * Inclusão, alteração e exclusão entre duas contagens — o que vira fatura.
+ * Additions, changes and deletions between two counts — what gets invoiced.
  *
- * Opera sobre uma contagem SALVA (`fp:count --out`) comparada com o estado
- * atual, nunca sobre dois checkouts: bootar a versão antiga, com dependências
- * possivelmente diferentes, é problema que não vale resolver.
+ * It works on a SAVED count (`fp:count --out`) compared against the current
+ * state, never on two checkouts: booting the older version, with possibly
+ * different dependencies, is a problem not worth solving.
  */
 export default class FpDiff extends BaseCommand {
   static commandName = 'fp:diff'
-  static description = 'Compara uma contagem salva com o estado atual da aplicação'
+  static description = 'Compare a saved count against the current state of the application'
   static options: CommandOptions = { startApp: false }
 
-  @args.string({ description: 'Caminho do JSON gerado por `fp:count --out`' })
-  declare anterior: string
+  @args.string({ description: 'Path to the JSON produced by `fp:count --out`' })
+  declare previous: string
 
-  @flags.string({ description: 'Preset de fatores por tipo de mudança' })
+  @flags.string({ description: 'Preset of factors per change type' })
   declare preset?: string
 
   async run() {
-    const previous = JSON.parse(await readFile(this.anterior, 'utf8')) as CountResult
+    const previous = JSON.parse(await readFile(this.previous, 'utf8')) as CountResult
     const { count } = await analyze(this.app.makePath())
 
     try {
       this.logger.log(
-        renderDiff(diffCounts(previous, count, { labels: { from: this.anterior, to: 'atual' } }))
+        renderDiff(diffCounts(previous, count, { labels: { from: this.previous, to: 'current' } }))
       )
     } catch (error) {
       if (error instanceof IncomparableRulesetsError) {

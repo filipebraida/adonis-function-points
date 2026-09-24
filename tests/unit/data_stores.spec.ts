@@ -14,57 +14,58 @@ const namesOf = (store: CollectedDataStore) => store.attributes.map((a) => a.nam
 
 const storeNamed = (result: DataStoreCollection, name: string): CollectedDataStore => {
   const found = result.stores.find((s) => s.name === name)
-  if (!found) throw new Error(`data store "${name}" não encontrado`)
+  if (!found) throw new Error(`data store "${name}" not found`)
   return found
 }
 
 /**
- * A falha que este grupo existe para tornar impossível: numa app levantada há
- * 35 arquivos de model e ZERO `extends BaseModel` do Lucid — os models estendem
- * classes de schema geradas. Detectar model pelo arquivo, sem seguir a cadeia
- * de herança, contaria zero para a aplicação inteira, em silêncio.
+ * The failure this group exists to make impossible: an application can hold
+ * dozens of model files and ZERO `extends BaseModel` from Lucid — the models
+ * extend generated schema classes. Detecting a model by the file alone, without
+ * following the inheritance chain, would count zero for the whole application,
+ * in silence.
  */
-test.group('funções de dados: estilos de definição', () => {
-  const ESTILOS = ['direct', 'generated_schema', 'composed_mixin', 'custom_base']
+test.group('data functions: definition styles', () => {
+  const STYLES = ['direct', 'generated_schema', 'composed_mixin', 'custom_base']
 
-  test('os quatro estilos descrevem as mesmas colunas', async ({ assert }) => {
-    const esperado = ['createdAt', 'email', 'fullName', 'id']
+  test('the four styles describe the same columns', async ({ assert }) => {
+    const expected = ['createdAt', 'email', 'fullName', 'id']
 
-    for (const style of ESTILOS) {
+    for (const style of STYLES) {
       const result = await collect(fixturePath('models', style))
-      assert.deepEqual(namesOf(storeNamed(result, 'User')), esperado, `estilo ${style}`)
+      assert.deepEqual(namesOf(storeNamed(result, 'User')), expected, `style ${style}`)
     }
   })
 
-  test('encontra todos os models, não só o primeiro', async ({ assert }) => {
-    for (const style of ESTILOS) {
+  test('finds every model, not just the first', async ({ assert }) => {
+    for (const style of STYLES) {
       const result = await collect(fixturePath('models', style))
-      assert.deepEqual(result.stores.map((s) => s.name).sort(), ['Post', 'User'], `estilo ${style}`)
+      assert.deepEqual(result.stores.map((s) => s.name).sort(), ['Post', 'User'], `style ${style}`)
     }
   })
 
-  test('a chave primária é marcada como identificador', async ({ assert }) => {
-    for (const style of ESTILOS) {
+  test('the primary key is marked as an identifier', async ({ assert }) => {
+    for (const style of STYLES) {
       const user = storeNamed(await collect(fixturePath('models', style)), 'User')
       const ids = user.attributes.filter((a) => a.isIdentifier).map((a) => a.name)
-      assert.deepEqual(ids, ['id'], `estilo ${style}`)
+      assert.deepEqual(ids, ['id'], `style ${style}`)
     }
   })
 
-  test('a tabela física vem de `static table`', async ({ assert }) => {
+  test('the physical table comes from `static table`', async ({ assert }) => {
     const result = await collect(fixturePath('models', 'direct'))
     assert.equal(storeNamed(result, 'User').table, 'users')
     assert.equal(storeNamed(result, 'Post').table, 'posts')
   })
 
-  /** Exigido pela identidade entre versões (counting-decisions §5). */
-  test('relação de composição vira subgrupo candidato', async ({ assert }) => {
+  /** Required by identity across versions (counting-decisions §5). */
+  test('a composition relation becomes a candidate subgroup', async ({ assert }) => {
     const user = storeNamed(await collect(fixturePath('models', 'direct')), 'User')
     assert.include(user.subgroups, 'Post')
   })
 
-  /** A procedência é requisito: um número sem origem é indefensável. */
-  test('cada atributo carrega arquivo e linha', async ({ assert }) => {
+  /** Provenance is a requirement: a number without an origin is indefensible. */
+  test('every attribute carries file and line', async ({ assert }) => {
     const user = storeNamed(await collect(fixturePath('models', 'direct')), 'User')
     for (const attribute of user.attributes) {
       assert.match(attribute.provenance.file, /\.ts$/)
@@ -73,13 +74,14 @@ test.group('funções de dados: estilos de definição', () => {
   })
 })
 
-test.group('funções de dados: fonte e fronteira', () => {
+test.group('data functions: source and boundary', () => {
   /**
-   * `static $columns` é lista canônica gerada das migrations. Quando existe,
-   * prevalece sobre a leitura de decorators — e o `DataStore` registra isso,
-   * porque contagem por AST e por schema gerado não são equivalentes.
+   * `static $columns` is the canonical list generated from the migrations. When
+   * present it prevails over reading the decorators — and the `DataStore`
+   * records that, because a count from the AST and one from the generated
+   * schema are not equivalent.
    */
-  test('registra de qual fonte as colunas vieram', async ({ assert }) => {
+  test('records which source the columns came from', async ({ assert }) => {
     const ast = storeNamed(await collect(fixturePath('models', 'direct')), 'User')
     assert.equal(ast.columnSource, 'ast')
 
@@ -88,56 +90,56 @@ test.group('funções de dados: fonte e fronteira', () => {
   })
 
   /**
-   * O mixin `@acme/auditable` vem de specifier bare — fora da aplicação. O
-   * pacote não tem como saber o que ele acrescenta.
+   * The `@acme/auditable` mixin comes from a bare specifier — outside the
+   * application. The package has no way of knowing what it adds.
    *
-   * Dizer "não sei" é requisito: se um mixin de pacote acrescentasse uma coluna
-   * (soft-delete acrescenta `deletedAt`), fingir que não existe seria contar
-   * errado em silêncio. Ver counting-decisions §4.
+   * Saying "I don't know" is a requirement: if a package mixin added a column
+   * (soft-delete adds `deletedAt`), pretending it does not exist would be
+   * counting wrong in silence. See counting-decisions §4.
    */
-  test('mixin de pacote não resolvido entra na cobertura', async ({ assert }) => {
+  test('an unresolved package mixin enters the coverage report', async ({ assert }) => {
     const result = await collect(fixturePath('models', 'composed_mixin'))
 
     const external = result.unresolved.find((u) => u.expression === 'Auditable')
-    assert.exists(external, 'mixin de pacote não foi reportado')
-    assert.match(external!.reason, /fora da aplica/i)
+    assert.exists(external, 'the package mixin was not reported')
+    assert.match(external!.reason, /outside the application/i)
   })
 
   /**
-   * LACUNA CONHECIDA: fábrica de mixin (`compose(Base, withSlug())`) é local à
-   * aplicação, mas a coluna só existe na classe que a função retorna. Resolver
-   * isso exige avaliar o retorno da chamada — fora do escopo da Fase 2.
+   * KNOWN GAP: a mixin factory (`compose(Base, withSlug())`) is local to the
+   * application, but the column only exists on the class the function returns.
+   * Resolving that requires evaluating the call's return value.
    *
-   * O que NÃO é aceitável é reportar a razão errada: dizer "fora da aplicação"
-   * para código que está dentro dela mandaria o usuário procurar no lugar
-   * errado. Se um dia a fábrica for resolvida, este teste falha e a lacuna sai
-   * da lista.
+   * What is NOT acceptable is reporting the wrong reason: saying "outside the
+   * application" about code that is inside it would send the reader to the
+   * wrong place. If the factory is ever resolved, this test fails and the gap
+   * leaves the list.
    */
-  test('fábrica de mixin local é reportada pelo motivo certo', async ({ assert }) => {
+  test('a local mixin factory is reported for the right reason', async ({ assert }) => {
     const result = await collect(fixturePath('models', 'composed_mixin'))
     const factory = result.unresolved.find((u) => u.expression.includes('withSlug'))
 
-    assert.exists(factory, 'fábrica de mixin não foi reportada')
-    assert.match(factory!.reason, /f[áa]brica de mixin/i)
-    assert.notMatch(factory!.reason, /fora da aplica/i)
+    assert.exists(factory, 'the mixin factory was not reported')
+    assert.match(factory!.reason, /mixin factory/i)
+    assert.notMatch(factory!.reason, /outside the application/i)
   })
 
-  test('estilo sem mixin não inventa pendência', async ({ assert }) => {
+  test('a style with no mixin invents no unresolved entry', async ({ assert }) => {
     for (const style of ['direct', 'generated_schema']) {
       const result = await collect(fixturePath('models', style))
-      assert.isEmpty(result.unresolved, `estilo ${style}`)
+      assert.isEmpty(result.unresolved, `style ${style}`)
     }
   })
 
   /**
-   * Uma classe base não tem tabela — contá-la infla a contagem.
+   * A base class has no table — counting it inflates the total.
    *
-   * Não é caso de laboratório: 17 dos 34 models de uma app real estendem um
-   * `BaseModel` próprio, que por sua vez estende o do Lucid por import
-   * aliasado. Sem esta regra, essa classe vira um repositório de dados
-   * fantasma em toda app que use o padrão.
+   * This is not a laboratory case: applications commonly define their own
+   * `BaseModel`, which in turn extends Lucid's through an aliased import.
+   * Without this rule that class becomes a phantom data store in every
+   * application using the pattern.
    */
-  test('classe usada como base por outro model não é repositório de dados', async ({ assert }) => {
+  test('a class used as a base by another model is not a data store', async ({ assert }) => {
     const result = await collect(fixturePath('models', 'custom_base'))
 
     assert.deepEqual(result.stores.map((s) => s.name).sort(), ['Post', 'User'])
@@ -147,14 +149,14 @@ test.group('funções de dados: fonte e fronteira', () => {
     )
   })
 
-  /** Mas as colunas dela são herdadas por quem a estende. */
-  test('colunas da base própria são herdadas', async ({ assert }) => {
+  /** But its columns are inherited by whoever extends it. */
+  test('columns of a custom base are inherited', async ({ assert }) => {
     const user = storeNamed(await collect(fixturePath('models', 'custom_base')), 'User')
     assert.include(namesOf(user), 'createdAt')
   })
 
-  /** O arquivo gerado é BASE dos models, não um model em si. */
-  test('classes do schema gerado não viram data store', async ({ assert }) => {
+  /** The generated file is a BASE for models, not a model itself. */
+  test('generated schema classes do not become data stores', async ({ assert }) => {
     const result = await collect(fixturePath('models', 'generated_schema'))
     assert.notInclude(
       result.stores.map((s) => s.name),

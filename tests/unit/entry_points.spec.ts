@@ -15,73 +15,73 @@ const find = (result: EntryPointCollection, trigger: string, signature: string) 
 
 const handlerOf = (result: EntryPointCollection, trigger: string, signature: string) => {
   const entry = find(result, trigger, signature)
-  if (!entry?.handler) throw new Error(`sem handler: ${trigger} ${signature}`)
+  if (!entry?.handler) throw new Error(`no handler: ${trigger} ${signature}`)
   return { file: path.basename(entry.handler.file), member: entry.handler.member }
 }
 
-test.group('pontos de entrada: formas de declarar rota', () => {
-  test('rota de uma linha', async ({ assert }) => {
+test.group('entry points: route declaration forms', () => {
+  test('a single-line route', async ({ assert }) => {
     assert.exists(find(await shapes(), 'GET', '/health'))
   })
 
   /**
-   * O texto da expressão de `router\n  .post(...)` contém a quebra de linha.
-   * Sem normalizar, o casamento falha — e no spike isso fez enxergar 23 de 164
-   * rotas de uma app real.
+   * The expression text of `router\n  .post(...)` contains the line break.
+   * Without normalising it the match fails, and most routes of a real
+   * application go unseen.
    */
-  test('rota multi-linha encadeada', async ({ assert }) => {
+  test('a chained multi-line route', async ({ assert }) => {
     const entry = find(await shapes(), 'POST', '/books/:id/export')
-    assert.exists(entry, 'rota multi-linha não foi encontrada')
+    assert.exists(entry, 'the multi-line route was not found')
   })
 
-  test('grupo aplica o prefixo ao padrão', async ({ assert }) => {
+  test('a group applies its prefix to the pattern', async ({ assert }) => {
     const result = await shapes()
-    assert.exists(find(result, 'GET', '/admin/books'), 'prefixo do grupo não aplicado')
+    assert.exists(find(result, 'GET', '/admin/books'), 'the group prefix was not applied')
     assert.notExists(find(result, 'GET', '/books') && undefined)
   })
 
-  test('grupo aninhado acumula os prefixos', async ({ assert }) => {
+  test('nested groups accumulate their prefixes', async ({ assert }) => {
     assert.exists(find(await shapes(), 'DELETE', '/admin/trash/books/:uuid'))
   })
 
   /**
-   * Closure inline é handler de verdade: tem corpo, e a Fase 4 precisa
-   * percorrê-lo. Tratá-la como "controller não resolvido" perderia a
-   * transação e ainda reportaria o motivo errado.
+   * An inline closure is a real handler: it has a body, and the graph has to
+   * walk it. Treating it as "unresolved controller" would lose the transaction
+   * and report the wrong reason on top of that.
    *
-   * Aparece em 3 das 5 apps de produção levantadas.
+   * It is a common shape in production applications.
    */
-  test('closure inline é handler, não pendência', async ({ assert }) => {
+  test('an inline closure is a handler, not an unresolved call', async ({ assert }) => {
     const result = await shapes()
     const entry = find(result, 'GET', '/ping')
 
-    assert.exists(entry, 'rota com closure não foi coletada')
-    assert.isNotNull(entry!.handler, 'closure deveria ser handler')
-    assert.isAbove(entry!.handler!.line ?? 0, 0, 'handler inline precisa de linha')
-    assert.isEmpty(result.unresolved, 'closure não é pendência')
+    assert.exists(entry, 'the closure route was not collected')
+    assert.isNotNull(entry!.handler, 'the closure should be a handler')
+    assert.isAbove(entry!.handler!.line ?? 0, 0, 'an inline handler needs a line')
+    assert.isEmpty(result.unresolved, 'a closure is not an unresolved call')
   })
 
-  /** `router.on(...)` não tem handler para analisar — mas é ponto de entrada. */
-  test('rota estática vira ponto de entrada sem handler', async ({ assert }) => {
+  /** `router.on(...)` has no handler to analyse — but it is an entry point. */
+  test('a static route becomes an entry point with no handler', async ({ assert }) => {
     const entry = find(await shapes(), 'GET', '/about')
-    assert.exists(entry, 'rota estática não foi coletada')
+    assert.exists(entry, 'the static route was not collected')
     assert.isNull(entry!.handler)
   })
 })
 
-test.group('pontos de entrada: resource', () => {
-  test('`.only()` limita as ações expandidas', async ({ assert }) => {
+test.group('entry points: resource', () => {
+  test('`.only()` limits the expanded actions', async ({ assert }) => {
     const result = await shapes()
 
     assert.exists(find(result, 'GET', '/books'), 'index')
     assert.exists(find(result, 'GET', '/books/:id'), 'show')
     assert.exists(find(result, 'POST', '/books'), 'store')
 
-    assert.notExists(find(result, 'DELETE', '/books/:id'), 'destroy não estava em only()')
-    assert.notExists(find(result, 'GET', '/books/create'), 'create não estava em only()')
+    assert.notExists(find(result, 'DELETE', '/books/:id'), 'destroy was not in only()')
+    assert.notExists(find(result, 'GET', '/books/create'), 'create was not in only()')
   })
 
-  test('`.apiOnly()` exclui create e edit', async ({ assert }) => {
+  test('`.apiOnly()` excludes create and edit', async ({ assert }) => {
     const result = await shapes()
 
     assert.exists(find(result, 'GET', '/api/books'), 'index')
@@ -90,7 +90,7 @@ test.group('pontos de entrada: resource', () => {
     assert.notExists(find(result, 'GET', '/api/books/:id/edit'), 'edit')
   })
 
-  test('cada ação do resource aponta para o método certo', async ({ assert }) => {
+  test('each resource action points at the right method', async ({ assert }) => {
     const result = await shapes()
     assert.equal(handlerOf(result, 'GET', '/books').member, 'index')
     assert.equal(handlerOf(result, 'POST', '/books').member, 'store')
@@ -98,16 +98,17 @@ test.group('pontos de entrada: resource', () => {
   })
 })
 
-test.group('pontos de entrada: resolução do controller', () => {
+test.group('entry points: controller resolution', () => {
   /**
-   * Numa app real havia 5 colisões de nome simples entre módulos. Indexar por
-   * nome resolveria o controller errado — em silêncio.
+   * Modular applications routinely have several controllers sharing a bare
+   * name across modules. Indexing by the bare name would resolve the wrong
+   * controller — in silence.
    */
-  test('nome colidindo entre módulos resolve o arquivo certo', async ({ assert }) => {
+  test('a name colliding across modules resolves to the right file', async ({ assert }) => {
     const result = await shapes()
 
-    const catalogo = handlerOf(result, 'GET', '/books')
-    const administracao = handlerOf(result, 'GET', '/admin/books')
+    const catalog = handlerOf(result, 'GET', '/books')
+    const admin = handlerOf(result, 'GET', '/admin/books')
 
     assert.include(
       result.entryPoints.find((e) => e.signature === '/books' && e.trigger === 'GET')!.handler!
@@ -118,47 +119,48 @@ test.group('pontos de entrada: resolução do controller', () => {
       result.entryPoints.find((e) => e.signature === '/admin/books')!.handler!.file,
       '/admin/'
     )
-    assert.equal(catalogo.file, administracao.file, 'mesmo basename, arquivos diferentes')
+    assert.equal(catalog.file, admin.file, 'same basename, different files')
   })
 
-  test('alias local por lazy import resolve', async ({ assert }) => {
+  test('a local alias from a lazy import resolves', async ({ assert }) => {
     const handler = handlerOf(await shapes(), 'POST', '/books/:id/export')
     assert.equal(handler.file, 'export_controller.ts')
   })
 
-  /** Handler de ação única não declara método: é `handle` por convenção. */
-  test('handler de ação única não declara método', async ({ assert }) => {
+  /** A single-action handler declares no method: it is `handle` by convention. */
+  test('a single-action handler declares no method', async ({ assert }) => {
     const handler = handlerOf(await shapes(), 'POST', '/books/:id/export')
     assert.isUndefined(handler.member)
   })
 })
 
-test.group('pontos de entrada: identidade', () => {
+test.group('entry points: identity', () => {
   /**
-   * counting-decisions §5: a identidade é o ponto de entrada, não o nome da
-   * rota nem o caminho do controller. `.as()` é cosmético — renomear não muda
-   * a função que o usuário vê; e mover o controller de módulo é refatoração.
+   * counting-decisions §5: identity is the entry point, not the route name nor
+   * the controller path. `.as()` is cosmetic — renaming does not change the
+   * function the user sees; and moving a controller between modules is
+   * refactoring.
    *
-   * Sem isso, `fp:diff` transforma renomeação em exclusão + inclusão e fatura
-   * em dobro.
+   * Without this, `fp:diff` turns a rename into a deletion plus an addition and
+   * bills twice.
    */
-  test('identidade é verbo mais padrão normalizado', async ({ assert }) => {
+  test('identity is the verb plus the normalised pattern', async ({ assert }) => {
     const entry = find(await shapes(), 'DELETE', '/admin/trash/books/:uuid')
     assert.equal(entry!.identity, 'DELETE /admin/trash/books/:param')
   })
 
-  test('o nome do parâmetro não muda a identidade', async ({ assert }) => {
+  test('the parameter name does not change the identity', async ({ assert }) => {
     const result = await shapes()
-    const porId = find(result, 'GET', '/books/:id')!
-    const porUuid = find(result, 'DELETE', '/admin/trash/books/:uuid')!
+    const byId = find(result, 'GET', '/books/:id')!
+    const byUuid = find(result, 'DELETE', '/admin/trash/books/:uuid')!
 
-    assert.include(porId.identity, '/books/:param')
-    assert.include(porUuid.identity, '/books/:param')
+    assert.include(byId.identity, '/books/:param')
+    assert.include(byUuid.identity, '/books/:param')
   })
 
-  test('identidade é única por ponto de entrada', async ({ assert }) => {
+  test('identity is unique per entry point', async ({ assert }) => {
     const result = await shapes()
     const ids = result.entryPoints.map((e) => e.identity)
-    assert.lengthOf(new Set(ids), ids.length, 'há identidades duplicadas')
+    assert.lengthOf(new Set(ids), ids.length, 'there are duplicate identities')
   })
 })

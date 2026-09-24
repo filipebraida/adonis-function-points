@@ -3,101 +3,98 @@ import type { CallResolver } from './inventory/resolvers/types.js'
 import type { Complexity, FunctionType } from './types.js'
 
 /**
- * Configuração do pacote.
+ * Package configuration.
  *
- * **Toda opção aqui tem efeito, e tem um teste provando.** Configuração que o
- * código não honra é pior que configuração ausente: quem a define acha que
- * mudou algo e não mudou, e o número vai para uma fatura.
+ * **Every option here has an effect, and a test proving it.** Configuration the
+ * code does not honour is worse than no configuration at all: whoever sets it
+ * believes something changed when nothing did, and the number goes into an
+ * invoice.
  *
- * Por isso a lista é curta. O que sobra como configuração é o que é **decisão
- * de negócio** e nenhuma heurística deveria tomar — a fronteira da aplicação, o
- * que é mantido externamente, as faixas de complexidade calibradas. O resto o
- * pacote descobre.
- *
- * Opções que já estiveram aqui e saíram, por não terem efeito:
- * `collapseInquiriesIntoOutputs` (o AFP §6.5.3 manda sempre colapsar CE em SE,
- * então não há escolha) e `calibration` (calibrar é decisão de quem assina o
- * contrato; aplicar fator em silêncio faria a contagem deixar de ser
- * reproduzível a partir do código — ver `fp:calibrate`).
+ * That is why the list is short. What remains configurable is what is a
+ * **business decision** that no heuristic should make — the application
+ * boundary, what is maintained externally, the calibrated complexity bands.
+ * The rest the package discovers.
  */
 export type FunctionPointsConfig = {
   /**
-   * Fronteira da aplicação. É decisão de negócio, não técnica — reveja com quem
-   * assina o contrato, não só com o time.
+   * The application boundary. A business decision, not a technical one — review
+   * it with whoever signs the contract, not only with the team.
    */
   boundary: {
     /**
-     * Repositórios de infraestrutura, fora da contagem: tokens de sessão,
-     * auditoria, filas, cache.
+     * Infrastructure stores, excluded from the count: session tokens, audit
+     * trails, queues, caches.
      *
-     * Complementa o filtro automático de dados técnicos (AFP §6.5.2.1.1), que
-     * já pega nome de sessão, erro, busca e template. Exclusões daqui também
-     * aparecem no relatório, com o motivo.
+     * Complements the automatic technical-data filter (AFP §6.5.2.1.1), which
+     * already catches session, error, search and template names. Exclusions
+     * made here also appear in the report, with the reason.
      */
     infrastructure?: string[]
     /**
-     * Repositórios mantidos por outro sistema: viram AIE em vez de ALI.
+     * Stores maintained by another system: counted as EIF instead of ILF.
      *
-     * Ex.: tabelas espelhadas de um ERP externo.
+     * For example, tables mirrored from an external ERP.
      */
     externallyMaintained?: string[]
     /**
-     * Pontos de entrada sem valor funcional para o usuário, por nome de rota ou
-     * por identidade (`GET /health`).
+     * Entry points with no functional value to the user, by route name or by
+     * identity (`GET /health`).
      *
-     * Na prática quase nunca é necessário: rota de infraestrutura não alcança
-     * repositório de dados e já cai fora pela decisão §1. Fica como rede de
-     * segurança e para deixar a intenção explícita.
+     * Rarely needed in practice: an infrastructure route reaches no data store
+     * and already drops out. It stays as a safety net and to make the intent
+     * explicit in the report.
      */
     ignoreEntryPoints?: string[]
   }
 
   /**
-   * Estratégia para RET, os subgrupos lógicos de um ALI/AIE.
+   * Strategy for RET, the logical subgroups of an ILF/EIF.
    *
-   * `constant` fixa em 1 e é honesto: o que o usuário reconhece como subgrupo
-   * não é derivável do código. `composition` deriva das relações de composição;
-   * erra mais, mas capta agregados reais.
+   * `constant` pins it at 1, which is honest: what a user recognises as a
+   * subgroup is not derivable from code. `composition` derives it from
+   * composition relations; less accurate in general, but captures real
+   * aggregates.
    */
   retStrategy: 'constant' | 'composition'
 
   /**
-   * Profundidade máxima no grafo de chamadas a partir do handler.
+   * Maximum depth in the call graph, starting at the handler.
    *
-   * Fundo demais e um service gordo contamina; raso demais e a escrita passa
-   * batida.
+   * Too deep and a large shared service contaminates its callers; too shallow
+   * and the write is missed.
    */
   maxDepth: number
 
   /**
-   * DET extra por mensagem de confirmação ou erro.
+   * Extra DET for the confirmation or error message.
    *
-   * O manual do IFPUG conta 1, o AFP não — e foi a divergência sistemática de
-   * −1 DET por transação medida na dissertação do Ligeiro. Default segue o AFP.
+   * The IFPUG manual counts one, AFP does not — a known systematic divergence
+   * of −1 DET per transaction against manual counts. The default follows AFP.
    */
   messageDet: number
 
-  /** Faixas de complexidade, para calibrar contra contagem manual. */
+  /** Complexity bands, for calibrating against manual counts. */
   complexityTables?: Partial<Record<FunctionType, ComplexityTable>>
 
-  /** Pesos por tipo e complexidade. */
+  /** Weights per type and complexity. */
   weights?: Partial<Record<FunctionType, Record<Complexity, number>>>
 
   /**
-   * Estratégias de rastreamento próprias, somadas às embutidas e rodando
-   * **antes** delas.
+   * Custom tracing strategies, added to the built-in ones and running
+   * **before** them.
    *
-   * É o que torna verdadeira a afirmação central da arquitetura: AdonisJS não
-   * impõe padrão de organização, então um projeto com convenção própria registra
-   * a sua aqui.
+   * This is what makes the architecture's central claim true: AdonisJS imposes
+   * no code organisation, so a project with its own convention registers it
+   * here.
    */
   resolvers?: { call?: CallResolver[] }
 
   /**
-   * Cobertura mínima do rastreamento, de 0 a 1.
+   * Minimum tracing coverage, from 0 to 1.
    *
-   * Abaixo dela a análise **falha** em vez de emitir um número que parece certo.
-   * Um total com muitas chamadas não resolvidas não deveria virar fatura.
+   * Below it the analysis **fails** instead of emitting a number that looks
+   * right. A total resting on many unresolved calls should not become an
+   * invoice.
    */
   minCoverage?: number
 }
