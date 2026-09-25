@@ -13,9 +13,42 @@ jobs:
   checks:
     uses: ./.github/workflows/checks.yml
 
-  publish:
-    needs: checks
+  # Runs alongside `checks`, not after it.
+  #
+  # Without ACTIONS_ID_TOKEN_REQUEST_URL npm cannot mint an OIDC token, skips
+  # Trusted Publishing silently, and reports ENEEDAUTH — an error naming the
+  # symptom and not the cause. Learning that took a ten-minute test suite twice,
+  # because the only place it could be observed was after the gate. It is a
+  # precondition of the release, so it belongs at the front of it.
+  preflight:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Trusted Publishing requires npm >= 11.5.1 and an OIDC token
+        run: |
+          echo "npm: $(npm --version)"
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "ACTIONS_ID_TOKEN_REQUEST_URL is MISSING: id-token write did not reach this job" >&2
+            exit 1
+          fi
+          echo "ACTIONS_ID_TOKEN_REQUEST_URL: set"
+
+  publish:
+    needs: [checks, preflight]
+    runs-on: ubuntu-latest
+    # Declared on the job as well as at the top level. npm 11.19.0 supports
+    # Trusted Publishing and still went straight to ENEEDAUTH, which is what it
+    # does when the OIDC request variables GitHub injects for `id-token: write`
+    # are absent — so the permission not reaching this job is the hypothesis, and
+    # stating it here removes the variable instead of arguing about precedence.
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v6
 
@@ -71,9 +104,7 @@ jobs:
       - name: Publish to npm via Trusted Publishing
         env:
           NPM_TAG: ${{ steps.tag.outputs.npm_tag }}
-        run: |
-          npm --version
-          npm publish --access public --tag "$NPM_TAG"
+        run: npm publish --access public --tag "$NPM_TAG"
 
       - name: Create GitHub release
         env:
