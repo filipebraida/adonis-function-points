@@ -63,11 +63,21 @@ For CI, or a one-off count on a project you do not want to touch:
 npx @filipebraida/adonis-function-points count --root ./my-app
 ```
 
-Nothing is booted either way — the engine only reads files — so a standalone
-run needs no `.env`, no database, and no install inside the analysed project.
-The standalone binary **does not replace installing**: a project that installs
-the package keeps the `node ace fp:*` commands, and both front-ends call the
-same code, so they cannot disagree about a number.
+The engine itself boots nothing — it only reads files — and the standalone binary
+needs no `.env`, no database, and no install inside the analysed project. The
+`fp:*` commands declare `startApp: false` for the same reason.
+
+**In CI, prefer the standalone binary.** Not for convenience: `node ace` validates
+`start/env.ts` before it runs any command, so `node ace fp:count` fails on a
+missing environment variable that has nothing to do with counting. Measured on a
+production application, it stopped at `Missing environment variable "AUTHZ_STORE"`
+and never reached the command. A pipeline that only checks out the code has no
+secrets, and does not need them to count.
+
+The standalone binary **does not replace installing**: a project that installs the
+package keeps the `node ace fp:*` commands — which is the right front-end at a
+developer's terminal, where the `.env` is already there — and both call the same
+code, so they cannot disagree about a number.
 
 ```
 adonis-function-points <command> [options]
@@ -75,6 +85,7 @@ adonis-function-points <command> [options]
   count                    count the unadjusted function points
   inventory                the raw facts: stores, routes, tracing coverage
   explain <name>           why one function was counted that way
+  metrics                  density, coupling and conformance, from the same run
   diff <previous.json>     additions / modifications / deletions, and billable FP
   calibrate <samples.csv>  correction factors against a manual count
 

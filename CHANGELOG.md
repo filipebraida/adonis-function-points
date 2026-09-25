@@ -6,7 +6,7 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
-## Unreleased
+## 0.5.0
 
 **Rule set `afp@1.4.0`.** Two classification defects are fixed and both move numbers,
 so a 0.4.0 baseline has to be recounted.
@@ -36,6 +36,16 @@ by reading the report's warnings — which is where the previous rounds had been
   requiring one. Reviewed floors are now marked `(opaque, reviewed)` and the reason is
   printed — without being counted in the "Declared by override" share, since a review
   declares no number.
+
+### Documented
+
+- **In CI, prefer the standalone binary.** `node ace` validates `start/env.ts` before
+  running any command, so `node ace fp:count` fails on a missing environment variable
+  that has nothing to do with counting — measured on a production application, it
+  stopped at `Missing environment variable "AUTHZ_STORE"` and never reached the
+  command. The `fp:*` commands declare `startApp: false`, which is not enough. The
+  README said the two front-ends were interchangeable; for a pipeline that only checks
+  out code, they are not.
 
 ### New
 
