@@ -142,7 +142,15 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
         provenance: { file: emit(app.root), by: 'request' },
       })),
       opaqueRequest: behavior.opaqueRequest,
-      outputFields: [],
+      outputFields: behavior.outputFields.map((name) => ({
+        name,
+        provenance: { file: emit(app.root), by: 'transformer' },
+      })),
+      opaqueOutputFields: behavior.opaqueOutputFields.map((name) => ({
+        name,
+        provenance: { file: emit(app.root), by: 'transformer' },
+      })),
+      selectedColumns: behavior.selectedColumns,
       trace: behavior.trace.map((step) => ({ ...step, file: emit(step.file) })),
       unresolved: behavior.unresolved.map((call) => ({ ...call, file: emit(call.file) })),
     })),

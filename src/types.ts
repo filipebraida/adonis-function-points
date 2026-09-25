@@ -120,8 +120,15 @@ export type HandlerBehavior = {
   requestFields: Field[]
   /** the transaction reads the request in a way that enumerates nothing */
   opaqueRequest: boolean
-  /** declared output fields (transformers, DTOs) */
+  /**
+   * What a transformer on the path emits — counting-decisions §6. Empty means no
+   * transformer was reached and the output is counted from the stores' columns.
+   */
   outputFields: Field[]
+  /** output spreads the analysis could not read: 1 DET each, a floor */
+  opaqueOutputFields: Field[]
+  /** store -> columns a `.select()` on the path narrowed it to */
+  selectedColumns: Record<string, string[]>
   /** path walked through the call graph — what `fp:explain` prints */
   trace: TraceStep[]
   /** calls no resolver knew how to follow */

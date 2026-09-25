@@ -17,6 +17,8 @@ import { BUILTIN_CALL_RESOLVERS, isTechnicalWrite, resolveCall } from '../resolv
 import { isApplicationCode } from '../paths.js'
 import type { EventBindings } from '../sources/event_bindings.js'
 import { isIterationCall, isNoise, isNoiseMember } from './noise.js'
+import { outputFieldsIn, selectedColumnsIn } from './output_fields.js'
+import type { SelectedColumns } from './output_fields.js'
 import type { CallResolver, ResolverContext } from '../resolvers/types.js'
 import type { HandlerRef, TraceStep, UnresolvedCall } from '../../types.js'
 
@@ -73,6 +75,18 @@ export type Behavior = {
   requestFields: string[]
   /** the transaction reads the request in a way that enumerates nothing */
   opaqueRequest: boolean
+  /**
+   * What leaves the boundary, when a transformer on the path says so —
+   * counting-decisions §6. Qualified by the transformer: `LivroTransformer.titulo`.
+   *
+   * Empty means no transformer was reached, and the output DETs fall back to the
+   * columns of the stores read. It does NOT mean the transaction emits nothing.
+   */
+  outputFields: string[]
+  /** of those, the spreads the walker could not read: 1 DET each, a floor, reported */
+  opaqueOutputFields: string[]
+  /** store -> columns a `.select()` on the path narrowed it to */
+  selectedColumns: Record<string, string[]>
   trace: TraceStep[]
   /** bodies reached, for `fp:diff` */
   scope: ScopeEntry[]
@@ -403,6 +417,11 @@ type BodyFacts = {
   requestFields: string[]
   /** the body reads the request in a way that enumerates nothing */
   opaqueRequest: boolean
+  /** keys this body emits, when it is a transformer method — §6 */
+  outputs: string[]
+  opaqueOutputs: string[]
+  /** `.select()` narrowing found on the access chains of this body */
+  selected: SelectedColumns[]
   followUps: { ref: HandlerRef; by: string; technical?: boolean }[]
   unresolved: UnresolvedCall[]
   bodyHash: string
@@ -563,6 +582,9 @@ export function createAnalyzer(
     const accesses: { store: string; write: boolean; technical?: boolean }[] = []
     const followUps: { ref: HandlerRef; by: string; technical?: boolean }[] = []
     const unresolved: UnresolvedCall[] = []
+    const selected: SelectedColumns[] = []
+    /** calls a strategy claimed: a nested transformer's keys arrive through its body */
+    const followedCalls = new Set<CallExpression>()
     const validator = validatorFieldsIn(body, file, app)
     const request = requestFieldsIn(body)
 
@@ -593,6 +615,25 @@ export function createAnalyzer(
         const technical = access.mode === 'write' && isTechnicalWrite(call, context, resolvers)
 
         accesses.push({ store: access.store, write: access.mode === 'write', technical })
+
+        /**
+         * `.select([...])` on the chain narrows what this store contributes to an
+         * output — §6. A list that is not literal is reported, and the store falls
+         * back to every column, which overestimates in the open.
+         */
+        if (access.mode === 'read') {
+          const narrowed = selectedColumnsIn(call, access.store)
+          selected.push(...narrowed.selected)
+          for (const problem of narrowed.unreadable) {
+            unresolved.push({
+              file: ref.file,
+              line: problem.line,
+              expression: problem.expression,
+              reason: `select with a column list that is not literal: ${access.store} counts every column`,
+            })
+          }
+        }
+
         /**
          * A relation reached by `preload`/`load` is read; one written through
          * `related('files').create(…)` is written. Assuming read either way made
@@ -627,6 +668,7 @@ export function createAnalyzer(
          */
         const technical = isTechnicalWrite(call, context, resolvers)
         for (const next of resolved.refs) followUps.push({ ref: next, by: resolved.by, technical })
+        followedCalls.add(call)
         continue
       }
 
@@ -640,6 +682,12 @@ export function createAnalyzer(
       }
     }
 
+    /**
+     * Read after the loop: whether a key holds a nested transformer is known only
+     * once the strategies have said which calls they follow.
+     */
+    const output = outputFieldsIn(body, owner, storesByName, (c) => followedCalls.has(c))
+
     return {
       accesses,
       followUps,
@@ -648,6 +696,9 @@ export function createAnalyzer(
       opaqueValidators: validator.opaque,
       requestFields: request.fields,
       opaqueRequest: request.opaque,
+      outputs: output.outputs,
+      opaqueOutputs: output.opaqueOutputs,
+      selected,
       bodyHash: hashOf(body),
     }
   }
@@ -719,6 +770,9 @@ export function createAnalyzer(
     const opaqueInputFields = new Set<string>()
     const requestFields = new Set<string>()
     let opaqueRequest = false
+    const outputFields = new Set<string>()
+    const opaqueOutputFields = new Set<string>()
+    const selectedColumns = new Map<string, Set<string>>()
     const trace: TraceStep[] = []
     const scope: ScopeEntry[] = []
     const unresolved: UnresolvedCall[] = []
@@ -773,6 +827,13 @@ export function createAnalyzer(
       for (const field of facts.opaqueValidators) opaqueInputFields.add(field)
       for (const field of facts.requestFields) requestFields.add(field)
       if (facts.opaqueRequest) opaqueRequest = true
+      for (const field of facts.outputs) outputFields.add(field)
+      for (const field of facts.opaqueOutputs) opaqueOutputFields.add(field)
+      for (const { store, columns } of facts.selected) {
+        const known = selectedColumns.get(store) ?? new Set<string>()
+        for (const column of columns) known.add(column)
+        selectedColumns.set(store, known)
+      }
 
       trace.push({
         file: ref.file,
@@ -803,6 +864,13 @@ export function createAnalyzer(
       opaqueInputFields: [...opaqueInputFields].sort(),
       requestFields: [...requestFields].sort(),
       opaqueRequest,
+      outputFields: [...outputFields].sort(),
+      opaqueOutputFields: [...opaqueOutputFields].sort(),
+      selectedColumns: Object.fromEntries(
+        [...selectedColumns.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([store, columns]) => [store, [...columns].sort()])
+      ),
       trace,
       scope,
       unresolved,

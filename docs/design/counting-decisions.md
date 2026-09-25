@@ -289,24 +289,43 @@ And AFP is explicit about the priority when this diverges from a human counter:
 
 ### Decision
 
-The DETs of an EO = **the union of the distinct fields of the data stores read
-in the implementation scope**, narrowed by whatever is statically visible:
+The DETs of an EO are **what the code shows leaving the boundary**, read in this
+order of precedence — the first that is visible decides:
 
-| what the code does                                        | DETs                                                           |
-| --------------------------------------------------------- | -------------------------------------------------------------- |
-| `Book.query()` / `selectFrom('books').selectAll()`        | every column of `books`                                        |
-| `.select(['title', 'isbn'])`                              | only the selected ones                                         |
-| `.preload('author')` / join                               | + the related columns                                          |
-| passes through a transformer / DTO listing fields         | **the transformer's keys** — that is what crosses the boundary |
-| a derived scalar prop (`total`, `canEdit`)                | 1 DET each — derived data leaving the boundary                 |
-| a field that enters and exits (a filter echoed on screen) | counted once                                                   |
+| what the code does                                                     | DETs                                                                      | rationale prefix |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------- |
+| passes through a transformer (`X.transform(...)`, `new X(r).method()`) | **the keys the method returns**; the stores' columns are NOT added on top | `transformer:`   |
+| a nested transformer inside the literal                                | its own keys, once; the key holding it is not a DET                       | `transformer:`   |
+| `...this.pick(this.resource, [...])`                                   | the listed names                                                          | `transformer:`   |
+| `...this.toObject()`                                                   | nothing here — the followed body contributes                              |                  |
+| `xs.map((x) => x.nome)`                                                | 1 — a repeating group of one attribute                                    | `transformer:`   |
+| `xs.map((x) => ({ a, b }))`                                            | the leaves, once                                                          | `transformer:`   |
+| any other spread (`...this.resource.serialize()`)                      | **1, opaque, reported** — a floor, like an open `vine.object` (§9)        | `transformer:`   |
+| the resource's identifier re-emitted (`id`)                            | 0 — the same reason `isPrimary` is not a DET on the data function         |                  |
+| no transformer, `.select(['title', 'isbn'])` / `.select('a', 'b')`     | only the columns named, for that store                                    | `select:`        |
+| no transformer, nothing visible                                        | every column of every store reached, `.preload()` included                | `output:`        |
+| a field that enters and exits (a filter echoed on screen)              | counted once                                                              |                  |
+
+A `.select()` whose list is not literal is unresolved with its reason, and the
+store falls back to every column: overestimating in the open rather than
+guessing. A `.select()` inside a `preload` callback narrows nothing yet — it is
+on the related store's chain, not this one.
+
+**Measured** on an application with 71 functions when this landed: 16 EOs
+changed DET, the total moved −9 FP, and `GET /perfil` went from 45 DET to the 10
+keys its three transformers emit. The DETs moved far more than the points did,
+which is the granularity effect §7 describes.
 
 **Known and accepted divergence:** a human counter counts the fields
-_displayed_; with no `.select()` and no transformer we count the whole table and
+_displayed_; with no transformer and no `.select()` we count the whole table and
 overestimate. That is the trade AFP makes on purpose — repeatability over
-fidelity — and it goes into each function's `Rationale` as
-`detSource: 'all-columns'` vs `'transformer'` vs `'select'`, so `fp:calibrate`
-can measure the bias per origin.
+fidelity — and the origin of each DET is in the `Rationale` (`transformer:`,
+`select:`, `output:`), so `fp:calibrate` can measure the bias per origin.
+
+> **Not yet.** A derived scalar prop passed straight to `inertia.render(...)`
+> (`totalHoras`, `canEdit`) is not read; it is the most heuristic line of the
+> original table and the least measured. Until it is, a transaction with no
+> transformer counts its stores' columns and nothing for the derived props.
 
 **Error and confirmation messages:** the IFPUG manual counts +1 DET; AFP does
 not. We follow AFP. The Ligeiro study showed this is the systematic −1 DET per

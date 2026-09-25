@@ -80,4 +80,21 @@ test.group('resolver: transformer', () => {
     assert.equal(claimed[0].member, 'toObject')
     assert.include(posix(claimed[0].file), 'transformers/invite_transformer.ts')
   })
+
+  /**
+   * counting-decisions §6: the transformer is where the application says which
+   * fields cross the boundary, so following it is half the job — the keys it
+   * returns are the output DETs of the transaction that reached it.
+   */
+  test("the keys the transformer returns are the transaction's output fields", async ({
+    assert,
+  }) => {
+    const behavior = await analyseHandler()
+
+    assert.deepEqual(behavior.outputFields, [
+      'InviteTransformer.expiresAt',
+      'InviteTransformer.uuid',
+    ])
+    assert.isEmpty(behavior.opaqueOutputFields)
+  })
 })

@@ -1,8 +1,9 @@
-import { Node, SyntaxKind } from 'ts-morph'
+import { Node } from 'ts-morph'
 import type { CallExpression } from 'ts-morph'
 
 import type { HandlerRef } from '../../types.js'
 import { rootSymbolOf } from '../detectors/lucid.js'
+import { isTransformerClass } from '../graph/output_fields.js'
 import type { CallResolver, ResolverContext } from './types.js'
 
 /** BaseTransformer's public API; all of it funnels through `toObject` */
@@ -61,38 +62,15 @@ export const transformerResolver: CallResolver = {
     const file = ctx.imports.get(symbol) ?? ctx.injected.get(symbol)
     if (!file) return []
 
+    /**
+     * One definition of what a transformer is, shared with the output walker
+     * (`graph/output_fields.ts`): the resolver must not follow a body whose keys
+     * the walker would refuse to read, or the other way round.
+     */
     const declared = ctx.sourceFile(file)
-    if (!declared || !extendsTransformer(declared)) return []
+    if (!declared || !declared.getClasses().some(isTransformerClass)) return []
 
     const owner = declared.getClasses().find((cls) => cls.getMethod(APPLICATION_BODY))
     return owner ? [{ file, member: APPLICATION_BODY }] : []
   },
-}
-
-/**
- * Does a class here extend a transformer base from a package?
- *
- * Checked by the base's name and by its import being a bare specifier, so an
- * application class that merely happens to own a `transform` method is not
- * mistaken for one.
- */
-function extendsTransformer(file: ReturnType<ResolverContext['sourceFile']>): boolean {
-  if (!file) return false
-
-  for (const cls of file.getClasses()) {
-    const base = cls.getExtends()?.getExpression()
-    const name = base?.asKind(SyntaxKind.Identifier)?.getText()
-    if (!name?.endsWith('Transformer')) continue
-
-    const imported = file
-      .getImportDeclarations()
-      .find((declaration) =>
-        declaration.getNamedImports().some((named) => named.getName() === name)
-      )
-
-    // a bare specifier means the base lives in a package, not the application
-    if (imported && !imported.getModuleSpecifierValue().startsWith('#')) return true
-  }
-
-  return false
 }

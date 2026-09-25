@@ -131,7 +131,8 @@ function scopeHashOf(behavior: Behavior): string {
  * With no `.select()` and no visible transformer, the output fields are the
  * whole table, which **overestimates**. That is the trade AFP makes on purpose,
  * favouring repeatability over fidelity; the origin is recorded in `Rationale`
- * so `fp:calibrate` can measure the bias.
+ * (`transformer:` / `select:` / `output:`) so `fp:calibrate` can measure the
+ * bias per origin.
  */
 function detsFor(
   entry: CollectedEntryPoint,
@@ -180,12 +181,40 @@ function detsFor(
 
   // output: only a transaction that presents data has output fields
   if (type === 'EO' || type === 'EQ') {
-    for (const store of touched) {
-      const columns = options.countedStores
-        .get(store)!
-        .attributes.filter((attribute) => !attribute.isIdentifier)
+    /**
+     * counting-decisions §6, in order of what is visible:
+     *
+     *   transformer   its keys are what crosses the boundary; the stores' columns
+     *                 are NOT added on top — what it does not emit does not leave
+     *   select        the store contributes only the columns named
+     *   nothing       every column of the store, which overestimates on purpose
+     *
+     * An unreadable spread in a transformer is a placeholder at 1 DET, marked
+     * `(opaque)` like an open input object, and the counter reports it.
+     */
+    const opaqueOutputs = new Set(behavior.opaqueOutputFields)
+    const viaTransformer = behavior.outputFields.length > 0
 
-      for (const column of columns) add(`${store}.${column.name}`, `output:${store}.${column.name}`)
+    if (viaTransformer) {
+      for (const field of behavior.outputFields) {
+        add(field, `transformer:${field}${opaqueOutputs.has(field) ? ' (opaque)' : ''}`)
+      }
+    } else {
+      for (const store of touched) {
+        const selected = behavior.selectedColumns[store]
+
+        if (selected && selected.length > 0) {
+          for (const column of selected) add(`${store}.${column}`, `select:${store}.${column}`)
+          continue
+        }
+
+        const columns = options.countedStores
+          .get(store)!
+          .attributes.filter((attribute) => !attribute.isIdentifier)
+
+        for (const column of columns)
+          add(`${store}.${column.name}`, `output:${store}.${column.name}`)
+      }
     }
   }
 

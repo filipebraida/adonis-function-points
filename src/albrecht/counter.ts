@@ -201,6 +201,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     ...opaqueWarnings(countable, input, { reviewed, declared, overrides: options.overrides ?? {} })
   )
   warnings.push(...unreadableInputWarnings(input))
+  warnings.push(...unreadableOutputWarnings(input))
 
   return {
     ruleset: RULESET,
@@ -496,6 +497,36 @@ function unreadableInputWarnings(input: CountInput): string[] {
       `each sits at the floor of its band. This UNDERSTATES the total — the fix is a ` +
       `validator, not a configuration:`,
     ...blind.slice(0, 10).map(({ entry }) => `  ${entry.trigger} ${entry.signature}`),
+    ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
+  ]
+}
+
+/**
+ * Transformers that emit something the analysis cannot read.
+ *
+ * `...this.resource.serialize()`, `...this.extras`: whatever the model has, or
+ * whatever was handed in. Each counts 1 DET — a floor, the same as an open input
+ * object — and the transaction's output is understated by however many fields
+ * the spread carries. Reported with the expression, because the fix is in the
+ * transformer: name the fields, or `pick` them.
+ */
+function unreadableOutputWarnings(input: CountInput): string[] {
+  const blind = input.entryPoints
+    .map((entry) => ({ entry, behavior: input.behaviors.get(entry.id) }))
+    .filter(({ behavior }) => (behavior?.opaqueOutputFields.length ?? 0) > 0)
+
+  if (blind.length === 0) return []
+
+  return [
+    `${blind.length} transaction(s) pass through a transformer that spreads something the ` +
+      `analysis cannot read, counted as 1 DET each — a FLOOR. This UNDERSTATES the output; ` +
+      `the fix is in the transformer (\`this.pick(...)\` or named keys), not a configuration:`,
+    ...blind
+      .slice(0, 10)
+      .map(
+        ({ entry, behavior }) =>
+          `  ${entry.trigger} ${entry.signature}: ${behavior!.opaqueOutputFields.join(', ')}`
+      ),
     ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
   ]
 }
