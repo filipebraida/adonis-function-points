@@ -36,8 +36,11 @@ const fn = (result: CountResult, name: string) => {
  * The fixture application is small enough for the count to be checked by hand,
  * which is the only way to know the engine is right:
  *
- *   Author  3 DET (name, country, createdAt) · read through a relation, never written
- *   Book    5 DET (authorId, title, isbn, publishedYear, createdAt) · written
+ *   Author  2 DET (name, country) · read through a relation, never written
+ *   Book    4 DET (authorId, title, isbn, publishedYear) · written
+ *
+ * Both carry a `createdAt` the framework stamps (`autoCreate`), which is not a
+ * DET any more than the key is — counting-decisions §6.
  *
  *   GET    /books      reads Book and Author       -> EO
  *   POST   /books      writes Book                 -> EI
@@ -55,11 +58,24 @@ test.group('count: data functions', () => {
     assert.equal(fn(result, 'Author').type, 'EIF')
   })
 
-  test('DET excludes the technical identifier', async ({ assert }) => {
+  /** and the system timestamps — `createdAt` is `autoCreate` on both models (§6) */
+  test('DET excludes the technical identifier and the system timestamps', async ({ assert }) => {
     const result = await countApp('minimal_flat')
 
-    assert.equal(fn(result, 'Author').det, 3)
-    assert.equal(fn(result, 'Book').det, 5)
+    assert.equal(fn(result, 'Author').det, 2)
+    assert.equal(fn(result, 'Book').det, 4)
+  })
+
+  /**
+   * counting-decisions §5: identity is the physical table, never the class.
+   * Keyed by the class, renaming a model billed as a deletion plus an addition
+   * in `fp:diff` for zero functional change.
+   */
+  test('a data function is identified by its table, not by its class', async ({ assert }) => {
+    const result = await countApp('minimal_flat')
+
+    assert.equal(fn(result, 'Book').id, 'data:books')
+    assert.equal(fn(result, 'Author').id, 'data:authors')
   })
 
   test('RET starts at 1, per the default strategy', async ({ assert }) => {

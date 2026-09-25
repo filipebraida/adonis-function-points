@@ -61,13 +61,17 @@ export function countDataFunctions(
     if (!use?.used) continue
 
     /**
-     * DETs exclude the technical identifier.
+     * DETs exclude the technical identifier and the system timestamps.
      *
      * IFPUG defines a DET as a "user recognizable" attribute, and an
      * auto-increment surrogate key is not something the user recognises.
-     * Counting it would inflate every data function by one.
+     * Counting it would inflate every data function by one. A column the
+     * framework stamps (`autoCreate` / `autoUpdate`) is the same kind of field,
+     * and would inflate it by two more — counting-decisions §6.
      */
-    const detAttributes = store.attributes.filter((attribute) => !attribute.isIdentifier)
+    const detAttributes = store.attributes.filter(
+      (attribute) => !attribute.isIdentifier && !attribute.system
+    )
     const det = detAttributes.length
 
     const refs = options.retStrategy === 'composition' ? 1 + store.subgroups.length : 1
@@ -86,7 +90,12 @@ export function countDataFunctions(
     const complexity = complexityOf(type, refs, det, options.tables)
 
     counted.push({
-      id: `data:${store.name}`,
+      /**
+       * Identity is the physical table — counting-decisions §5 — never the class.
+       * Renaming a model is implementation; keyed by the class it billed as a
+       * deletion plus an addition for zero functional change.
+       */
+      id: `data:${store.table ?? store.name}`,
       name: store.name,
       module: store.module,
       type,

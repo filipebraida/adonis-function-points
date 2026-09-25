@@ -104,9 +104,14 @@ export function outputFieldsIn(
 
   const qualifier = owner.getName() ?? 'Transformer'
   const resource = transformerResourceOf(owner)
-  const identifiers = new Set(
+  /**
+   * The resource's key and its system timestamps: re-emitted for links and
+   * sorting, and not something the user recognises — the same two exclusions the
+   * data function applies (§6).
+   */
+  const excluded = new Set(
     (resource ? stores.get(resource)?.attributes : undefined)
-      ?.filter((attribute) => attribute.isIdentifier)
+      ?.filter((attribute) => attribute.isIdentifier || attribute.system)
       .map((attribute) => attribute.name) ?? []
   )
 
@@ -114,8 +119,7 @@ export function outputFieldsIn(
   const opaque = new Set<string>()
 
   const leaf = (prefix: string, name: string) => {
-    // the surrogate key re-emitted for links is not something the user recognises
-    if (prefix === '' && identifiers.has(name)) return
+    if (prefix === '' && excluded.has(name)) return
     outputs.add(`${qualifier}.${prefix ? `${prefix}.${name}` : name}`)
   }
 

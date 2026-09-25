@@ -302,6 +302,7 @@ order of precedence — the first that is visible decides:
 | `xs.map((x) => ({ a, b }))`                                            | the leaves, once                                                          | `transformer:`   |
 | any other spread (`...this.resource.serialize()`)                      | **1, opaque, reported** — a floor, like an open `vine.object` (§9)        | `transformer:`   |
 | the resource's identifier re-emitted (`id`)                            | 0 — the same reason `isPrimary` is not a DET on the data function         |                  |
+| a system timestamp (`autoCreate` / `autoUpdate`), however it leaves    | 0 — the framework stamps it; the user neither supplies nor recognises it  |                  |
 | no transformer, `.select(['title', 'isbn'])` / `.select('a', 'b')`     | only the columns named, for that store                                    | `select:`        |
 | no transformer, nothing visible                                        | every column of every store reached, `.preload()` included                | `output:`        |
 | a field that enters and exits (a filter echoed on screen)              | counted once                                                              |                  |
@@ -321,6 +322,19 @@ _displayed_; with no transformer and no `.select()` we count the whole table and
 overestimate. That is the trade AFP makes on purpose — repeatability over
 fidelity — and the origin of each DET is in the `Rationale` (`transformer:`,
 `select:`, `output:`), so `fp:calibrate` can measure the bias per origin.
+
+**System timestamps, and where this departs from the letter of AFP.** A column
+the framework stamps on insert or update — `@column.dateTime({ autoCreate: true })`,
+`autoUpdate: true` — is not a DET: on the data function, on an output read
+whole, on a `.select()` that names it, or on a transformer that re-emits it. The
+ground is the one `isPrimary` was already excluded on: IFPUG's DET is a _user
+recognisable_ attribute, and the user neither supplies nor maintains this one.
+The control is a `dateTime` the user sets (`concluidaEm`), which counts — the
+rule is about who maintains the column, not its type. AFP §7.2 says "each table
+field shall be identified as a DET", which on its letter would count both the
+key and the stamps; the package departs from that letter for the key and now,
+consistently, for the stamps, and says so here. Not configurable: an option
+nobody can defend either way is not a business decision.
 
 > **Not yet.** A derived scalar prop passed straight to `inertia.render(...)`
 > (`totalHoras`, `canEdit`) is not read; it is the most heuristic line of the

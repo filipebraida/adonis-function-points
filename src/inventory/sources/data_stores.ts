@@ -319,11 +319,21 @@ function columnsOf(cls: ClassDeclaration): Attribute[] {
       const full = decorator.getFullName()
       if (full !== 'column' && !full.startsWith('column.')) continue
 
-      const isIdentifier = /isPrimary\s*:\s*true/.test(decorator.getExpression().getText())
+      const options = decorator.getExpression().getText()
+      const isIdentifier = /isPrimary\s*:\s*true/.test(options)
+      /**
+       * `autoCreate` / `autoUpdate`: the framework stamps it on insert or update.
+       * The user neither supplies nor maintains the value, so it is not a DET —
+       * counting-decisions §6. Recorded here as a fact about the column; the
+       * counting side decides what to do with it.
+       */
+      const system = /auto(Create|Update)\s*:\s*true/.test(options)
+
       attributes.push({
         name: property.getName(),
         type: property.getTypeNode()?.getText(),
         isIdentifier,
+        ...(system ? { system } : {}),
         provenance: { file, line: property.getStartLineNumber(), by: 'column-decorator' },
       })
     }

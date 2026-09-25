@@ -201,19 +201,29 @@ function detsFor(
       }
     } else {
       for (const store of touched) {
+        /**
+         * The key and the system timestamps are not DETs however they leave —
+         * selected by name or as part of the whole table. Same ground as on the
+         * data function: the user neither supplies nor recognises them (§6).
+         */
+        const attributes = options.countedStores.get(store)!.attributes
+        const excluded = new Set(
+          attributes.filter((a) => a.isIdentifier || a.system).map((a) => a.name)
+        )
         const selected = behavior.selectedColumns[store]
 
         if (selected && selected.length > 0) {
-          for (const column of selected) add(`${store}.${column}`, `select:${store}.${column}`)
+          for (const column of selected) {
+            if (excluded.has(column)) continue
+            add(`${store}.${column}`, `select:${store}.${column}`)
+          }
           continue
         }
 
-        const columns = options.countedStores
-          .get(store)!
-          .attributes.filter((attribute) => !attribute.isIdentifier)
-
-        for (const column of columns)
+        for (const column of attributes) {
+          if (excluded.has(column.name)) continue
           add(`${store}.${column.name}`, `output:${store}.${column.name}`)
+        }
       }
     }
   }

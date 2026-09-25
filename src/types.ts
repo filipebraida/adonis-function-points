@@ -57,6 +57,12 @@ export type Attribute = {
   name: string
   type?: string
   isIdentifier: boolean
+  /**
+   * Maintained by the framework, not by the user: `autoCreate` / `autoUpdate`
+   * on a `@column.dateTime()`. Not a DET, on the same ground as the identifier —
+   * counting-decisions §6.
+   */
+  system?: boolean
   provenance: Provenance
 }
 
