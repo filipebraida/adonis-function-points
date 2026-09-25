@@ -18,10 +18,11 @@ and the shape is the only thing that differs between them:
 | `GET /livros/bruto` | the models, untouched                                              |
 | `GET /livros/resumo` | `Livro.query().select(['titulo', 'ano'])`, untouched              |
 | `GET /livros/:id`  | `new LivroTransformer(livro).forDetalhe()` — spreads `toObject()`, adds 2 |
+| `GET /livros/exportacao` | `ExportacaoTransformer` — spreads `serialize()`, which cannot be read |
 | `GET /autores`     | `Autor.query().select('nome')`, untouched                           |
 | `POST /livros`     | validator with 3 fields, writes `Livro`                              |
 
-## Reference: 37 unadjusted FP
+## Reference: 41 unadjusted FP
 
 | function            | type | FTR/RET | DET | complexity | FP  | DET origin                                       |
 | ------------------- | ---- | ------- | --- | ---------- | --- | ------------------------------------------------ |
@@ -31,9 +32,10 @@ and the shape is the only thing that differs between them:
 | GET /livros/bruto   | EO   | 2       | 11  | average    | 5   | every column of both stores                      |
 | GET /livros/resumo  | EO   | 1       | 2   | low        | 4   | `titulo`, `ano`                                  |
 | GET /livros/:id     | EO   | 2       | 7   | average    | 5   | `:id` + the 4 above + `resumo`, `paginas`        |
+| GET /livros/exportacao | EO | 1      | 2   | low        | 4   | `formato` + 1 opaque spread, **reported**        |
 | GET /autores        | EO   | 1       | 1   | low        | 4   | `nome`                                           |
 | POST /livros        | EI   | 1       | 3   | low        | 3   | `titulo`, `isbn`, `autorId`                      |
-| **total**           |      |         |     |            | **37** |                                               |
+| **total**           |      |         |     |            | **41** |                                               |
 
 ## Rules the reference applies
 
@@ -45,8 +47,12 @@ and the shape is the only thing that differs between them:
    does not leave the boundary.
 2. **`...this.pick(this.resource, [...])`** contributes the listed names.
    **`...this.toObject()`** contributes the keys of the body it spreads, which
-   the graph already follows. Any other spread is unreadable: it contributes
-   nothing **and** is reported, never guessed.
+   the graph already follows. Any other spread (`...this.resource.serialize()`,
+   `...this.extras`) is unreadable: it counts **1 DET as a floor** and is
+   reported in the confidence block — the same treatment an open `vine.object`
+   gets on the input side (counting-decisions §9). Zero would make an
+   unreadable output cheaper than a single plain field, which is the wrong
+   direction for a number that becomes an invoice.
 3. **A key that is the identifier of the transformer's resource** (`id` on
    `BaseTransformer<Livro>`) is not a DET, for the same reason `isPrimary` is
    not one on the data function: the user does not recognise a surrogate key.
@@ -67,17 +73,20 @@ Every read transaction is counted from the whole tables, so:
 | GET /livros        | 11        | 5        | 4            |
 | GET /livros/resumo | 9         | 4        | 4            |
 | GET /livros/:id    | 12        | 5        | 5            |
+| GET /livros/exportacao | 9     | 4        | 4            |
 | GET /autores       | 2         | 4        | 4            |
 
-Predicted 1.4.0 total: **38 FP** (+1). Only one of the four reads moves: an EO
+Predicted 1.4.0 total: **42 FP** (+1). Only one of the five reads moves: an EO
 with 1 FTR is low up to 19 DETs, and with 2 FTRs it is average from 6. That is
 the granularity effect counting-decisions §7 describes — DETs change far more
 often than the points do — and it is why the fixture asserts DETs, not only FP.
 
-The first draft of this table predicted 39, grading `GET /livros/resumo` as
-average. The counter was run once, before any code changed, to check that the
-fixture parses with full coverage; it printed 38, and the arithmetic above was
-corrected. The reference column was not touched.
+The first draft of this table predicted 39 over six transactions, grading
+`GET /livros/resumo` as average. The counter was run once, before any code
+changed, to check that the fixture parses with full coverage; it printed 38,
+and the arithmetic above was corrected. The reference column was not touched.
+`GET /livros/exportacao` was added afterwards, still before any code, because
+the rule for an unreadable spread needed a case that exercises it.
 
 ## Transcription choices
 

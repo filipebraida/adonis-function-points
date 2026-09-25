@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 
 import Livro from '#models/livro'
+import ExportacaoTransformer from '#transformers/exportacao_transformer'
 import LivroTransformer from '#transformers/livro_transformer'
 import { criarLivroValidator } from '#validators/livro'
 
@@ -27,6 +28,12 @@ export default class LivrosController {
   async show({ params, inertia }: HttpContext) {
     const livro = await Livro.query().where('id', params.id).preload('autor').firstOrFail()
     return inertia.render('livros/show', { livro: new LivroTransformer(livro).forDetalhe() })
+  }
+
+  /** a spread the analysis cannot read: 1 DET as a floor, and reported */
+  async exportacao({ inertia }: HttpContext) {
+    const livros = await Livro.query().orderBy('titulo')
+    return inertia.render('livros/exportacao', { livros: ExportacaoTransformer.transform(livros) })
   }
 
   async store({ request, response }: HttpContext) {
