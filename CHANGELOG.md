@@ -6,7 +6,7 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
-## Unreleased
+## 0.3.0
 
 **Rule set `afp@1.2.0`.** Three counting fixes move the number for unchanged code,
 so a 0.2.0 baseline has to be recounted.
@@ -33,6 +33,11 @@ only way any of them could have been found.
   anywhere in the code" and left the count at the floor — the exact case the
   override exists for. The schema catalogue now reads `database/` as well; the call
   graph still does not.
+- **`@adonisjs/queue` names the execution method `execute`**, which the list of
+  names did not have. It surfaced only once event dispatch started being followed:
+  the listener was what enqueued the job, so that path had never been walked. Third
+  name this list has learned by measurement — a list written from imagination would
+  have missed this one too.
 - **A write through a relation did not maintain the related table.**
   `distribution.related('files').create({…})` is ordinary Lucid and the relation is
   the subject of the write. Every relation access was treated as a read, so a table

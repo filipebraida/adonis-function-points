@@ -67,4 +67,39 @@ test.group('resolver: job dispatch', () => {
     assert.isDefined(archive)
     assert.equal(archive!.member, 'process')
   })
+
+  test('follows `execute`, which is what `@adonisjs/queue` generates', async ({ assert }) => {
+    const fixture = await loadFixture('job_dispatch')
+    const controller = fixture.controller()
+    const ctx = fixture.contextFor(controller)
+
+    const refs = fixture
+      .callsIn(controller, 'handle')
+      .flatMap((call) => jobDispatchResolver.resolve(call, ctx))
+
+    const notify = refs.find((ref) => posix(ref.file).includes('notify_invite_job.ts'))
+
+    assert.isDefined(notify, '`dispatchMany` is a dispatch like any other')
+    assert.equal(notify!.member, 'execute')
+  })
+
+  /**
+   * The list is closed on purpose: a class declaring none of the known names keeps
+   * the dispatch name, so the gap stays visible rather than being attributed to a
+   * body nobody found.
+   */
+  test('a job declaring no known method keeps the dispatch name', async ({ assert }) => {
+    const fixture = await loadFixture('job_dispatch')
+    const controller = fixture.controller()
+    const ctx = fixture.contextFor(controller)
+
+    const refs = fixture
+      .callsIn(controller, 'handle')
+      .flatMap((call) => jobDispatchResolver.resolve(call, ctx))
+
+    assert.isTrue(
+      refs.every((ref) => ref.member !== undefined),
+      'every ref names the body to look for, found or not'
+    )
+  })
 })

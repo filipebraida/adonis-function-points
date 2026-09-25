@@ -3,6 +3,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import Invite from '#collect/models/invite'
 
 import ArchiveInviteJob from '#collect/jobs/archive_invite_job'
+import NotifyInviteJob from '#collect/jobs/notify_invite_job'
 import ExpireInviteJob from '#collect/jobs/expire_invite_job'
 
 export default class ExpireInviteController {
@@ -10,6 +11,7 @@ export default class ExpireInviteController {
     const invite = await Invite.findByOrFail('uuid', request.param('uuid'))
     await ExpireInviteJob.dispatch({ inviteId: invite.id })
     await ArchiveInviteJob.dispatch({ inviteId: invite.id })
+    await NotifyInviteJob.dispatchMany([{ inviteId: invite.id }])
     return response.redirect().back()
   }
 }

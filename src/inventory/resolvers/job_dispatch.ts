@@ -9,16 +9,22 @@ const DISPATCH_METHODS = new Set(['dispatch', 'dispatchMany', 'dispatchLater', '
 /**
  * The method that actually runs the job, by queue package.
  *
- * There is no single name: `@adonisjs/queue` and `@rlanz/bull-queue` call it
- * `handle`, `@nemoventures/adonis-jobs` calls it `process`. Looking only for
- * `handle` meant every job in an application using the second one resolved to
- * a file and then to no body, so the dispatch was reported as an unknown while
- * the writes inside it went uncounted — the worst of both outcomes.
+ * There is no single name, and this list grew twice by measurement rather than by
+ * reasoning. `@rlanz/bull-queue` uses `handle`; `@nemoventures/adonis-jobs` calls
+ * it `process`; `@adonisjs/queue` — the official package — generates
+ * `async execute()` in its own `make:job` stub. Each omission cost the same: the
+ * file resolved, no body was found, the dispatch was reported as an unknown, and
+ * every write inside the job went uncounted.
+ *
+ * `execute` surfaced only once event dispatch started being followed, because the
+ * listener was what enqueued the job and that path had never been walked. Which is
+ * the argument for adding a name when a real application shows it: a list written
+ * from imagination would have missed this one too.
  *
  * Ordered: a class declaring more than one is answering the dispatcher with the
  * first, and `handle` is the most common.
  */
-const EXECUTION_METHODS = ['handle', 'process', 'run', 'perform'] as const
+const EXECUTION_METHODS = ['handle', 'execute', 'process', 'run', 'perform'] as const
 
 /**
  * "Job" pattern: the write happens asynchronously.
