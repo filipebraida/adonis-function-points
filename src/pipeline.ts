@@ -128,6 +128,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
       entryPointId,
       writes: behavior.writes,
       touches: behavior.touches,
+      writtenStores: behavior.writtenStores,
       inputFields: behavior.inputFields.map((name) => ({
         name,
         provenance: { file: emit(app.root), by: 'validator' },

@@ -13,7 +13,8 @@ import type { AppContext } from '../app_context.js'
 import type { CollectedDataStore } from '../sources/data_stores.js'
 import { detectAccess, hooksFiredBy, rootSymbolOf } from '../detectors/lucid.js'
 import type { PersistenceAccess, RelationMap, StoreSymbols } from '../detectors/lucid.js'
-import { BUILTIN_CALL_RESOLVERS, resolveCall } from '../resolvers/index.js'
+import { BUILTIN_CALL_RESOLVERS, isTechnicalWrite, resolveCall } from '../resolvers/index.js'
+import { isApplicationCode } from '../paths.js'
 import type { EventBindings } from '../sources/event_bindings.js'
 import { isIterationCall, isNoise, isNoiseMember } from './noise.js'
 import type { CallResolver, ResolverContext } from '../resolvers/types.js'
@@ -47,6 +48,16 @@ export type Behavior = {
   writes: boolean
   /** data stores reached */
   touches: string[]
+  /**
+   * Of those, the ones this transaction WRITES.
+   *
+   * `writes` is a property of the transaction — it decides EI against EO — and was
+   * being read as a property of every store the transaction touched: a table merely
+   * read by a route that writes something else counted as maintained, so almost
+   * nothing could be an EIF. §6.5.4 asks who maintains THIS store, which is a
+   * question about the access, not about the request.
+   */
+  writtenStores: string[]
   /**
    * Declared input fields: `request.validateUsing(x)` resolved down to the
    * fields of the VineJS schema — counting-decisions §7.
@@ -383,7 +394,7 @@ const pathOf = (file: string) => file.split('/').pop()?.replace(/\.ts$/, '') ?? 
 
 /** facts about a body, independent of who called it */
 type BodyFacts = {
-  accesses: { store: string; write: boolean }[]
+  accesses: { store: string; write: boolean; technical?: boolean }[]
   /** validators used in this body */
   validators: string[]
   /** validator fields that enumerate nothing: an open `vine.object` */
@@ -392,7 +403,7 @@ type BodyFacts = {
   requestFields: string[]
   /** the body reads the request in a way that enumerates nothing */
   opaqueRequest: boolean
-  followUps: { ref: HandlerRef; by: string }[]
+  followUps: { ref: HandlerRef; by: string; technical?: boolean }[]
   unresolved: UnresolvedCall[]
   bodyHash: string
 }
@@ -549,16 +560,39 @@ export function createAnalyzer(
     const injected = injectedFor(owner, file, app)
     const symbols = storeSymbolsFor(body, file, app, storesByName)
 
-    const accesses: { store: string; write: boolean }[] = []
-    const followUps: { ref: HandlerRef; by: string }[] = []
+    const accesses: { store: string; write: boolean; technical?: boolean }[] = []
+    const followUps: { ref: HandlerRef; by: string; technical?: boolean }[] = []
     const unresolved: UnresolvedCall[] = []
     const validator = validatorFieldsIn(body, file, app)
     const request = requestFieldsIn(body)
 
+    const context: ResolverContext = {
+      file,
+      depth: 0,
+      imports,
+      exportedAs,
+      injected,
+      eventBindings,
+      dataStoresBySymbol: storesByName,
+      resolveSpecifier: app.resolveSpecifier,
+      sourceFile,
+    }
+
     for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const access = detectAccess(call, symbols, relationsByStore)
       if (access) {
-        accesses.push({ store: access.store, write: access.mode === 'write' })
+        /**
+         * Asked about a DIRECT write too, not only about a call a resolver follows.
+         *
+         * `Notification.query().…update({ status: 'read' })` in a `show` handler is
+         * exactly the shape this exists for, and the write IS the call — there is no
+         * method to declare. Asking in one place only would have covered the service
+         * call and missed the query builder beside it, which is the same fact written
+         * differently.
+         */
+        const technical = access.mode === 'write' && isTechnicalWrite(call, context, resolvers)
+
+        accesses.push({ store: access.store, write: access.mode === 'write', technical })
         /**
          * A relation reached by `preload`/`load` is read; one written through
          * `related('files').create(…)` is written. Assuming read either way made
@@ -584,21 +618,15 @@ export function createAnalyzer(
        */
       if (isIterationCall(call)) continue
 
-      const context: ResolverContext = {
-        file,
-        depth: 0,
-        imports,
-        exportedAs,
-        injected,
-        eventBindings,
-        dataStoresBySymbol: storesByName,
-        resolveSpecifier: app.resolveSpecifier,
-        sourceFile,
-      }
-
       const resolved = resolveCall(call, context, resolvers)
       if (resolved) {
-        for (const next of resolved.refs) followUps.push({ ref: next, by: resolved.by })
+        /**
+         * Declared about the CALL, so everything reached through it is incidental too:
+         * `persistOrganizationVisit` is called from several screens and saying it once
+         * covers all of them.
+         */
+        const technical = isTechnicalWrite(call, context, resolvers)
+        for (const next of resolved.refs) followUps.push({ ref: next, by: resolved.by, technical })
         continue
       }
 
@@ -643,6 +671,18 @@ export function createAnalyzer(
     const written = new Set<string>()
 
     for (const file of project.getSourceFiles()) {
+      /**
+       * A seeder's inserts are not the application maintaining a table, and a test
+       * factory's are not either. Counting them made every reference table an ILF:
+       * the CPM puts data maintained by the development team at an EIF at most, and
+       * code data outside the count entirely.
+       *
+       * This is the same notion `scanRoots` applies at the root, applied at any
+       * depth — because a domain-module layout puts `tests/` and `seeders/` inside
+       * `app/`, where the root filter never looks.
+       */
+      if (!isApplicationCode(app.root, file.getFilePath())) continue
+
       const symbols = storeSymbolsFor(file, file, app, storesByName)
       if (symbols.size === 0) continue
 
@@ -674,6 +714,7 @@ export function createAnalyzer(
 
   function run(handler: HandlerRef): Behavior {
     const touches = new Set<string>()
+    const writtenStores = new Set<string>()
     const inputFields = new Set<string>()
     const opaqueInputFields = new Set<string>()
     const requestFields = new Set<string>()
@@ -685,7 +726,7 @@ export function createAnalyzer(
 
     let writes = false
 
-    const visit = (ref: HandlerRef, depth: number) => {
+    const visit = (ref: HandlerRef, depth: number, technical = false) => {
       const key = `${ref.file}#${ref.member ?? ref.line ?? '*'}`
       if (visited.has(key) || depth > maxDepth) return
       visited.add(key)
@@ -714,10 +755,17 @@ export function createAnalyzer(
       let bodyWrites = false
       for (const access of facts.accesses) {
         touches.add(access.store)
-        if (access.write) {
-          bodyWrites = true
-          writes = true
-        }
+        if (!access.write) continue
+
+        /**
+         * The store is maintained either way — a visit table really is written by this
+         * application, so it stays an ILF and stays an FTR. What a technical write does
+         * not do is decide what the transaction is FOR: §6.5.3 would read a `GET` that
+         * notes the visit as an EI, and the CPM asks about primary intent.
+         */
+        writtenStores.add(access.store)
+        bodyWrites = true
+        if (!technical && !access.technical) writes = true
       }
 
       unresolved.push(...facts.unresolved)
@@ -739,7 +787,7 @@ export function createAnalyzer(
 
       for (const followUp of facts.followUps) {
         const before = trace.length
-        visit(followUp.ref, depth + 1)
+        visit(followUp.ref, depth + 1, technical || followUp.technical === true)
         // record which strategy resolved the step that just entered the trace
         if (trace.length > before) trace[before].by = followUp.by
       }
@@ -750,6 +798,7 @@ export function createAnalyzer(
     return {
       writes,
       touches: [...touches].sort(),
+      writtenStores: [...writtenStores].sort(),
       inputFields: [...inputFields].sort(),
       opaqueInputFields: [...opaqueInputFields].sort(),
       requestFields: [...requestFields].sort(),

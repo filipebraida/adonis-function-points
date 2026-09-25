@@ -44,7 +44,14 @@ export function renderCount(result: CountResult): string {
    * habit: if it grows, the count comes from a spreadsheet and the tool loses
    * its reason to exist. Printing the share is what keeps that visible.
    */
-  const overridden = result.functions.filter((fn) => fn.rationale.overrides?.length)
+  /**
+   * Only entries that DECLARED a number. A review records a decision and declares
+   * nothing, so counting it here would read as "35% of the total declared by
+   * override" about a count nobody touched.
+   */
+  const overridden = result.functions.filter((fn) =>
+    fn.rationale.overrides?.some((o) => o.fields.length > 0)
+  )
   if (overridden.length > 0) {
     const points = overridden.reduce((total, fn) => total + fn.points, 0)
     const share = ((points / (result.totals.unadjusted || 1)) * 100).toFixed(1)

@@ -647,6 +647,56 @@ NOT counted in the "Declared by override" share, because that line exists to sho
 how much of the total came from a person and a review declares nothing; and the
 count of reviewed items is still printed, so the fact is recorded rather than erased.
 
+### Maintenance is a question about a store, not about a request
+
+`behavior.writes` decides EI against EO — it is a property of the TRANSACTION — and it
+was also read as "this store is maintained". Every store a writing transaction touched
+became an ILF, so a reference table merely READ by a route that writes something else
+was counted as maintained by the application.
+
+On a production application that left **one** EIF in the whole count, which should have
+been the signal. §6.5.4 asks who maintains THIS store, which is a question about the
+access.
+
+**Decision.** A behaviour carries `writtenStores` beside `touches`, and maintenance is
+decided per store. `writes` keeps its own, separate job.
+
+### Seeders, tests and factories do not maintain anything
+
+The project-wide maintenance pass read a seeder's inserts as the application
+maintaining a table. The CPM puts data maintained by the development team at an EIF at
+most, and code data outside the count altogether — so a reference table only the seed
+populates is never an ILF of the application.
+
+The filter on scan roots already drops `tests/`, `database/` and the rest, but only at
+the ROOT. An application organised by domain module puts both inside `app/`:
+
+    app/billing/tests/functional/invoice.spec.ts
+    app/billing/seeders/plan_seeder.ts
+
+so they were in the project and the root filter never saw them.
+
+**Decision.** The same notion applied at any depth, by the directory names AdonisJS's
+own generators use — `tests`, `seeders`, `migrations`, `factories` — plus the
+`.spec`/`.test` suffixes its suite globs match.
+
+### A technical write does not decide what a transaction is for
+
+§6.5.3 is mechanical: a transaction that modifies a data store is an EI. That is
+deliberate — §6.1 chooses repeatability over CPM fidelity — and it misreads one shape.
+A screen that records the visit, the last organisation seen, a view counter: the CPM
+asks what the elementary process is PRIMARILY for, and the answer is presentation.
+
+**Decision.** A resolver may declare a call a `technicalWrite`. The fact is about the
+CALL, not about each transaction that reaches it, because a bookkeeping helper is called
+from several screens and saying it once covers all of them. It is asked of a direct
+write too — `Notification.query().…update({ status: 'read' })` in a `show` handler is
+the same fact with no method to name.
+
+It does NOT hide the write: the store stays maintained by this application, stays an
+ILF, and stays an FTR of the transaction. Only the classification changes. A
+declaration meant to make the write disappear would be `ignores`, and would be wrong.
+
 ### Three outcomes, where a resolver had two
 
 `resolve` returning `[]` meant _not recognised_. A strategy that recognised a

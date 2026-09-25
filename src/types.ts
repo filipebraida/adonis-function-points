@@ -99,6 +99,8 @@ export type HandlerBehavior = {
   writes: boolean
   /** DataStores reached (ids) */
   touches: string[]
+  /** of those, the ones this transaction writes — §6.5.4 is per store, not per request */
+  writtenStores: string[]
   /** declared input fields (validators) */
   inputFields: Field[]
   /**

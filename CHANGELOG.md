@@ -6,6 +6,49 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## Unreleased
+
+**Rule set `afp@1.4.0`.** Two classification defects are fixed and both move numbers,
+so a 0.4.0 baseline has to be recounted.
+
+Found by auditing a production count function by function against the code, rather than
+by reading the report's warnings — which is where the previous rounds had been looking.
+
+### Fixed
+
+- **Maintenance was decided per REQUEST instead of per store.** `behavior.writes`
+  decides EI against EO and was also read as "this store is maintained", so every store
+  a writing transaction touched became an ILF. A reference table merely READ by a route
+  that writes something else counted as maintained. On a production application this
+  left exactly one EIF in the whole count, which should have been the signal.
+- **Seeders, tests and factories counted as maintenance.** The project-wide pass read a
+  seeder's inserts as the application maintaining a table, so reference data only the
+  seed populates came out as an ILF — which the CPM does not allow. The filter on scan
+  roots drops `tests/` and `database/` only at the ROOT, and a domain-module layout puts
+  both inside `app/`. It now applies at any depth.
+- **The override warning counted floors that were already answered**, said "one schema"
+  whatever it was given, and therefore fired on a configuration that was complete.
+- **`opaqueReviewed` matching nothing was silent.** `detFromSchema` already warns when
+  it names a schema that is not declared; a review naming a field that does not exist
+  reviewed nothing while the warning kept firing, which reads as the tool ignoring the
+  configuration.
+- **A review was invisible in `fp:explain`.** Its reason appeared nowhere, which defeats
+  requiring one. Reviewed floors are now marked `(opaque, reviewed)` and the reason is
+  printed — without being counted in the "Declared by override" share, since a review
+  declares no number.
+
+### New
+
+- **`CallResolver.technicalWrite()`** declares that a write is not what the transaction
+  is for. §6.5.3 reads any write as an EI, which misreads a screen that records the
+  visit; the CPM asks about primary intent. The fact is declared about the CALL, so a
+  bookkeeping helper called from several screens is declared once. It does not hide the
+  write: the store stays an ILF and stays an FTR.
+- **`boundary.business` says when it contradicts the code.** It accepted without comment
+  a table nothing in the application writes — which is how two read-only lookup tables
+  were declared as business data on the belief they had a CRUD, when the routes were
+  `.only(['index', 'show'])`. The declaration is still honoured; the fact is reported.
+
 ## 0.4.0
 
 **Rule set `afp@1.3.0`.** Conditional validator groups now count, and a nested

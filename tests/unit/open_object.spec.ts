@@ -3,6 +3,7 @@ import { test } from '@japa/runner'
 import { discoverApp } from '../../src/inventory/app_context.js'
 import { collectJsonSchemas } from '../../src/inventory/sources/json_schemas.js'
 import { analyze } from '../../src/pipeline.js'
+import { renderCount } from '../../src/reporters/table.js'
 import { appFixturePath } from '../helpers.js'
 
 const ROOT = appFixturePath('open_object')
@@ -248,10 +249,20 @@ test.group('opaqueReviewed: answering a warning that is correct', () => {
    * "1 function, 7 FP, 35% declared by override", misrepresenting the one number
    * that exists to keep this honest.
    */
-  test('a review is not a declared number', async ({ assert }) => {
+  /**
+   * Recorded, so `fp:explain` can print the reason a review was accepted — dropping the
+   * entry lost it entirely, which defeats requiring a reason. But it declares no number,
+   * so the "Declared by override" share must not count it: that line exists to show how
+   * much of the total came from a person.
+   */
+  test('a review is recorded, and is not a declared number', async ({ assert }) => {
     const { count } = await analyze(ROOT, reviewed)
+    const form = count.functions.find((f) => f.name === 'Form')!
 
-    assert.isUndefined(count.functions.find((f) => f.name === 'Form')!.rationale.overrides)
+    assert.lengthOf(form.rationale.overrides!, 1)
+    assert.isEmpty(form.rationale.overrides![0].fields, 'no number was declared')
+    assert.include(form.rationale.overrides![0].reason, 'a copy of the form')
+    assert.notInclude(renderCount(count), 'Declared by override')
   })
 })
 

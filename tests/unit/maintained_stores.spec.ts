@@ -1,4 +1,7 @@
 import { test } from '@japa/runner'
+import { Node } from 'ts-morph'
+
+import type { CallResolver } from '../../src/inventory/resolvers/types.js'
 
 import { analyze } from '../../src/pipeline.js'
 import { appFixturePath } from '../helpers.js'
@@ -50,7 +53,12 @@ test.group('ILF vs EIF: maintenance is a property of the application', () => {
         .filter((f) => f.type === 'EI' || f.type === 'EO' || f.type === 'EQ')
         .map((f) => f.name)
         .sort(),
-      ['GET /reports', 'POST /reports/:param/lines', 'POST /reports/:param/notify'],
+      [
+        'GET /reports',
+        'GET /reports/:param',
+        'POST /reports/:param/lines',
+        'POST /reports/:param/notify',
+      ],
       'only the routes — the job the scheduler runs invents no elementary process'
     )
   })
@@ -121,5 +129,98 @@ test.group('relations: a write through one maintains the related table', () => {
      */
     assert.equal(count.functions.find((f) => f.name === 'Author')!.type, 'EIF')
     assert.equal(count.functions.find((f) => f.name === 'Book')!.type, 'ILF')
+  })
+})
+
+/**
+ * §6.5.4 asks who maintains THIS store. Two different mistakes read it as something
+ * else, and both made almost everything an ILF.
+ */
+test.group('maintenance is per store, and scaffolding does not maintain', () => {
+  test('a table only the seed writes is not an ILF', async ({ assert }) => {
+    const { count } = await analyze(appFixturePath('job_maintained'))
+
+    /**
+     * The CPM puts data maintained by the development team at an EIF at most. The
+     * project-wide pass read a seeder's inserts as the application maintaining the
+     * table, and a domain-module layout puts `seeders/` and `tests/` inside `app/`,
+     * where the filter on scan roots never looks.
+     */
+    assert.equal(count.functions.find((f) => f.name === 'Country')!.type, 'EIF')
+  })
+
+  test('a store a route writes is still an ILF', async ({ assert }) => {
+    const { count } = await analyze(appFixturePath('job_maintained'))
+
+    /** the control: excluding scaffolding must not exclude the application */
+    assert.equal(count.functions.find((f) => f.name === 'ReportLine')!.type, 'ILF')
+    assert.equal(count.functions.find((f) => f.name === 'Report')!.type, 'ILF')
+  })
+
+  /**
+   * `writes` is a property of the TRANSACTION — it decides EI against EO — and was
+   * read as a property of every store the transaction touched. A reference table
+   * merely READ by a route that writes something else became an ILF, which on a
+   * production application left exactly one EIF in the whole count.
+   */
+  test('a store only READ by a writing transaction is not maintained', async ({ assert }) => {
+    const { inventory, count } = await analyze(appFixturePath('job_maintained'))
+
+    const index = inventory.entryPoints.find((e) => e.signature === '/reports')!
+    const behavior = inventory.behaviors.find((b) => b.entryPointId === index.id)!
+
+    assert.include(behavior.touches, 'Country', 'the transaction does reference it')
+    assert.notInclude(behavior.writtenStores, 'Country', 'and does not write it')
+    assert.equal(count.functions.find((f) => f.name === 'Country')!.type, 'EIF')
+  })
+})
+
+/**
+ * §6.5.3 decides EI against EO mechanically, which is deliberate — repeatability over
+ * CPM fidelity — and misreads one shape: a screen that records the visit. The CPM asks
+ * what the elementary process is PRIMARILY for, and for a `GET` that shows a record
+ * while noting the visit, the answer is presentation.
+ */
+test.group('a technical write does not decide what a transaction is for', () => {
+  const bookkeeping = {
+    name: 'visit-bookkeeping',
+    order: 1,
+    resolve: () => [],
+    technicalWrite(call: Parameters<NonNullable<CallResolver['technicalWrite']>>[0]) {
+      const expression = call.getExpression()
+      return Node.isPropertyAccessExpression(expression) && expression.getName() === 'recordVisit'
+    },
+  } satisfies CallResolver
+
+  test('by default the write makes it an EI', async ({ assert }) => {
+    const { count } = await analyze(appFixturePath('job_maintained'))
+
+    assert.equal(count.functions.find((f) => f.name === 'GET /reports/:param')!.type, 'EI')
+  })
+
+  test('declared technical, it is an EO', async ({ assert }) => {
+    const { count } = await analyze(appFixturePath('job_maintained'), {
+      resolvers: { call: [bookkeeping] },
+    })
+
+    assert.equal(count.functions.find((f) => f.name === 'GET /reports/:param')!.type, 'EO')
+  })
+
+  /**
+   * The one thing this must not do. The visit table really is written by this
+   * application, so it stays an ILF and stays an FTR — only the transaction's
+   * classification changes. A declaration that made the write disappear would be
+   * `ignores`, and would be wrong.
+   */
+  test('the store it writes is still maintained', async ({ assert }) => {
+    const { count, inventory } = await analyze(appFixturePath('job_maintained'), {
+      resolvers: { call: [bookkeeping] },
+    })
+
+    assert.equal(count.functions.find((f) => f.name === 'Visit')!.type, 'ILF')
+
+    const show = inventory.entryPoints.find((e) => e.signature === '/reports/:id')!
+    const behavior = inventory.behaviors.find((b) => b.entryPointId === show.id)!
+    assert.include(behavior.writtenStores, 'Visit', 'the write is recorded, just not primary')
   })
 })

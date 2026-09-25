@@ -102,4 +102,24 @@ export interface CallResolver {
    * defect this package can have, whoever writes it.
    */
   ignores?(call: CallExpression, ctx: ResolverContext): boolean
+
+  /**
+   * "This call writes, and the write is not what the transaction is FOR."
+   *
+   * AFP §6.5.3 decides EI against EO mechanically: a transaction that modifies a data
+   * store is an EI. That is deliberate — repeatability over CPM fidelity — and it
+   * misreads one shape: a screen that records a visit, a last-seen organisation, a
+   * view counter. The CPM asks what the elementary process is PRIMARILY for, and for a
+   * `GET` that shows a record while noting the visit, the answer is presentation.
+   *
+   * So the fact is declared about the CALL, not about each transaction that reaches it:
+   * `persistOrganizationVisit` is called from several screens and saying it once covers
+   * all of them.
+   *
+   * It does NOT hide the write. The store is still maintained by this application —
+   * still an ILF, still an FTR of the transaction — and only the transaction's
+   * classification changes. A resolver that wanted the write to disappear would use
+   * `ignores`, and would be wrong to.
+   */
+  technicalWrite?(call: CallExpression, ctx: ResolverContext): boolean
 }

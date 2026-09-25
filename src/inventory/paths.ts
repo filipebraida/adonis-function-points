@@ -43,3 +43,37 @@ export const relativeTo = (root: string, value: string) =>
 /** Compares two paths that may have come from different sources. */
 export const samePath = (a: string | undefined, b: string | undefined) =>
   a !== undefined && b !== undefined && toPosix(a) === toPosix(b)
+
+/**
+ * Is this file the application's own code, as opposed to the scaffolding around it?
+ *
+ * The top-level filter on `scanRoots` already drops `tests/`, `database/` and the
+ * rest — but only at the ROOT. Applications organised by domain module put both
+ * inside `app/`:
+ *
+ *     app/billing/tests/functional/invoice.spec.ts
+ *     app/billing/seeders/plan_seeder.ts
+ *
+ * so they land in the project, and `writtenAnywhere()` read a seeder's inserts as
+ * the application maintaining the table. A reference table only the seed populates
+ * came out as an ILF — which the CPM does not allow: data maintained by the
+ * development team is at most an EIF, and code data is not counted at all.
+ *
+ * The segments are AdonisJS's own: `make:test` writes to a suite directory,
+ * `make:seeder` to `seeders`, `make:migration` to `migrations`, `make:factory` to
+ * `factories`. The `.spec`/`.test` suffixes come from the suite globs in
+ * `adonisrc.ts`.
+ */
+const SCAFFOLDING = new Set(['tests', 'test', 'seeders', 'seeder', 'migrations', 'factories'])
+
+export function isApplicationCode(root: string, file: string): boolean {
+  const relative = relativeTo(root, file)
+  if (relative.startsWith('..')) return false
+
+  const parts = relative.split('/')
+  const name = parts.at(-1) ?? ''
+
+  if (/\.(spec|test)\.[jt]s$/.test(name)) return false
+
+  return !parts.slice(0, -1).some((segment) => SCAFFOLDING.has(segment))
+}

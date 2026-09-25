@@ -371,7 +371,11 @@ test.group('cli: exit codes', () => {
     assert.isAbove(header, -1)
     assert.deepEqual(
       lines.slice(header + 1, header + 3).map((line) => line.split(' ')[0]),
-      ['catalogo', 'faturamento']
+      /**
+       * `faturamento` leads because `catalogo`'s only store is READ by both routes and
+       * written by neither — an EIF at 5 FP, not the ILF at 7 it used to be counted as.
+       */
+      ['faturamento', 'catalogo']
     )
     assert.isTrue(
       lines[header + 2].includes('catalogo'),

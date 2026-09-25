@@ -38,6 +38,20 @@ export const BUILTIN_CALL_RESOLVERS: CallResolver[] = [
  * them apart. Hence specific strategies declare a lower `order` than generic
  * ones, and `module-function` comes last — it would match almost anything.
  */
+/**
+ * Does any strategy call this a technical write?
+ *
+ * Asked separately from resolution, because the strategy that recognises the call as
+ * incidental is not necessarily the one that knows where it goes.
+ */
+export function isTechnicalWrite(
+  call: import('ts-morph').CallExpression,
+  ctx: import('./types.js').ResolverContext,
+  resolvers: CallResolver[] = BUILTIN_CALL_RESOLVERS
+): boolean {
+  return resolvers.some((resolver) => resolver.technicalWrite?.(call, ctx) === true)
+}
+
 export function resolveCall(
   call: import('ts-morph').CallExpression,
   ctx: import('./types.js').ResolverContext,
