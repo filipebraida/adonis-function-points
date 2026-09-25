@@ -101,10 +101,18 @@ jobs:
       #
       # Trusted Publishing needs npm >= 11.5.1, so the version is printed: when
       # this fails again, the log should say which of the two things was missing.
+      # `--loglevel verbose` is deliberate, and stays.
+      #
+      # ENEEDAUTH is what npm reports whether it never attempted the OIDC
+      # exchange or attempted it and was refused, so at the default log level the
+      # two causes are indistinguishable — and one is a workflow bug while the
+      # other is a setting on npmjs.com that no amount of workflow editing fixes.
+      # Three release attempts were spent on that ambiguity. Verbose shows the
+      # request; it does not print the token.
       - name: Publish to npm via Trusted Publishing
         env:
           NPM_TAG: ${{ steps.tag.outputs.npm_tag }}
-        run: npm publish --access public --tag "$NPM_TAG"
+        run: npm publish --access public --tag "$NPM_TAG" --loglevel verbose
 
       - name: Create GitHub release
         env:
