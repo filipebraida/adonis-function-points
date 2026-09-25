@@ -1,6 +1,7 @@
 import { discoverApp } from './inventory/app_context.js'
 import { collectDataStores } from './inventory/sources/data_stores.js'
 import { collectEntryPoints } from './inventory/sources/routes_ast.js'
+import { collectEventBindings } from './inventory/sources/event_bindings.js'
 import { collectJsonSchemas } from './inventory/sources/json_schemas.js'
 import { createAnalyzer } from './inventory/graph/call_graph.js'
 import { count } from './albrecht/counter.js'
@@ -70,6 +71,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
   const analyzer = createAnalyzer(app, stores, {
     maxDepth: options.maxDepth,
     callResolvers: options.resolvers?.call,
+    eventBindings: collectEventBindings(app),
   })
 
   const behaviors = new Map(

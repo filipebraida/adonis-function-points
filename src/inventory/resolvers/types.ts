@@ -1,6 +1,7 @@
 import type { CallExpression, SourceFile } from 'ts-morph'
 
 import type { DataStore, HandlerRef } from '../../types.js'
+import type { EventBindings } from '../sources/event_bindings.js'
 
 /**
  * AdonisJS does not impose a code organisation. The same transaction can be
@@ -58,6 +59,15 @@ export type ResolverContext = {
    * it were business code.
    */
   dataStoresBySymbol: Map<string, DataStore>
+  /**
+   * Which listeners each event reaches, read from `emitter.on(...)`.
+   *
+   * Empty when the application declares no bindings. Like the data stores, this
+   * is collected BEFORE any handler analysis: a dispatch cannot be followed
+   * from the call site alone, because the binding lives in a preload file the
+   * handler never imports.
+   */
+  eventBindings: EventBindings
   /** resolves an AdonisJS specifier (`#collect/models/invite`) to a path */
   resolveSpecifier(specifier: string): string | null
   /** loads a file into the project, if it exists */

@@ -4,7 +4,7 @@ import type { CallExpression } from 'ts-morph'
 import type { HandlerRef } from '../../types.js'
 import type { CallResolver, ResolverContext } from './types.js'
 
-const DISPATCH_METHODS = new Set(['dispatch', 'dispatchLater', 'enqueue', 'later'])
+const DISPATCH_METHODS = new Set(['dispatch', 'dispatchMany', 'dispatchLater', 'enqueue', 'later'])
 
 /**
  * The method that actually runs the job, by queue package.

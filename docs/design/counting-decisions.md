@@ -520,6 +520,35 @@ inside it went uncounted. On one application that was 14 dispatches.
 when the class declares none of them keep the dispatch name — so the gap stays
 visible instead of being attributed to a body nobody found.
 
+### An event is the same decision as a job
+
+`events.OrderPlaced.dispatch(id)` in a handler is the user's click, and the write
+happens in a listener. Same rule: the effect belongs to the transaction that
+caused it, and §6.5.3 requires aggregating every path the transaction reaches.
+
+It cannot be followed from the call site alone. `dispatch` comes from
+`BaseEvent`, so the event class declares no body, and the binding lives in a
+preload file the handler never imports. So the bindings are collected once,
+before any handler analysis, exactly like the data stores — and they are **read**
+from `emitter.on(event, [listeners])`, never inferred from a name, the same rule
+the subpath imports follow.
+
+Both shapes count: the generated registries that `make:event` produces, and the
+class imported directly. The second matters more than it looks — `X.dispatch(p)`
+is the shape `job-dispatch` matches, so without running first the event resolver
+would watch the job strategy resolve the event class, find no `handle`, and
+report the dispatch as an unknown.
+
+A binding may name the method (`[[Listener, 'onShipment']]`). Taking `handle` on
+faith there looks for a body that is not the one bound.
+
+On one production application this closed the last 4 pending calls and added an
+FTR to 3 transactions. **It moved no function points**, and that is worth
+recording rather than hiding: the stores were reached, and none of the three
+crossed a complexity band. The measurement got more complete without the total
+moving — which is the granularity effect §7 already describes, seen from the
+other side.
+
 ### Three outcomes, where a resolver had two
 
 `resolve` returning `[]` meant _not recognised_. A strategy that recognised a

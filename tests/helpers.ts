@@ -6,6 +6,7 @@ import path from 'node:path'
 import { discoverApp } from '../src/inventory/app_context.js'
 import { collectDataStores } from '../src/inventory/sources/data_stores.js'
 import { importMapsOf, injectedFor } from '../src/inventory/graph/call_graph.js'
+import { collectEventBindings } from '../src/inventory/sources/event_bindings.js'
 import type { CollectedDataStore } from '../src/inventory/sources/data_stores.js'
 import type { ResolverContext } from '../src/inventory/resolvers/types.js'
 
@@ -80,6 +81,7 @@ export async function loadFixture(name: string) {
         file,
         depth,
         ...importMapsOf(file, app),
+        eventBindings: collectEventBindings(app),
         // the same function the pipeline uses: a reimplementing helper misleads
         injected: injectedFor(file.getClasses()[0], file, app),
         dataStoresBySymbol,

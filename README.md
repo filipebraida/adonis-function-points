@@ -295,8 +295,13 @@ detail: `CreateUserJob.dispatch(p)`, `UserService.create(p)` and `User.find(p)`
 are all `Identifier.method(args)`, and only ordering tells them apart.
 
 Built-in strategies, most specific first: `same-class-method`, `action-object`,
-`job-dispatch`, `transformer`, `static-service`, `property-service`,
-`module-function`.
+`event-dispatch`, `job-dispatch`, `transformer`, `static-service`,
+`property-service`, `module-function`.
+
+A job dispatch and an event dispatch are followed as part of the **same**
+transaction: the user clicks and the effect happens, whatever thread runs it.
+Event bindings are read from `emitter.on(event, [listeners])`, so a listener's
+reads and writes count towards the transaction that dispatched the event.
 
 ### Declaring that a call reaches no data
 

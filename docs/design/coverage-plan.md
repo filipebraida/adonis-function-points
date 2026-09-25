@@ -235,14 +235,37 @@ outras três não movem ponto nenhum, como manda o invariante.
 uma é uma coisa real, não ruído:
 
 - `events.X.dispatch` (4) — evento pelo registry gerado; quem grava é o
-  listener. É capacidade que falta, não falso positivo.
+  listener. É capacidade que falta, não falso positivo. **Feito na fase 5.**
 - `this.authz.can` / `user.assignRole` (8) — o pacote de autorização da casa;
   `can` provavelmente lê tabela de permissão.
-- `guias.load` (2) — `model.load('relacao')` é leitura de verdade, e é lacuna
-  do detector de persistência.
+- `guias.load` (2) — **não é `model.load('relacao')` do Lucid.** É
+  `Collection.load()` do `@adonisjs/content`, lendo JSON de arquivo. A conclusão
+  errada durou uma frase porque foi tirada do nome do método, que é exatamente o
+  que o filtro de ruído existe para não fazer. Conteúdo em arquivo pode ou não
+  ser função de dado — é decisão de fronteira e não foi tomada.
 - `getVariant` (3), `limiter.penalize` / `limiter.delete` (2) — pacotes de
   anexo e de rate limit; não tocam dado da aplicação. Resolvíveis pelo
   `ignores()` no config do projeto, que é o lugar certo.
 
-O item de `guias.load` é o único achado novo que muda contagem, e não entrou
-nesta fase de propósito: é fixação no detector, não no filtro.
+## Fase 5 — dispatch de evento ✅
+
+| app | fase 4 | fase 5    |
+| --- | ------ | --------- |
+| A   | 94,8%  | **95,4%** |
+| B   | 95,1%  | 95,1%     |
+| C   | 98,4%  | 98,4%     |
+| D   | 91,4%  | 91,4%     |
+
+Fecha as 4 pendências de `events.X.dispatch` da app A e acrescenta um FTR a 3
+transações. **Não moveu nenhum ponto de função**, e vale registrar em vez de
+esconder: as tabelas foram alcançadas, e nenhuma das três cruzou faixa de
+complexidade. Medição mais completa com total igual — é o efeito de
+granularidade que o §7 do counting-decisions já descreve, visto do outro lado.
+
+Duas coisas que o fixture cobre e que o app real não tem: o binding que nomeia o
+método (`[[Listener, 'onShipment']]`) e a forma direta `Evento.dispatch(p)` — que
+tem a mesma forma que o `job-dispatch` casa, e por isso o resolver de evento
+roda antes (ordem 12).
+
+`dispatchMany` entrou na lista de métodos de dispatch de job no mesmo passo:
+apareceu dentro de um listener, no caminho que só passou a ser percorrido agora.

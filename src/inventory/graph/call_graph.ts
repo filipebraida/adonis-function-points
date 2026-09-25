@@ -13,6 +13,7 @@ import type { CollectedDataStore } from '../sources/data_stores.js'
 import { detectAccess, hooksFiredBy, rootSymbolOf } from '../detectors/lucid.js'
 import type { PersistenceAccess, RelationMap, StoreSymbols } from '../detectors/lucid.js'
 import { BUILTIN_CALL_RESOLVERS, resolveCall } from '../resolvers/index.js'
+import type { EventBindings } from '../sources/event_bindings.js'
 import { isIterationCall, isNoise, isNoiseMember } from './noise.js'
 import type { CallResolver, ResolverContext } from '../resolvers/types.js'
 import type { HandlerRef, TraceStep, UnresolvedCall } from '../../types.js'
@@ -163,6 +164,12 @@ export type GraphOptions = {
    * pattern, so a project with its own convention registers it here.
    */
   callResolvers?: CallResolver[]
+  /**
+   * Which listeners each event reaches. Collected by the caller, because the
+   * binding lives in a preload file and is an application-wide fact, like the
+   * data stores.
+   */
+  eventBindings?: EventBindings
 }
 
 const DEFAULT_MAX_DEPTH = 3
@@ -180,6 +187,8 @@ export function createAnalyzer(
   stores: CollectedDataStore[],
   options: GraphOptions = {}
 ) {
+  const eventBindings = options.eventBindings ?? new Map()
+
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
     skipFileDependencyResolution: true,
@@ -331,6 +340,7 @@ export function createAnalyzer(
         imports,
         exportedAs,
         injected,
+        eventBindings,
         dataStoresBySymbol: storesByName,
         resolveSpecifier: app.resolveSpecifier,
         sourceFile,
