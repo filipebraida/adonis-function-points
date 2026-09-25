@@ -30,6 +30,16 @@ export type ResolverContext = {
   /** file imports: local identifier -> resolved absolute path */
   imports: Map<string, string>
   /**
+   * Local identifier -> the name it was exported under, when they differ.
+   *
+   * `import { createUser as create }` binds `create` locally while the function
+   * is `createUser` in its own file. Following the local name looks for a body
+   * that does not exist, and the call is reported as unresolved for a reason
+   * that is not true. Identity is the (specifier, exported name) pair — the same
+   * mistake the data-store collector had to unlearn.
+   */
+  exportedAs: Map<string, string>
+  /**
    * Injected dependencies visible in this body: property name -> class file.
    * For example `billing` -> `.../billing_service.ts`.
    *
@@ -66,4 +76,20 @@ export interface CallResolver {
   /** lower runs first; specific strategies before generic ones */
   readonly order?: number
   resolve(call: CallExpression, ctx: ResolverContext): HandlerRef[]
+
+  /**
+   * "This call is mine, and it reaches no data store."
+   *
+   * `resolve` has two outcomes where three are needed. Returning `[]` means
+   * *not recognised*, so a strategy that recognises a call perfectly well and
+   * knows it touches nothing countable had no way to say so: the call still
+   * landed in `unresolved`, and a project could not answer its own false
+   * positives without making the tool claim a body that does not exist.
+   *
+   * Declaring it here is deliberately louder than a name on a silence list.
+   * It costs a named strategy and a reason in the project's own config, and
+   * `fp:count` still reports the volume — because a silent drop is the worst
+   * defect this package can have, whoever writes it.
+   */
+  ignores?(call: CallExpression, ctx: ResolverContext): boolean
 }

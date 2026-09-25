@@ -192,7 +192,57 @@ código.
 
 ## O que este plano NÃO faz
 
-Não persegue 100%. As 5 pendências indeterminadas (`this.redis.*`,
+Não persegue 100%. As pendências indeterminadas (`this.redis.*`,
 `this.authz.can`) são exatamente o que o AFP §6.5.3 manda catalogar e reportar
 — elas _devem_ continuar visíveis. Um rastreador que reporta zero pendências ou
 é perfeito ou está mentindo, e o segundo é mais provável.
+
+## Fase 4 — o que o uso real mostrou ✅
+
+As três fases acima foram planejadas. Esta veio de instalar a 0.1.0 numa
+aplicação e ler o relatório: nenhuma das quatro causas abaixo apareceria por
+raciocínio, e juntas respondiam pela maior parte do que sobrava.
+
+| app | fim da fase 3 | fase 4    |
+| --- | ------------- | --------- |
+| A   | 79,7%         | **94,8%** |
+| B   | 85,9%         | **95,1%** |
+| C   | 83,5%         | **98,4%** |
+| D   | 91,4%         | 91,4%     |
+
+**As quatro causas.** Duas eram bugs, duas eram lacunas de projeto.
+
+1. **Iteração reivindicada por um resolver.** `LABELS.map(cb)` tem a forma
+   `Identifier.method(args)`, então `static-service` reivindicava, resolvia o
+   módulo de enum e reportava falta de `map` nele — o filtro de ruído nunca era
+   consultado, porque ele só entra depois que todas as estratégias declinam.
+   Sozinha, 30 das 40 pendências da app A.
+2. **O método de execução do job.** `@nemoventures/adonis-jobs` chama de
+   `process`, não `handle`. Procurar só `handle` resolvia o arquivo e não achava
+   corpo: a pendência era falsa **e** as escritas dentro do job não eram
+   contadas. 14 dispatches na app C.
+3. **Import com alias.** `moduleFunctionResolver` usava o nome local como
+   membro, então `import { x as y }` procurava `y` num arquivo que exporta `x`.
+4. **Chamada sobre o resultado de chamada.** `dispatch(j).waitResult()` era
+   reportada, embora a chamada interna — que é onde o desconhecido está — já
+   fosse reportada no mesmo corpo. Cobrava duas vezes pelo mesmo buraco.
+
+**A contagem mexeu 1 ponto em uma das quatro** (app C, 772 → 773), e por causa
+da (2): seguir o `process` alcança dados que antes não eram alcançados. As
+outras três não movem ponto nenhum, como manda o invariante.
+
+**As quatro passaram de 0,85.** O que sobra são 19 pendências nas quatro, e cada
+uma é uma coisa real, não ruído:
+
+- `events.X.dispatch` (4) — evento pelo registry gerado; quem grava é o
+  listener. É capacidade que falta, não falso positivo.
+- `this.authz.can` / `user.assignRole` (8) — o pacote de autorização da casa;
+  `can` provavelmente lê tabela de permissão.
+- `guias.load` (2) — `model.load('relacao')` é leitura de verdade, e é lacuna
+  do detector de persistência.
+- `getVariant` (3), `limiter.penalize` / `limiter.delete` (2) — pacotes de
+  anexo e de rate limit; não tocam dado da aplicação. Resolvíveis pelo
+  `ignores()` no config do projeto, que é o lugar certo.
+
+O item de `guias.load` é o único achado novo que muda contagem, e não entrou
+nesta fase de propósito: é fixação no detector, não no filtro.

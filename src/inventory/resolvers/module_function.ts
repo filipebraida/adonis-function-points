@@ -21,9 +21,15 @@ export const moduleFunctionResolver: CallResolver = {
     const expr = call.getExpression()
     if (!expr.isKind(SyntaxKind.Identifier)) return []
 
-    const file = ctx.imports.get(expr.getText())
+    const local = expr.getText()
+    const file = ctx.imports.get(local)
     if (!file) return []
 
-    return [{ file, member: expr.getText() }]
+    /**
+     * The body carries the exported name, not the local one. Following the
+     * local name through an alias finds nothing and reports the call as
+     * unresolved for a reason that is not true.
+     */
+    return [{ file, member: ctx.exportedAs.get(local) ?? local }]
   },
 }

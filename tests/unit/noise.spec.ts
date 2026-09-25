@@ -95,6 +95,53 @@ test.group('noise: what must not count against coverage', () => {
   })
 })
 
+test.group('noise: iteration and chained calls', () => {
+  test('an iteration method with a callback is not reported', async ({ assert }) => {
+    const { inventory } = await analyseNoisy()
+    const gaps = unresolvedOf(inventory, 'notes.refresh')
+
+    assert.isEmpty(
+      gaps.filter((u) => u.expression.includes('some') || u.expression.includes('map')),
+      '`rules.some((r) => …)` is a predicate over a list, not a query'
+    )
+  })
+
+  test('a resolver cannot claim an iteration call', async ({ assert }) => {
+    const { inventory } = await analyseNoisy()
+    const gaps = unresolvedOf(inventory, 'notes.refresh')
+
+    /**
+     * The rest of this filter is consulted only after every resolver declines.
+     * `LABELS.map(cb)` never got that far: `static-service` recognised the
+     * shape, resolved the enum module and reported a missing `map` in it. So
+     * this shape has to be refused BEFORE the resolvers, not after.
+     */
+    assert.isEmpty(gaps.filter((u) => u.expression.includes('labels')))
+  })
+
+  test('`toISOString` is not reported', async ({ assert }) => {
+    const { inventory } = await analyseNoisy()
+
+    assert.isEmpty(
+      unresolvedOf(inventory, 'notes.refresh').filter((u) => u.expression.includes('toISOString'))
+    )
+  })
+
+  test('a call on the result of a call is charged to the inner call only', async ({ assert }) => {
+    const { inventory } = await analyseNoisy()
+    const gaps = unresolvedOf(inventory, 'notes.refresh').map((u) => u.expression)
+
+    assert.isEmpty(
+      gaps.filter((expression) => expression.includes('waitResult')),
+      'the receiver is a value this body already holds'
+    )
+    assert.isNotEmpty(
+      gaps.filter((expression) => expression.includes('enqueue')),
+      'the unknown is still reported — once, where it is actually unknown'
+    )
+  })
+})
+
 /**
  * The hard invariant of this filter: unresolved calls feed coverage and never
  * the count. If silencing one moves a function point, the filter removed

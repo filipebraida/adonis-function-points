@@ -5,7 +5,7 @@ import path from 'node:path'
 
 import { discoverApp } from '../src/inventory/app_context.js'
 import { collectDataStores } from '../src/inventory/sources/data_stores.js'
-import { injectedFor } from '../src/inventory/graph/call_graph.js'
+import { importMapsOf, injectedFor } from '../src/inventory/graph/call_graph.js'
 import type { CollectedDataStore } from '../src/inventory/sources/data_stores.js'
 import type { ResolverContext } from '../src/inventory/resolvers/types.js'
 
@@ -49,20 +49,6 @@ export async function loadFixture(name: string) {
 
   const sourceFile = (absPath: string): SourceFile | null => project.getSourceFile(absPath) ?? null
 
-  /** file imports: local identifier -> absolute path */
-  const importsOf = (file: SourceFile): Map<string, string> => {
-    const map = new Map<string, string>()
-    for (const declaration of file.getImportDeclarations()) {
-      const target = app.resolveSpecifier(declaration.getModuleSpecifierValue())
-      if (!target) continue
-
-      const defaultImport = declaration.getDefaultImport()?.getText()
-      if (defaultImport) map.set(defaultImport, target)
-      for (const named of declaration.getNamedImports()) map.set(named.getName(), target)
-    }
-    return map
-  }
-
   /**
    * ORDERING INVARIANT: data stores are collected before any handler analysis,
    * because `Model.create()` and `Service.create()` are indistinguishable by
@@ -93,7 +79,7 @@ export async function loadFixture(name: string) {
       return {
         file,
         depth,
-        imports: importsOf(file),
+        ...importMapsOf(file, app),
         // the same function the pipeline uses: a reimplementing helper misleads
         injected: injectedFor(file.getClasses()[0], file, app),
         dataStoresBySymbol,

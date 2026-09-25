@@ -53,6 +53,8 @@ const NEVER_DATA_METHODS = new Set([
   // luxon
   'toISO',
   'toISODate',
+  // Date, whose `toISOString` sits beside luxon's `toISO`
+  'toISOString',
   'toFormat',
   'toUTC',
   'toSQL',
@@ -79,6 +81,28 @@ const NEVER_DATA_METHODS = new Set([
 ])
 
 /**
+ * Array iteration, which is noise ONLY when a callback is passed.
+ *
+ * This is the one place a method name is allowed to matter, and it is guarded:
+ * `repo.find(id)` is a data access while `rows.find((r) => r.id === id)` is a
+ * predicate over a list already in memory. The callback is what separates them,
+ * so the list alone decides nothing — `some`, `every` and `find` stay safe.
+ */
+const ITERATION_METHODS = new Set([
+  'map',
+  'filter',
+  'find',
+  'findIndex',
+  'findLast',
+  'some',
+  'every',
+  'forEach',
+  'flatMap',
+  'reduce',
+  'sort',
+])
+
+/**
  * AdonisJS services, which reach the tracer through an application alias.
  *
  * `env` is imported from `#start/env`, an application module, so the symbol
@@ -87,6 +111,8 @@ const NEVER_DATA_METHODS = new Set([
  */
 const FRAMEWORK_SERVICES = new Set([
   'env',
+  'redis',
+  'limiter',
   'logger',
   'health',
   'hash',
@@ -106,6 +132,7 @@ export function isNoise(call: CallExpression, owner?: ClassDeclaration): boolean
   if (!Node.isPropertyAccessExpression(expression)) return false
 
   if (NEVER_DATA_METHODS.has(expression.getName())) return true
+  if (isIteration(expression.getName(), call)) return true
 
   const receiver = expression.getExpression()
 
@@ -125,6 +152,33 @@ export function isNoise(call: CallExpression, owner?: ClassDeclaration): boolean
   }
 
   return isNativeReceiver(receiver, owner)
+}
+
+/**
+ * Iteration over a list, checked BEFORE the resolvers run.
+ *
+ * `PAPEIS_CONCEDIVEIS.map((name) => …)` is `Identifier.method(args)`, the shape
+ * `static-service` exists for, so the resolver claimed it, resolved the enum
+ * module, found no `map` in it and reported a gap — noise never got asked,
+ * because it is only consulted once every resolver has declined.
+ *
+ * No resolver's pattern is `X.map(callback)`, so refusing this shape up front
+ * costs nothing and is not the same as silencing an unresolved call: nothing
+ * was ever there to resolve.
+ */
+export function isIterationCall(call: CallExpression): boolean {
+  const expression = call.getExpression()
+  if (!Node.isPropertyAccessExpression(expression)) return false
+
+  return isIteration(expression.getName(), call)
+}
+
+/** An iteration method whose first argument is an inline callback. */
+function isIteration(method: string, call: CallExpression): boolean {
+  if (!ITERATION_METHODS.has(method)) return false
+
+  const first = call.getArguments()[0]
+  return first !== undefined && (Node.isArrowFunction(first) || Node.isFunctionExpression(first))
 }
 
 /** Does the receiver resolve to a built-in, by its declaration? */

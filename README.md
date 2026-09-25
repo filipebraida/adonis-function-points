@@ -295,7 +295,33 @@ detail: `CreateUserJob.dispatch(p)`, `UserService.create(p)` and `User.find(p)`
 are all `Identifier.method(args)`, and only ordering tells them apart.
 
 Built-in strategies, most specific first: `same-class-method`, `action-object`,
-`job-dispatch`, `static-service`, `property-service`, `module-function`.
+`job-dispatch`, `transformer`, `static-service`, `property-service`,
+`module-function`.
+
+### Declaring that a call reaches no data
+
+`resolve` has two outcomes — _followed_ and _not mine_ — and sometimes a third
+is the truth: the call is recognised, and it reaches no data store. A wrapper
+over a rate limiter or an attachment variant is a real example. Without a way
+to say so, such a call stays unresolved and drags the coverage gate down.
+
+```ts
+const limiterIsDataFree: CallResolver = {
+  name: 'login-limiter',
+  order: 1,
+  resolve: () => [],
+  ignores(call) {
+    // true means: this is mine, and it touches no data store
+    return call.getExpression().getText().startsWith('this.loginLimiter.')
+  },
+}
+```
+
+`ignores` is asked before `resolve`, in the same order, so a later and more
+generic strategy cannot follow the call into a body it has no business reading.
+It is deliberately more expensive than a list of method names to silence: the
+volume still appears in the confidence block of `fp:count`, because a silent
+drop is the worst defect this package can have — whoever writes it.
 
 ## Support
 

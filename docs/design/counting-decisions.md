@@ -479,6 +479,74 @@ many small transactions, and counting them small is correct.
 Distinguishing the two matters: the first is a known limitation to calibrate,
 the second is the measurement working.
 
+## 9. Who maintains a store, and who runs the code
+
+Three decisions from the same root: the graph is walked from HTTP entry points,
+and some questions are not about entry points at all.
+
+### Maintenance is a property of the application, not of its routes
+
+AFP §6.5.4 separates an ILF from an EIF by asking who **maintains** the store.
+Reading that off the walk from routes answered a narrower question — _does a
+request write here?_ — so a table written only by a job, a scheduler or a seeder
+came back as somebody else's table. That both undercounts (an EIF is worth less
+than an ILF) and misdescribes the system, which is worse: the EIF list is what
+an audit reads as "these are the integrations".
+
+**Decision.** Maintenance is decided over the whole project: a write anywhere in
+the application's own source makes the store an ILF. What is _counted_ still
+comes from entry points alone — a job nobody dispatches is not an elementary
+process, and inventing one would be the opposite mistake.
+
+On three production applications this moved 5 stores out of EIF, and what
+remained is legible: in one of them the 4 surviving EIFs are exactly the tables
+mirrored from an external registry. The check that keeps this from collapsing
+into "everything is an ILF" is the store that is only ever read — still an EIF,
+and a fixture asserts it.
+
+### The execution method of a job has no single name
+
+A dispatch is followed as part of the same transaction: the user clicks and the
+effect happens, whatever thread runs it. But `dispatch` belongs to the queue
+package's base class, and the method that _runs_ is named `handle` by
+`@adonisjs/queue`, `process` by `@nemoventures/adonis-jobs`, and other things
+elsewhere.
+
+Looking only for `handle` produced the worst of both outcomes: the file resolved,
+no body was found, the dispatch was reported as an unknown, and every write
+inside it went uncounted. On one application that was 14 dispatches.
+
+**Decision.** Look for `handle`, `process`, `run`, `perform`, in that order, and
+when the class declares none of them keep the dispatch name — so the gap stays
+visible instead of being attributed to a body nobody found.
+
+### Three outcomes, where a resolver had two
+
+`resolve` returning `[]` meant _not recognised_. A strategy that recognised a
+call perfectly well and knew it reached no data store had no way to say so: the
+call stayed unresolved, and the only workaround was to point a resolver at a
+body that does not exist.
+
+**Decision.** `CallResolver` gains an optional `ignores()`. It is deliberately
+more expensive than a name on a silence list — it costs a named strategy in the
+project's own config — because the volume is still reported, and a silent drop
+is the worst defect this package can have, whoever writes it.
+
+### What the noise filter refuses before the resolvers run
+
+The rest of the filter is consulted only once every strategy has declined, which
+is right: a call worth following should be followed. Iteration is the exception.
+`LABELS.map((name) => …)` is `Identifier.method(args)`, the shape
+`static-service` exists for, so a resolver claimed it, resolved the enum module,
+found no `map` in it and reported a gap — noise never got asked. On one
+application that was 30 of its 40 pending calls.
+
+No strategy's pattern is `X.map(callback)`, so refusing that shape up front
+costs nothing, and it is not the same as silencing an unresolved call: nothing
+was there to resolve. The callback is what does the work — `repo.find(id)` is a
+query and `rows.find((r) => …)` is a predicate, so the method name alone still
+decides nothing.
+
 ## The total is more defensible than any single function
 
 Worth stating plainly, because it shapes how the output should be used.

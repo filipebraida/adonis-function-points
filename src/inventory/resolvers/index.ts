@@ -42,6 +42,13 @@ export function resolveCall(
   resolvers: CallResolver[] = BUILTIN_CALL_RESOLVERS
 ): { by: string; refs: import('../../types.js').HandlerRef[] } | null {
   for (const resolver of resolvers) {
+    /**
+     * Asked before `resolve`, and in the same order: a strategy that claims a
+     * call as data-free must not be overtaken by a later, more generic one
+     * following it into a body it has no business reading.
+     */
+    if (resolver.ignores?.(call, ctx)) return { by: resolver.name, refs: [] }
+
     const refs = resolver.resolve(call, ctx)
     if (refs.length > 0) return { by: resolver.name, refs }
   }

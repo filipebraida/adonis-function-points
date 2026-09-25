@@ -30,6 +30,12 @@ export type DataFunctionOptions = {
   retStrategy: 'constant' | 'composition'
   /** stores maintained by another system, by boundary decision */
   externallyMaintained: Set<string>
+  /**
+   * Stores the application writes anywhere in its code — a job, a seeder, a
+   * command — whether or not a route reaches that write. §6.5.4 asks who
+   * maintains the store, not which route does.
+   */
+  writtenAnywhere: Set<string>
   tables: Record<FunctionType, ComplexityTable>
   weights: Record<FunctionType, Record<Complexity, number>>
 }
@@ -59,7 +65,15 @@ export function countDataFunctions(
 
     const refs = options.retStrategy === 'composition' ? 1 + store.subgroups.length : 1
 
-    const external = options.externallyMaintained.has(store.name) || !use.written
+    /**
+     * Maintained by the application, or by another system?
+     *
+     * A write reachable from an entry point is the common case. A write from a
+     * job or a seeder maintains the store just as much — AFP §6.5.4 asks who
+     * maintains it, not which route does.
+     */
+    const maintained = use.written || options.writtenAnywhere.has(store.name)
+    const external = options.externallyMaintained.has(store.name) || !maintained
     const type: FunctionType = external ? 'EIF' : 'ILF'
 
     const complexity = complexityOf(type, refs, det, options.tables)
@@ -76,7 +90,7 @@ export function countDataFunctions(
       rationale: {
         rule: options.externallyMaintained.has(store.name)
           ? 'afp:6.5.4 externally maintained by boundary configuration -> EIF'
-          : use.written
+          : maintained
             ? 'afp:6.5.4 maintained by an application transaction -> ILF'
             : 'afp:6.5.4 used but not maintained -> EIF',
         detSources: detAttributes.map(

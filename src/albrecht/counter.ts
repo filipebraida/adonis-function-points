@@ -40,6 +40,12 @@ export type CountInput = {
   behaviors: Map<string, Behavior>
   /** JSON Schema literals found in the code, for `detFromSchema` — §8 */
   jsonSchemas?: Map<string, DiscoveredSchema>
+  /**
+   * Stores written anywhere in the application's code, reachable from an entry
+   * point or not — AFP §6.5.4 asks who MAINTAINS the store, and a job or a
+   * seeder is this application just as much as a route is.
+   */
+  writtenAnywhere?: Set<string>
 }
 
 export type CountOptions = {
@@ -101,6 +107,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
 
   // 3. data functions
   const dataFunctions = countDataFunctions(countable, usage, {
+    writtenAnywhere: input.writtenAnywhere ?? new Set(),
     retStrategy: options.retStrategy ?? 'constant',
     externallyMaintained: new Set(options.boundary?.externallyMaintained ?? []),
     tables,

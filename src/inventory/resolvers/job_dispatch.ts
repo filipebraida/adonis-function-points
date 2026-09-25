@@ -7,6 +7,20 @@ import type { CallResolver, ResolverContext } from './types.js'
 const DISPATCH_METHODS = new Set(['dispatch', 'dispatchLater', 'enqueue', 'later'])
 
 /**
+ * The method that actually runs the job, by queue package.
+ *
+ * There is no single name: `@adonisjs/queue` and `@rlanz/bull-queue` call it
+ * `handle`, `@nemoventures/adonis-jobs` calls it `process`. Looking only for
+ * `handle` meant every job in an application using the second one resolved to
+ * a file and then to no body, so the dispatch was reported as an unknown while
+ * the writes inside it went uncounted — the worst of both outcomes.
+ *
+ * Ordered: a class declaring more than one is answering the dispatcher with the
+ * first, and `handle` is the most common.
+ */
+const EXECUTION_METHODS = ['handle', 'process', 'run', 'perform'] as const
+
+/**
  * "Job" pattern: the write happens asynchronously.
  *
  *     await CreateUserJob.dispatch({ userId })
@@ -40,11 +54,15 @@ export const jobDispatchResolver: CallResolver = {
     const file = ctx.imports.get(symbol)
     if (!file) return []
 
-    // `dispatch` enqueues; `handle` executes. When the class declares `handle`,
-    // that is the body that matters.
-    const declared = ctx.sourceFile(file)
-    const hasHandle = declared?.getClasses().some((c) => c.getMethod('handle'))
+    /**
+     * `dispatch` enqueues; the execution method is what touches data. When the
+     * class declares one, that is the body that matters — and when it declares
+     * none, the dispatch name is kept so the gap stays visible instead of being
+     * quietly attributed to a body nobody found.
+     */
+    const classes = ctx.sourceFile(file)?.getClasses() ?? []
+    const executes = EXECUTION_METHODS.find((name) => classes.some((c) => c.getMethod(name)))
 
-    return [{ file, member: hasHandle ? 'handle' : expr.getName() }]
+    return [{ file, member: executes ?? expr.getName() }]
   },
 }

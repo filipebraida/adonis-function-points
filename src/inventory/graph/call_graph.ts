@@ -13,7 +13,7 @@ import type { CollectedDataStore } from '../sources/data_stores.js'
 import { detectAccess, hooksFiredBy, rootSymbolOf } from '../detectors/lucid.js'
 import type { PersistenceAccess, RelationMap, StoreSymbols } from '../detectors/lucid.js'
 import { BUILTIN_CALL_RESOLVERS, resolveCall } from '../resolvers/index.js'
-import { isNoise, isNoiseMember } from './noise.js'
+import { isIterationCall, isNoise, isNoiseMember } from './noise.js'
 import type { CallResolver, ResolverContext } from '../resolvers/types.js'
 import type { HandlerRef, TraceStep, UnresolvedCall } from '../../types.js'
 
@@ -219,12 +219,15 @@ export function createAnalyzer(
   }
 
   /** imports per file, computed once */
-  const importCache = new Map<string, Map<string, string>>()
-  const importsFor = (file: SourceFile): Map<string, string> => {
+  const importCache = new Map<
+    string,
+    { imports: Map<string, string>; exportedAs: Map<string, string> }
+  >()
+  const importsFor = (file: SourceFile) => {
     const key = file.getFilePath()
     let cached = importCache.get(key)
     if (!cached) {
-      cached = importsOf(file, app)
+      cached = importMapsOf(file, app)
       importCache.set(key, cached)
     }
     return cached
@@ -288,7 +291,7 @@ export function createAnalyzer(
     const body = findBody(file, ref)
     if (!body) return null
 
-    const imports = importsFor(file)
+    const { imports, exportedAs } = importsFor(file)
     /** the class this body belongs to: how `this.something` resolves */
     const owner = body.getFirstAncestorByKind(SyntaxKind.ClassDeclaration)
     const injected = injectedFor(owner, file, app)
@@ -316,10 +319,17 @@ export function createAnalyzer(
         continue
       }
 
+      /**
+       * Asked before the resolvers, unlike the rest of the noise filter: this
+       * shape must not be CLAIMED, not merely not reported.
+       */
+      if (isIterationCall(call)) continue
+
       const context: ResolverContext = {
         file,
         depth: 0,
         imports,
+        exportedAs,
         injected,
         dataStoresBySymbol: storesByName,
         resolveSpecifier: app.resolveSpecifier,
@@ -345,8 +355,40 @@ export function createAnalyzer(
     return { accesses, followUps, unresolved, validators, bodyHash: hashOf(body) }
   }
 
+  /**
+   * Stores written anywhere in the application's own code, reachable from an
+   * entry point or not.
+   *
+   * AFP §6.5.4 decides ILF vs EIF by whether the APPLICATION maintains the
+   * store. The graph only walks from HTTP routes, so a table written solely by a
+   * job or a seeder looked unmaintained and came out as an EIF — data held by
+   * another system. It is not: a job is this application. The misclassification
+   * costs 2 points per store and, worse, says the wrong thing about who owns the
+   * data.
+   *
+   * This is a separate pass because reachability is not the question. Whether a
+   * transaction reaches the store still decides if it is counted at all; this
+   * only decides who maintains it.
+   */
+  const writtenAnywhere = (): Set<string> => {
+    const written = new Set<string>()
+
+    for (const file of project.getSourceFiles()) {
+      const symbols = storeSymbolsFor(file, file, app, storesByName)
+      if (symbols.size === 0) continue
+
+      for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+        const access = detectAccess(call, symbols, relationsByStore)
+        if (access?.mode === 'write') written.add(access.store)
+      }
+    }
+
+    return written
+  }
+
   return {
     analyze: (handler: HandlerRef) => run(handler),
+    writtenAnywhere,
     /** how many files the project loaded — used to prove it does not grow */
     fileCount: () => project.getSourceFiles().length,
   }
@@ -721,21 +763,36 @@ function membersOfType(typeNode: Node, file: SourceFile, app: AppContext): Map<s
   return members
 }
 
-function importsOf(file: SourceFile, app: AppContext): Map<string, string> {
-  const map = new Map<string, string>()
+/**
+ * Both maps a file's imports produce: where a local name resolves, and what it
+ * was called where it was exported.
+ *
+ * Exported because the tests need the same answer the pipeline gets: a second
+ * implementation in the helpers drifted from this one and missed aliases.
+ */
+export function importMapsOf(
+  file: SourceFile,
+  app: AppContext
+): { imports: Map<string, string>; exportedAs: Map<string, string> } {
+  const imports = new Map<string, string>()
+  const exportedAs = new Map<string, string>()
 
   for (const declaration of file.getImportDeclarations()) {
     const target = app.resolveSpecifier(declaration.getModuleSpecifierValue())
     if (!target) continue
 
     const defaultImport = declaration.getDefaultImport()?.getText()
-    if (defaultImport) map.set(defaultImport, target)
+    if (defaultImport) imports.set(defaultImport, target)
+
     for (const named of declaration.getNamedImports()) {
-      map.set(named.getAliasNode()?.getText() ?? named.getName(), target)
+      const alias = named.getAliasNode()?.getText()
+      const local = alias ?? named.getName()
+      imports.set(local, target)
+      if (alias) exportedAs.set(alias, named.getName())
     }
   }
 
-  return map
+  return { imports, exportedAs }
 }
 
 // ---------------------------------------------------------------------------
@@ -764,6 +821,16 @@ function isWorthReporting(
 
   if (!Node.isPropertyAccessExpression(expression)) return false
 
+  /**
+   * A call ON THE RESULT of another call — `dispatch(job).waitResult()`,
+   * `load(id).unwrap()`. The receiver is a value this body already holds, and
+   * the call that produced it is a call site of this same body: it is visited
+   * too, and reports the gap if there is one. Reporting here as well charges
+   * the same unknown twice, and the second charge reads as a distinct defect.
+   */
+  const receiver = unwrapAwait(expression.getExpression())
+  if (Node.isCallExpression(receiver)) return false
+
   const root = rootSymbolOf(expression.getExpression())
   if (!root) return false
 
@@ -775,6 +842,19 @@ function isWorthReporting(
 
   // a symbol of the application itself that no strategy followed
   return imports.has(root)
+}
+
+/** `(await x())` and `x()` are the same receiver for this purpose. */
+function unwrapAwait(node: Node): Node {
+  let current = node
+  while (
+    Node.isAwaitExpression(current) ||
+    Node.isParenthesizedExpression(current) ||
+    Node.isNonNullExpression(current)
+  ) {
+    current = current.getExpression()
+  }
+  return current
 }
 
 // ---------------------------------------------------------------------------

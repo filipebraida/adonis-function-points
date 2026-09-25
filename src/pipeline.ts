@@ -119,7 +119,17 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
     throw new CoverageTooLowError(inventory.coverage.ratio, minimum)
   }
 
-  const counted = count({ app, stores, entryPoints, behaviors, jsonSchemas }, options)
+  const counted = count(
+    {
+      app,
+      stores,
+      entryPoints,
+      behaviors,
+      jsonSchemas,
+      writtenAnywhere: analyzer.writtenAnywhere(),
+    },
+    options
+  )
 
   return {
     inventory,

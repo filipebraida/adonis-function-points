@@ -207,6 +207,53 @@ test.group('config: custom resolver', () => {
       'the trace must say it was the user strategy'
     )
   })
+
+  /**
+   * `resolve` had two outcomes where three were needed: returning `[]` means
+   * "not mine", so a project that recognised a call perfectly well and knew it
+   * reached no data had nothing to say. The call stayed unresolved, and the only
+   * workaround was to point a resolver at a body that does not exist.
+   */
+  const auditIsDataFree: CallResolver = {
+    name: 'audit-client',
+    order: 1,
+    resolve: () => [],
+    ignores(call) {
+      const expression = call.getExpression()
+      if (!Node.isPropertyAccessExpression(expression)) return false
+      if (expression.getName() !== 'push') return false
+
+      const receiver = expression.getExpression()
+      return Node.isPropertyAccessExpression(receiver) && receiver.getName() === 'audit'
+    },
+  }
+
+  test('a resolver can claim a call as reaching no data', async ({ assert }) => {
+    const before = await analyze(appFixturePath('custom_resolver'))
+    const after = await analyze(appFixturePath('custom_resolver'), {
+      resolvers: { call: [auditIsDataFree] },
+    })
+
+    assert.equal(
+      before.count.confidence.unresolvedCalls,
+      1,
+      '`audit.push` resolves to a file whose member is generated at runtime'
+    )
+    assert.equal(after.count.confidence.unresolvedCalls, 0)
+  })
+
+  test('claiming a call as data-free does not invent a data access', async ({ assert }) => {
+    const before = await analyze(appFixturePath('custom_resolver'))
+    const after = await analyze(appFixturePath('custom_resolver'), {
+      resolvers: { call: [auditIsDataFree] },
+    })
+
+    /**
+     * The one thing this escape hatch must never do. Silence buys coverage; if
+     * it also bought function points it would be a way to raise an invoice.
+     */
+    assert.equal(after.count.totals.unadjusted, before.count.totals.unadjusted)
+  })
 })
 
 test.group('config: defineConfig', () => {
