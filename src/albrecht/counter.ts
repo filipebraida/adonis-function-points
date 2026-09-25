@@ -2,6 +2,7 @@ import type { AppContext } from '../inventory/app_context.js'
 import type { CollectedDataStore } from '../inventory/sources/data_stores.js'
 import type { CollectedEntryPoint } from '../inventory/sources/routes_ast.js'
 import type { Behavior } from '../inventory/graph/call_graph.js'
+import type { DiscoveredSchema } from '../inventory/sources/json_schemas.js'
 import type { Complexity, CountResult, CountedFunction, FunctionType } from '../types.js'
 import { DEFAULT_TABLES, DEFAULT_WEIGHTS, complexityOf, pointsOf } from './tables.js'
 import type { FunctionOverride } from '../define_config.js'
@@ -37,6 +38,8 @@ export type CountInput = {
   entryPoints: CollectedEntryPoint[]
   /** behaviour keyed by `EntryPoint.id`; absent means no handler */
   behaviors: Map<string, Behavior>
+  /** JSON Schema literals found in the code, for `detFromSchema` — §8 */
+  jsonSchemas?: Map<string, DiscoveredSchema>
 }
 
 export type CountOptions = {
@@ -104,6 +107,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
   const functions = applyOverrides(
     [...dataFunctions, ...transactionalFunctions],
     options.overrides ?? {},
+    input.jsonSchemas ?? new Map(),
     tables,
     weights,
     warnings
@@ -180,6 +184,7 @@ const OPAQUE_TYPE = /^(object|any|unknown|Record<|Json|JSON)/
 function applyOverrides(
   functions: CountedFunction[],
   overrides: Record<string, FunctionOverride>,
+  schemas: Map<string, DiscoveredSchema>,
   tables: Record<FunctionType, ComplexityTable>,
   weights: Record<FunctionType, Record<Complexity, number>>,
   warnings: string[]
@@ -195,7 +200,37 @@ function applyOverrides(
 
     used.add(fn.name)
 
-    const det = override.det ?? fn.det
+    const fields: ('det' | 'refs')[] = []
+    if (override.det !== undefined || override.detFromSchema) fields.push('det')
+    if (override.refs !== undefined) fields.push('refs')
+
+    let det = override.det ?? fn.det
+    let by = `config:overrides.${fn.name}`
+
+    /**
+     * Read from the schema rather than declared as a number.
+     *
+     * A frozen number goes stale the moment someone adds a field: the count
+     * would not move and `fp:diff` would report no change for real functional
+     * growth. Naming the schema keeps the number coming from the code, and the
+     * only thing maintained by hand is the mapping — which changes when a form
+     * is born, not when a field is.
+     */
+    if (override.detFromSchema) {
+      const schema = schemas.get(override.detFromSchema)
+      if (schema) {
+        // the opaque column contributed exactly 1 DET; the schema says how many
+        det = Math.max(fn.det - 1, 0) + schema.fields
+        by = `config:overrides.${fn.name} (from ${schema.name}: ${schema.fields} fields)`
+      } else {
+        warnings.push(
+          `override for "${fn.name}" names schema "${override.detFromSchema}", which is not ` +
+            `declared anywhere in the code: the DET count was left as found. A renamed or moved ` +
+            `schema breaks the mapping, and this says so rather than counting on silently.`
+        )
+      }
+    }
+
     const refs = override.refs ?? fn.refs
     const complexity = complexityOf(fn.type, refs, det, tables)
 
@@ -207,10 +242,7 @@ function applyOverrides(
       points: pointsOf(fn.type, complexity, weights),
       rationale: {
         ...fn.rationale,
-        overrides: [
-          ...(fn.rationale.overrides ?? []),
-          { by: `config:overrides.${fn.name}`, reason: override.reason },
-        ],
+        overrides: [...(fn.rationale.overrides ?? []), { by, reason: override.reason, fields }],
       },
     }
   })

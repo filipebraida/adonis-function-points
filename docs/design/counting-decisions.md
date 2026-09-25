@@ -421,12 +421,30 @@ versioned configuration, with a justification that is required by the type:
 export default defineConfig({
   overrides: {
     'POST /petitions': {
-      det: 42,
-      reason: 'JSON Schema form; 42 fields the user fills, read from the definition in force',
+      detFromSchema: 'childSupportSchema',
+      reason: 'form driven by a JSON Schema; the fields are counted from the schema by §7',
     },
   },
 })
 ```
+
+**Name the schema, do not declare the number.** A declared `det: 42` freezes:
+someone adds a field, the count does not move, and `fp:diff` reports no change
+for real functional growth — undercounting silently and progressively, which is
+worse than undercounting once.
+
+Where the schema is a literal in the code — a seeder, typically — it is not
+runtime data at all, and ts-morph reads it. The §7 leaf rules apply unchanged;
+only the recognition differs, `properties` and `items` in place of `vine.object`
+and `vine.array`. The count then rises on its own when a field is added, and the
+only thing maintained by hand is the **mapping**, which changes when a form is
+born rather than when a field is.
+
+A name matching no schema is a warning and the count is left as found: a renamed
+or moved schema breaks the mapping, and counting on silently would reintroduce
+the staleness this avoids.
+
+`det` remains for the case where the schema really is only in the database.
 
 That keeps the three properties the count rests on. It is **reproducible**,
 because the number lives in a file under version control and the same revision

@@ -90,14 +90,17 @@ export function renderExplain(fn: CountedFunction): string {
    * list of five sources reads as an inconsistency, when in fact the number
    * came from a person and the sources are what the analysis could still see.
    */
-  const declared = fn.rationale.overrides?.length ? '  (declared by override)' : ''
+  const overridden = (field: 'det' | 'refs') =>
+    fn.rationale.overrides?.some((o) => o.fields.includes(field)) ? '  (declared by override)' : ''
 
   lines.push('')
-  lines.push(`DET = ${fn.det}${declared}`)
+  lines.push(`DET = ${fn.det}${overridden('det')}`)
   for (const source of fn.rationale.detSources) lines.push(`  ${source}`)
 
   lines.push('')
-  lines.push(`${fn.type === 'ILF' || fn.type === 'EIF' ? 'RET' : 'FTR'} = ${fn.refs}${declared}`)
+  lines.push(
+    `${fn.type === 'ILF' || fn.type === 'EIF' ? 'RET' : 'FTR'} = ${fn.refs}${overridden('refs')}`
+  )
   for (const source of fn.rationale.refSources) lines.push(`  ${source}`)
 
   if (fn.rationale.trace?.length) {

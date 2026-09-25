@@ -1,6 +1,7 @@
 import { discoverApp } from './inventory/app_context.js'
 import { collectDataStores } from './inventory/sources/data_stores.js'
 import { collectEntryPoints } from './inventory/sources/routes_ast.js'
+import { collectJsonSchemas } from './inventory/sources/json_schemas.js'
 import { createAnalyzer } from './inventory/graph/call_graph.js'
 import { count } from './albrecht/counter.js'
 import { describeSource } from './inventory/source.js'
@@ -63,6 +64,9 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
   const { stores, unresolved: storeProblems } = await collectDataStores(app)
   const { entryPoints, unresolved: routeProblems } = await collectEntryPoints(app)
 
+  /** only read when an override names one — but collected once, like everything else */
+  const jsonSchemas = collectJsonSchemas(app)
+
   const analyzer = createAnalyzer(app, stores, {
     maxDepth: options.maxDepth,
     callResolvers: options.resolvers?.call,
@@ -115,7 +119,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
     throw new CoverageTooLowError(inventory.coverage.ratio, minimum)
   }
 
-  const counted = count({ app, stores, entryPoints, behaviors }, options)
+  const counted = count({ app, stores, entryPoints, behaviors, jsonSchemas }, options)
 
   return {
     inventory,

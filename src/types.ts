@@ -196,8 +196,14 @@ export type Rationale = {
   detSources: string[]
   /** where the FTR/RET came from */
   refSources: string[]
-  /** manual overrides applied via config, with the required justification */
-  overrides?: { reason: string; by: string }[]
+  /**
+   * Manual overrides applied via config, with the required justification.
+   *
+   * `fields` says which numbers the override actually replaced, so the report
+   * can mark the DET line and leave RET alone rather than implying both came
+   * from a person.
+   */
+  overrides?: { reason: string; by: string; fields: ('det' | 'refs')[] }[]
   trace?: TraceStep[]
 }
 

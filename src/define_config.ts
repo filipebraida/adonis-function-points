@@ -122,6 +122,20 @@ export type FunctionPointsConfig = {
 export type FunctionOverride = {
   /** declared DET count, replacing what the analysis found */
   det?: number
+  /**
+   * Name of a JSON Schema declared in the application's code, whose fields are
+   * counted by the §7 leaf rules and replace the single DET the opaque column
+   * contributed.
+   *
+   * Prefer this to `det`. A declared number freezes: someone adds a field, the
+   * count does not move, and `fp:diff` reports no change for real functional
+   * growth — undercounting silently and progressively. Naming the schema keeps
+   * the number coming from the code; the only thing maintained by hand is the
+   * mapping, which changes when a form is born rather than when a field is.
+   *
+   * A name that matches no schema is a warning, never a silent fallback.
+   */
+  detFromSchema?: string
   /** declared RET (data function) or FTR (transaction) */
   refs?: number
   /** why — required, and printed by `fp:explain` beside the number */
