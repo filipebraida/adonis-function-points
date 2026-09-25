@@ -3,8 +3,10 @@ import { test } from '@japa/runner'
 import { analyze } from '../../src/pipeline.js'
 import { appFixturePath } from '../helpers.js'
 
-const warningsOf = async (app: string) =>
-  (await analyze(appFixturePath(app))).count.confidence.warnings
+const warningsOf = async (app: string) => {
+  const { count } = await analyze(appFixturePath(app))
+  return count.confidence.warnings
+}
 
 /**
  * counting-decisions §8: a JSON column holding a form the user fills counts as
