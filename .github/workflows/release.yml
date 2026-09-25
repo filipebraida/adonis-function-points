@@ -21,11 +21,17 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
+      # No `registry-url`: it makes setup-node write an .npmrc carrying
+      # `_authToken=${NODE_AUTH_TOKEN}` and set that variable to the literal
+      # placeholder `XXXXX-XXXXX-XXXXX-XXXXX`. npm then sees credentials already
+      # configured, never attempts the OIDC exchange Trusted Publishing needs,
+      # sends the bogus token, and the registry answers 404 — which is what it
+      # returns instead of 403 for a scoped package. registry.npmjs.org is the
+      # default registry anyway, so the line bought nothing and cost the release.
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Verify tag matches package.json version
         env:
@@ -55,10 +61,19 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # `--provenance` is not passed: Trusted Publishing attaches provenance on
+      # its own, and requesting it explicitly is what let the previous run print
+      # a signed provenance statement while the publish itself was unauthenticated
+      # — a log that looked like success up to the last line.
+      #
+      # Trusted Publishing needs npm >= 11.5.1, so the version is printed: when
+      # this fails again, the log should say which of the two things was missing.
       - name: Publish to npm via Trusted Publishing
         env:
           NPM_TAG: ${{ steps.tag.outputs.npm_tag }}
-        run: npm publish --access public --provenance --tag "$NPM_TAG"
+        run: |
+          npm --version
+          npm publish --access public --tag "$NPM_TAG"
 
       - name: Create GitHub release
         env:
