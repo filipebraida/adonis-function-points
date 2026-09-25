@@ -22,4 +22,16 @@ export default defineConfig({
 
   /** Refuses to emit a count if tracing covers less than this. */
   minCoverage: 0.85,
+
+  /**
+   * Facts static analysis cannot read, declared with a required justification.
+   *
+   * The case this exists for: fields the user fills that live in a JSON column
+   * whose schema is stored in the database. See counting-decisions §8 — and use
+   * it sparingly, because `fp:count` reports what share of the total came from
+   * here.
+   */
+  // overrides: {
+  //   'POST /petitions': { det: 42, reason: 'JSON Schema form; 42 user fields' },
+  // },
 })

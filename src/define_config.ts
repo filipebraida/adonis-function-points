@@ -97,6 +97,35 @@ export type FunctionPointsConfig = {
    * invoice.
    */
   minCoverage?: number
+
+  /**
+   * Declared DET or RET/FTR for a function the analysis cannot read, keyed by
+   * the name it has in the count (`Petition`, `POST /books`).
+   *
+   * The case this exists for is a schema-driven application: when the fields a
+   * user fills live in a JSON column whose schema is stored in the database,
+   * there is nothing for static analysis to read and the column counts as 1 DET
+   * (counting-decisions §8). The person who knows the form knows the number.
+   *
+   * `reason` is required, and that is the whole point. A declared number is
+   * reproducible — it lives in a versioned file, so the same revision yields
+   * the same count — and auditable, because `fp:explain` prints it with its
+   * justification. A number the tool guessed would be neither.
+   *
+   * Use sparingly. If overriding becomes a habit the count stops coming from
+   * the code, and the report says how much of the total came from here so that
+   * cannot grow unnoticed.
+   */
+  overrides?: Record<string, FunctionOverride>
+}
+
+export type FunctionOverride = {
+  /** declared DET count, replacing what the analysis found */
+  det?: number
+  /** declared RET (data function) or FTR (transaction) */
+  refs?: number
+  /** why — required, and printed by `fp:explain` beside the number */
+  reason: string
 }
 
 export const DEFAULTS: FunctionPointsConfig = {

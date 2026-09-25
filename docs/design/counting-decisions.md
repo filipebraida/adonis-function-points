@@ -412,9 +412,43 @@ reproducible, and reproducibility is the only reason this number is defensible.
 An estimate applied silently would also break `fp:diff`: the same document would
 count differently between two runs for no reason visible in the code.
 
-The two honest routes are to calibrate — `fp:calibrate` against a manual count
-measures exactly this bias, per function type — or to price schema-driven work
-by another rule in the contract. Both are decisions for whoever signs it.
+### What to do instead: declare it
+
+The person who knows the form knows the number. So they state it, in the
+versioned configuration, with a justification that is required by the type:
+
+```ts
+export default defineConfig({
+  overrides: {
+    'POST /petitions': {
+      det: 42,
+      reason: 'JSON Schema form; 42 fields the user fills, read from the definition in force',
+    },
+  },
+})
+```
+
+That keeps the three properties the count rests on. It is **reproducible**,
+because the number lives in a file under version control and the same revision
+yields the same total — reading the database would break exactly that, which is
+why the count never connects to one. It is **auditable**, because `fp:explain`
+prints the declaration beside its reason and marks the DET line as declared. And
+the **judgement sits with whoever has the information**, rather than with a
+heuristic.
+
+The difference from inflating DETs is not cosmetic: inflating is the tool
+guessing in silence; an override is a person declaring with provenance. AFP §6.1
+asks for repeatability, and a declared number is perfectly repeatable.
+
+**Used sparingly, and visibly.** An override is right where static analysis is
+demonstrably blind, and poison as a habit — if it spreads, the count stops
+coming from the code and the tool loses its reason to exist. So `fp:count`
+reports how many functions were declared and what share of the total they carry,
+and an override naming no function is a warning rather than silence.
+
+The other two honest routes remain: calibrate — `fp:calibrate` against a manual
+count measures exactly this bias, per function type — or price schema-driven
+work by another rule in the contract. Both are decisions for whoever signs it.
 
 ### A related finding, and not the same thing
 

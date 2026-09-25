@@ -37,6 +37,28 @@ export function renderCount(result: CountResult): string {
   }
 
   /**
+   * How much of the total stopped coming from the code.
+   *
+   * An override is legitimate where static analysis is blind, and poison as a
+   * habit: if it grows, the count comes from a spreadsheet and the tool loses
+   * its reason to exist. Printing the share is what keeps that visible.
+   */
+  const overridden = result.functions.filter((fn) => fn.rationale.overrides?.length)
+  if (overridden.length > 0) {
+    const points = overridden.reduce((total, fn) => total + fn.points, 0)
+    const share = ((points / (result.totals.unadjusted || 1)) * 100).toFixed(1)
+    lines.push('')
+    lines.push(
+      `Declared by override: ${overridden.length} function(s), ${points} FP (${share}% of the total)`
+    )
+    for (const fn of overridden) {
+      for (const override of fn.rationale.overrides ?? []) {
+        lines.push(`  ${fn.name} — ${override.reason}`)
+      }
+    }
+  }
+
+  /**
    * Confidence comes right after the number, never hidden. AFP §6.5.3 requires
    * whatever could not be traced to appear in the report.
    */
@@ -63,12 +85,19 @@ export function renderExplain(fn: CountedFunction): string {
   lines.push('')
   lines.push(`Rule applied: ${fn.rationale.rule}`)
 
+  /**
+   * A declared count is marked on the line itself. Printing `DET = 60` above a
+   * list of five sources reads as an inconsistency, when in fact the number
+   * came from a person and the sources are what the analysis could still see.
+   */
+  const declared = fn.rationale.overrides?.length ? '  (declared by override)' : ''
+
   lines.push('')
-  lines.push(`DET = ${fn.det}`)
+  lines.push(`DET = ${fn.det}${declared}`)
   for (const source of fn.rationale.detSources) lines.push(`  ${source}`)
 
   lines.push('')
-  lines.push(`${fn.type === 'ILF' || fn.type === 'EIF' ? 'RET' : 'FTR'} = ${fn.refs}`)
+  lines.push(`${fn.type === 'ILF' || fn.type === 'EIF' ? 'RET' : 'FTR'} = ${fn.refs}${declared}`)
   for (const source of fn.rationale.refSources) lines.push(`  ${source}`)
 
   if (fn.rationale.trace?.length) {

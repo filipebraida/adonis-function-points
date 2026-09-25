@@ -347,8 +347,14 @@ Inherited from the AFP standard itself, not from this implementation:
   nothing for static analysis to read: each opaque column counts as 1 DET.
   Measured on a production application, the effect is about 2% of the total —
   data functions are unaffected, and only the form-submission transaction loses
-  complexity. See counting-decisions §8, which also explains why inflating the
-  DET count to compensate would be worse than the undercount.
+  complexity.
+
+  The way out is to declare the number rather than let the tool guess it:
+  `overrides: { 'POST /petitions': { det: 42, reason: '…' } }`. The reason is
+  required by the type, `fp:explain` prints it beside the number, and `fp:count`
+  reports what share of the total was declared — because an override is right
+  where static analysis is blind and poison as a habit. See
+  counting-decisions §8.
 
 - **Only HTTP routes are collected as entry points.** An ace command that
   imports a spreadsheet and a scheduled job are transactional functions under

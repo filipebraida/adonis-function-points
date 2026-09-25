@@ -3,7 +3,8 @@ import type { CollectedDataStore } from '../inventory/sources/data_stores.js'
 import type { CollectedEntryPoint } from '../inventory/sources/routes_ast.js'
 import type { Behavior } from '../inventory/graph/call_graph.js'
 import type { Complexity, CountResult, CountedFunction, FunctionType } from '../types.js'
-import { DEFAULT_TABLES, DEFAULT_WEIGHTS } from './tables.js'
+import { DEFAULT_TABLES, DEFAULT_WEIGHTS, complexityOf, pointsOf } from './tables.js'
+import type { FunctionOverride } from '../define_config.js'
 import type { ComplexityTable } from './tables.js'
 import { countDataFunctions } from './data_functions.js'
 import type { StoreUsage } from './data_functions.js'
@@ -40,6 +41,8 @@ export type CountInput = {
 
 export type CountOptions = {
   retStrategy?: 'constant' | 'composition'
+  /** declared DET/RET for what static analysis cannot read — see §8 */
+  overrides?: Record<string, FunctionOverride>
   boundary?: {
     infrastructure?: string[]
     externallyMaintained?: string[]
@@ -96,7 +99,13 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     weights,
   })
 
-  const functions = [...dataFunctions, ...transactionalFunctions]
+  const functions = applyOverrides(
+    [...dataFunctions, ...transactionalFunctions],
+    options.overrides ?? {},
+    tables,
+    weights,
+    warnings
+  )
 
   return {
     ruleset: RULESET,
@@ -105,6 +114,64 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     totals: totalsOf(functions),
     confidence: confidenceOf(input, warnings),
   }
+}
+
+/**
+ * Replaces what the analysis found with what a person declared.
+ *
+ * Only for facts static analysis cannot reach — a JSON column whose schema
+ * lives in the database, per counting-decisions §8. The declared number is
+ * reproducible because it comes from a versioned file, and auditable because it
+ * travels with its justification into the rationale, which `fp:explain` prints.
+ *
+ * An override naming no function is a warning, never silence: a typo in the key
+ * would otherwise mean the declaration did nothing and nobody was told.
+ */
+function applyOverrides(
+  functions: CountedFunction[],
+  overrides: Record<string, FunctionOverride>,
+  tables: Record<FunctionType, ComplexityTable>,
+  weights: Record<FunctionType, Record<Complexity, number>>,
+  warnings: string[]
+): CountedFunction[] {
+  const keys = Object.keys(overrides)
+  if (keys.length === 0) return functions
+
+  const used = new Set<string>()
+
+  const applied = functions.map((fn) => {
+    const override = overrides[fn.name]
+    if (!override) return fn
+
+    used.add(fn.name)
+
+    const det = override.det ?? fn.det
+    const refs = override.refs ?? fn.refs
+    const complexity = complexityOf(fn.type, refs, det, tables)
+
+    return {
+      ...fn,
+      det,
+      refs,
+      complexity,
+      points: pointsOf(fn.type, complexity, weights),
+      rationale: {
+        ...fn.rationale,
+        overrides: [
+          ...(fn.rationale.overrides ?? []),
+          { by: `config:overrides.${fn.name}`, reason: override.reason },
+        ],
+      },
+    }
+  })
+
+  for (const key of keys) {
+    if (!used.has(key)) {
+      warnings.push(`override "${key}" matched no counted function: the declaration had no effect`)
+    }
+  }
+
+  return applied
 }
 
 /**
