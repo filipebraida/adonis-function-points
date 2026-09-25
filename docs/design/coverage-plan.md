@@ -269,3 +269,55 @@ roda antes (ordem 12).
 
 `dispatchMany` entrou na lista de métodos de dispatch de job no mesmo passo:
 apareceu dentro de um listener, no caminho que só passou a ser percorrido agora.
+
+## Fase 6 — `fp:diff` contra histórico real, e um erro meu
+
+Primeira vez que o diff viu duas medições reais: releases v0.7.0 (1/jul, 648 PF)
+e v0.9.0 (13/ago, 717 PF) da mesma aplicação, por worktree.
+
+Achou três coisas, e nenhuma delas era o que eu esperava.
+
+1. **`Billable FP: 485.00000000000006`.** Aritmeticamente o mesmo número e não o
+   mesmo documento — esse valor vai para uma fatura. Arredondado na origem, não na
+   impressão.
+2. **O aviso estava embaixo de 118 linhas** de saída por função. Aviso que precisa
+   de rolagem não é aviso. Subiu para logo depois do total, e passou a dizer o
+   valor: "378 de 485 PF faturáveis (78%) são funções modificadas a fator fixado em
+   1".
+3. **`factors` não era alcançável por nenhum front-end** — ponto de extensão
+   tipado que só um teste usava. O mesmo defeito do `config/function_points.ts` e
+   do `fp:metrics`. Agora sai de `diff.factors` / `diff.reasonFactors` no config.
+
+E o `reasonFactors`, que é o que o default deixava na mesa: das 378 PF cobradas
+como mudança, **151 eram `implementation`** — mesmo tipo, mesmo DET, mesmo FTR, só
+o corpo diferente. Cobrar refatoração a valor funcional cheio não se defende;
+cobrar a um número que o pacote inventou seria pior. O número vem do contrato.
+
+### O erro: métrica que induz a conclusão errada
+
+O `fp:metrics` reportava `writes with a validator: 39%`, e eu li isso como
+subcontagem em 61% dos writes. Construí aviso em cima disso. **Estava errado**, e
+o §7 do counting-decisions já dizia: as transações sem validator são gatilhos de
+fluxo (`POST /pedidos/:id/submeter`, `DELETE /questoes/:id`) que legitimamente não
+carregam nada além do parâmetro de rota.
+
+Duas versões do aviso apontaram rotas que não tinham nada de errado. A terceira
+foi atrás do sinal decisivo — o handler lê o request? — e daí saíram duas coisas
+de verdade:
+
+- **`request.input('x')` passou a contar como DET.** §7.2 pergunta se campo
+  reconhecível pelo usuário cruza a fronteira, não como foi declarado. Mexeu em
+  **3 transações nas quatro apps e 0 PF**, e isso é evidência de que generaliza:
+  não depende do estilo de ninguém. Vai importar numa aplicação que leia o request
+  direto.
+- **A métrica foi redefinida.** Denominador agora são as transações que _tomam_
+  entrada. Nas quatro apps dá ~100%, que é a verdade. Métrica que faz o leitor
+  concluir errado é pior que métrica nenhuma — e essa fez o próprio autor concluir
+  errado.
+
+O aviso que sobrou dispara em `request.all()` / `body()` / `except()`, que
+enumeram nada. **Dispara zero vezes nas quatro apps.** É o resultado certo.
+
+O critério que faltava escrever está agora em `architecture.md`: regra só entra no
+pacote se sai do padrão, da linguagem, ou de uma API publicada. O que sai de como
+um time escreve código vai para o config.

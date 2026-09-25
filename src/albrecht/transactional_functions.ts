@@ -145,6 +145,18 @@ function detsFor(
     add(name, `validator:${field}`)
   }
 
+  /**
+   * §7.2 asks whether a user-recognisable field crosses the boundary, not how it
+   * was declared. `request.input('title')` does, and counted for nothing while
+   * input DETs came only from VineJS — so a transaction reading six fields this
+   * way sat at 1 DET, the floor of its band.
+   *
+   * After the validator, and deduplicated by field name: where both exist the
+   * validator is the better provenance to print, and the same field must not be
+   * paid for twice.
+   */
+  for (const field of behavior.requestFields) add(field, `request:${field}`)
+
   // output: only a transaction that presents data has output fields
   if (type === 'EO' || type === 'EQ') {
     for (const store of touched) {

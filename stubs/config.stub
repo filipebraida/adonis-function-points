@@ -42,6 +42,22 @@ export default defineConfig({
    * here.
    */
   // overrides: {
-  //   'POST /petitions': { det: 42, reason: 'JSON Schema form; 42 user fields' },
+  //   'POST /forms': { det: 42, reason: 'JSON Schema form; 42 user fields' },
+  // },
+
+  /**
+   * How change is priced. A clause of the contract, not a flag.
+   *
+   * AEP anchors added at 1 and deleted at 0.4. For a MODIFIED function it grades
+   * the factor from 0.25 to 1.75 through Effort Complexity variation, which needs
+   * cyclomatic complexity this package does not measure — so it defaults to 1,
+   * which overestimates, and every `fp:diff` says so.
+   *
+   * `implementation` means same type, same DET, same FTR, different body: a
+   * refactor. Whether that is billable, and at what, is a decision for whoever
+   * signs the contract — not one this package should invent.
+   */
+  // diff: {
+  //   reasonFactors: { implementation: 0.25 },
   // },
 })

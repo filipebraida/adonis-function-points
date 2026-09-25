@@ -1,4 +1,5 @@
 import type { ComplexityTable } from './albrecht/tables.js'
+import type { ChangeFactors, ChangeReasonFactors } from './albrecht/diff.js'
 import type { CallResolver } from './inventory/resolvers/types.js'
 import type { Complexity, FunctionType } from './types.js'
 
@@ -94,6 +95,26 @@ export type FunctionPointsConfig = {
   weights?: Partial<Record<FunctionType, Record<Complexity, number>>>
 
   /**
+   * How change is priced, for `fp:diff`. A clause of the contract, not a flag.
+   *
+   * The AEP anchors are explicit for added (1) and deleted (0.4). For a modified
+   * function AEP grades the factor from 0.25 to 1.75 through Effort Complexity
+   * variation, which needs cyclomatic complexity this package does not measure —
+   * so it defaults to 1, which overestimates, and every diff says so.
+   *
+   * `reasonFactors` is the lever the default leaves on the table. The tool
+   * already distinguishes a change of type, a change of size, and a change of
+   * implementation only — same type, same DET, same FTR, different body — and on
+   * a real pair of releases the last was 151 of 378 FP billed as change. Pricing
+   * a refactor at full functional value is not defensible; pricing it at a number
+   * this package invented would be worse. So the number comes from the contract.
+   */
+  diff?: {
+    factors?: Partial<ChangeFactors>
+    reasonFactors?: ChangeReasonFactors
+  }
+
+  /**
    * Custom tracing strategies, added to the built-in ones and running
    * **before** them.
    *
@@ -114,7 +135,7 @@ export type FunctionPointsConfig = {
 
   /**
    * Declared DET or RET/FTR for a function the analysis cannot read, keyed by
-   * the name it has in the count (`Petition`, `POST /books`).
+   * the name it has in the count (`Invoice`, `POST /books`).
    *
    * The case this exists for is a schema-driven application: when the fields a
    * user fills live in a JSON column whose schema is stored in the database,

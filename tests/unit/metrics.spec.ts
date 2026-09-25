@@ -128,25 +128,39 @@ test.group("metrics: conformance to the application's own conventions", () => {
    * what it agreed on. In a software factory this is what becomes a standards
    * audit.
    */
-  test('write transactions with a declared validator', async ({ assert }) => {
+  /**
+   * The denominator is the transactions that take input, NOT every write.
+   *
+   * Measured over every write it read 39% on a healthy application, which invited
+   * the conclusion that 61% of its writes were unvalidated. They were not: most
+   * were workflow triggers that carry nothing beyond the route parameter, exactly
+   * as counting-decisions §7 describes. It made its own author draw that
+   * conclusion and build a warning on it, so the trap is load-bearing here.
+   */
+  test('transactions that take input declare it with a validator', async ({ assert }) => {
     const { conformance } = await measure('vazquez')
 
-    assert.equal(conformance.writesWithValidator.total, 4, 'the four EIs of the case study')
-
     /**
-     * 3 of 4: `Exclusão de Apontamento` writes with no validator, using only
-     * the route parameter. That is correct — and exactly the kind of thing
-     * conformance exists to surface, rather than let slide.
+     * Five, not the four EIs the old denominator used: the two reads validate
+     * their query too, and a field arriving on a GET is a DET like any other.
      */
-    assert.equal(conformance.writesWithValidator.ok, 3)
-    assert.equal(conformance.writesWithValidator.ratio, 0.75)
+    assert.equal(conformance.inputsWithValidator.total, 5)
+    assert.equal(conformance.inputsWithValidator.ok, 5)
+    assert.equal(conformance.inputsWithValidator.ratio, 1)
   })
 
-  test('detects a write with no validator', async ({ assert }) => {
-    const { conformance } = await measure('minimal_flat')
+  test('a delete carrying only a route parameter is not a conformance gap', async ({ assert }) => {
+    const { conformance, inventory } = await measure('minimal_flat')
 
-    // `DELETE /books/:id` writes with no validator: only the route parameter
-    assert.isBelow(conformance.writesWithValidator.ratio, 1)
+    const destroy = inventory.entryPoints.find((entry) => entry.signature.includes('/books/:'))!
+    const behavior = inventory.behaviors.find((b) => b.entryPointId === destroy.id)!
+
+    assert.isEmpty(behavior.inputFields)
+    assert.isEmpty(
+      behavior.requestFields,
+      'it never reads the request: there is nothing to declare'
+    )
+    assert.equal(conformance.inputsWithValidator.ratio, 1, 'so it is outside the denominator')
   })
 
   test('an entry point with no handler shows in conformance', async ({ assert }) => {

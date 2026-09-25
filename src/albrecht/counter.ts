@@ -132,6 +132,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
   })
 
   warnings.push(...opaqueColumnWarnings(countable, input))
+  warnings.push(...unreadableInputWarnings(input))
 
   const functions = applyOverrides(
     [...dataFunctions, ...transactionalFunctions],
@@ -193,6 +194,47 @@ function opaqueColumnWarnings(stores: CollectedDataStore[], input: CountInput): 
     `${found.length} opaque column(s), each counted as 1 DET. If the user recognises fields ` +
       `inside one, declare the count with \`overrides\` — counting-decisions §8:`,
     ...found,
+  ]
+}
+
+/**
+ * Transactions that read the request in a way that enumerates nothing.
+ *
+ * `request.all()`, `request.body()`, `request.except([…])` — whatever arrives is
+ * read, and no analysis can say how many fields that is. The transaction is
+ * counted from its route parameters alone, which puts it at the floor of its
+ * complexity band: an undercount, and a silent one until now.
+ *
+ * Two earlier versions of this warning were wrong and are worth recording,
+ * because both looked like rigour. The first flagged every write with no
+ * validator and named `users.destroy`, `DELETE /questions/:id` and
+ * `notifications.markRead` — transactions that legitimately carry nothing beyond
+ * the route parameter, exactly as counting-decisions §7 describes. The second
+ * narrowed to POST, PUT and PATCH, and still named `POST /orders/:id/submit` and
+ * `POST /orders/:id/clear`: in an AdonisJS application POST is how a state
+ * transition is expressed, so the verb does not separate a submission from a
+ * trigger.
+ *
+ * What separates them is whether the handler reads the request at all. A trigger
+ * does not. So the enumerable reads are now COUNTED — `request.input('title')` is
+ * a DET — and only what cannot be enumerated is reported. A warning that names
+ * routes with nothing wrong with them is the noise that teaches people to stop
+ * reading the confidence block.
+ */
+function unreadableInputWarnings(input: CountInput): string[] {
+  const blind = input.entryPoints
+    .map((entry) => ({ entry, behavior: input.behaviors.get(entry.id) }))
+    .filter(({ behavior }) => behavior?.opaqueRequest && behavior.inputFields.length === 0)
+
+  if (blind.length === 0) return []
+
+  return [
+    `${blind.length} transaction(s) read the request without enumerating fields ` +
+      `(\`all()\`, \`body()\`, \`except()\`), so their input DETs could not be counted and ` +
+      `each sits at the floor of its band. This UNDERSTATES the total — the fix is a ` +
+      `validator, not a configuration:`,
+    ...blind.slice(0, 10).map(({ entry }) => `  ${entry.trigger} ${entry.signature}`),
+    ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
   ]
 }
 

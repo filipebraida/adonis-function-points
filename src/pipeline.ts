@@ -104,6 +104,11 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
         name,
         provenance: { file: app.root, by: 'validator' },
       })),
+      requestFields: behavior.requestFields.map((name) => ({
+        name,
+        provenance: { file: app.root, by: 'request' },
+      })),
+      opaqueRequest: behavior.opaqueRequest,
       outputFields: [],
       trace: behavior.trace,
       unresolved: behavior.unresolved,

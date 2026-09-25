@@ -51,6 +51,14 @@ export type Behavior = {
    * fields of the VineJS schema — counting-decisions §7.
    */
   inputFields: string[]
+  /**
+   * Fields read straight off the request. Kept apart from `inputFields` so the
+   * conformance metric keeps meaning what it says: these are DETs, and they are
+   * not a validator.
+   */
+  requestFields: string[]
+  /** the transaction reads the request in a way that enumerates nothing */
+  opaqueRequest: boolean
   trace: TraceStep[]
   /** bodies reached, for `fp:diff` */
   scope: ScopeEntry[]
@@ -88,6 +96,77 @@ function validatorFieldsIn(body: Node, file: SourceFile, app: AppContext): strin
   }
 
   return fields
+}
+
+/**
+ * Fields read straight off the request, with no validator in between.
+ *
+ * `request.input('title')` is a user-recognisable field crossing the boundary —
+ * §7.2's definition of a DET — and it was worth nothing, because input DETs came
+ * only from VineJS. A transaction that reads six fields this way landed at 1 DET
+ * and therefore at the floor of its complexity band.
+ *
+ * On four production applications about half the submitting transactions have no
+ * validator, so this was not an edge case: it was a systematic undercount, and a
+ * silent one.
+ *
+ * `all()`, `body()`, `except()` and `qs()` enumerate nothing — they read whatever
+ * arrives. Those are the honest blind spot, reported rather than guessed, which
+ * is why they come back as a flag and not as a field.
+ */
+const ENUMERATES_FIELDS = new Set(['input', 'only'])
+const READS_OPAQUELY = new Set(['all', 'body', 'except', 'qs'])
+
+function requestFieldsIn(body: Node): { fields: string[]; opaque: boolean } {
+  const fields = new Set<string>()
+  let opaque = false
+
+  for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const expression = call.getExpression()
+    if (!Node.isPropertyAccessExpression(expression)) continue
+    if (!isRequest(expression.getExpression())) continue
+
+    const method = expression.getName()
+    if (READS_OPAQUELY.has(method)) {
+      opaque = true
+      continue
+    }
+    if (!ENUMERATES_FIELDS.has(method)) continue
+
+    const argument = call.getArguments()[0]
+    if (!argument) continue
+
+    /** `request.input('title')` */
+    const single = argument.asKind(SyntaxKind.StringLiteral)?.getLiteralValue()
+    if (single) {
+      fields.add(single)
+      continue
+    }
+
+    /** `request.only(['title', 'isbn'])` */
+    const list = argument.asKind(SyntaxKind.ArrayLiteralExpression)
+    if (!list) {
+      opaque = true
+      continue
+    }
+    for (const element of list.getElements()) {
+      const name = element.asKind(SyntaxKind.StringLiteral)?.getLiteralValue()
+      if (name) fields.add(name)
+      else opaque = true
+    }
+  }
+
+  return { fields: [...fields], opaque }
+}
+
+/**
+ * `request` as an AdonisJS handler receives it: destructured from the context,
+ * or reached through it. Resolved by shape, not by a name list — `ctx.request`
+ * and `{ request }` are the same object.
+ */
+function isRequest(receiver: Node): boolean {
+  if (Node.isIdentifier(receiver)) return receiver.getText() === 'request'
+  return Node.isPropertyAccessExpression(receiver) && receiver.getName() === 'request'
 }
 
 /** validator declaration: in this file, or imported from the application */
@@ -147,8 +226,12 @@ const pathOf = (file: string) => file.split('/').pop()?.replace(/\.ts$/, '') ?? 
 /** facts about a body, independent of who called it */
 type BodyFacts = {
   accesses: { store: string; write: boolean }[]
-  /** validators usados neste corpo */
+  /** validators used in this body */
   validators: string[]
+  /** fields read straight off the request, with no validator in between */
+  requestFields: string[]
+  /** the body reads the request in a way that enumerates nothing */
+  opaqueRequest: boolean
   followUps: { ref: HandlerRef; by: string }[]
   unresolved: UnresolvedCall[]
   bodyHash: string
@@ -310,6 +393,7 @@ export function createAnalyzer(
     const followUps: { ref: HandlerRef; by: string }[] = []
     const unresolved: UnresolvedCall[] = []
     const validators = validatorFieldsIn(body, file, app)
+    const request = requestFieldsIn(body)
 
     for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const access = detectAccess(call, symbols, relationsByStore)
@@ -362,7 +446,15 @@ export function createAnalyzer(
       }
     }
 
-    return { accesses, followUps, unresolved, validators, bodyHash: hashOf(body) }
+    return {
+      accesses,
+      followUps,
+      unresolved,
+      validators,
+      requestFields: request.fields,
+      opaqueRequest: request.opaque,
+      bodyHash: hashOf(body),
+    }
   }
 
   /**
@@ -406,6 +498,8 @@ export function createAnalyzer(
   function run(handler: HandlerRef): Behavior {
     const touches = new Set<string>()
     const inputFields = new Set<string>()
+    const requestFields = new Set<string>()
+    let opaqueRequest = false
     const trace: TraceStep[] = []
     const scope: ScopeEntry[] = []
     const unresolved: UnresolvedCall[] = []
@@ -450,6 +544,8 @@ export function createAnalyzer(
 
       unresolved.push(...facts.unresolved)
       for (const field of facts.validators) inputFields.add(field)
+      for (const field of facts.requestFields) requestFields.add(field)
+      if (facts.opaqueRequest) opaqueRequest = true
 
       trace.push({
         file: ref.file,
@@ -465,7 +561,7 @@ export function createAnalyzer(
       for (const followUp of facts.followUps) {
         const before = trace.length
         visit(followUp.ref, depth + 1)
-        // registra quem resolveu o passo que acabou de entrar
+        // record which strategy resolved the step that just entered the trace
         if (trace.length > before) trace[before].by = followUp.by
       }
     }
@@ -476,6 +572,8 @@ export function createAnalyzer(
       writes,
       touches: [...touches].sort(),
       inputFields: [...inputFields].sort(),
+      requestFields: [...requestFields].sort(),
+      opaqueRequest,
       trace,
       scope,
       unresolved,

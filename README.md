@@ -144,6 +144,36 @@ saved count against the current state of the application. It deliberately does
 **not** take a git ref: booting an older checkout, with possibly different
 dependencies, is a problem not worth solving.
 
+### How change is priced
+
+AEP §6.5 gives explicit anchors for added (1) and deleted (0.4). For a **modified**
+function it grades the factor from 0.25 to 1.75 through Effort Complexity
+variation, which needs cyclomatic complexity this package does not measure — so it
+defaults to 1, which overestimates, and every diff says so with the amount at
+stake.
+
+What the default leaves on the table is a distinction the tool already measures:
+
+```
+changed      87 functions   378 FP  × 1
+  type              4 functions    23 FP
+  size             38 functions   204 FP
+  implementation   45 functions   151 FP
+```
+
+`implementation` means same type, same DET, same FTR, different body — a refactor.
+On a real pair of releases that was 151 of 378 FP billed as change. Pricing it at
+full functional value is not defensible, and pricing it at a number this package
+invented would be worse, so the number comes from the contract:
+
+```ts
+export default defineConfig({
+  diff: {
+    reasonFactors: { implementation: 0.25 },
+  },
+})
+```
+
 ### `fp:metrics` — the counterweight
 
 If function points pay, the team optimises function points: more models, more
@@ -156,7 +186,7 @@ Density
   transactions per data store:  5.4
 
 Conformance
-  writes with a validator       39.0%   (30/77)
+  inputs with a validator      100.0%   (30/30)
   entry points with a handler  100.0%   (163/163)
   data stores reached           96.7%   (29/30)
   tracing coverage              95.1%   (15 unresolved calls)
@@ -169,6 +199,13 @@ inpi                    70     11      6  0.00
 Mutual dependencies (cycle candidates)
   inventores <-> tecnologias
 ```
+
+The denominator of the first line is the transactions that **take** input, not
+every write. Measured over every write it read 39% on a healthy application, which
+invites the conclusion that 61% of its writes are unvalidated — and they are not:
+most are workflow triggers (`POST /orders/:id/submit`) that carry nothing beyond
+the route parameter. A metric that makes the reader draw a false conclusion is
+worse than no metric.
 
 `I` is Martin's instability, `Ce / (Ca + Ce)`: 0 means everyone depends on it and
 it depends on nobody, 1 means the reverse. A module at 0 that changes often is

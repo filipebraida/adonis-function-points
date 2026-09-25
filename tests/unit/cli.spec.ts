@@ -1,6 +1,6 @@
 import { test } from '@japa/runner'
 import path from 'node:path'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 
 import { analyze } from '../../src/pipeline.js'
@@ -9,9 +9,32 @@ import { ConfigLoadError, loadConfig } from '../../src/cli/load_config.js'
 import { printResult } from '../../src/cli/print.js'
 import { runCount, runDiff, runExplain, runInventory, runMetrics } from '../../src/cli/runners.js'
 import { packageVersion, parseArgv, run } from '../../src/cli.js'
+import type { CountResult } from '../../src/types.js'
 import { appFixturePath, fixturePath } from '../helpers.js'
 
 const configFixture = (name: string) => fixturePath('configs', name)
+
+/** a count with one function, enough to exercise pricing without analysing a tree */
+const SYNTHETIC = {
+  ruleset: 'afp',
+  rulesetVersion: '1.0.0',
+  functions: [
+    {
+      id: 'tx:POST /books',
+      name: 'POST /books',
+      module: 'app',
+      type: 'EI',
+      det: 3,
+      refs: 1,
+      complexity: 'low',
+      points: 10,
+      scopeHash: 'h1',
+      rationale: { rule: 'afp:6.5.3', detSources: [], refSources: [] },
+    },
+  ],
+  totals: { unadjusted: 10, byType: {}, byModule: {} },
+  confidence: { unresolvedCalls: 0, entryPointsWithoutHandler: 0, warnings: [] },
+} as unknown as CountResult
 
 /**
  * The defect this group exists to make impossible: `config/function_points.ts`
@@ -293,7 +316,7 @@ test.group('cli: exit codes', () => {
 
     assert.equal(await run(['metrics', '--root', appFixturePath('minimal_flat')], printer), 0)
     assert.isTrue(out.some((line) => line.includes('FP per data store')))
-    assert.isTrue(out.some((line) => line.includes('writes with a validator')))
+    assert.isTrue(out.some((line) => line.includes('inputs with a validator')))
   })
 
   test('metrics --json is parseable, and carries the source', async ({ assert }) => {
@@ -343,5 +366,84 @@ test.group('cli: exit codes', () => {
     assert.equal(await run(['--version'], printer), 0)
     assert.match(lines[0], /^\d+\.\d+\.\d+$/)
     assert.equal(lines[0], packageVersion())
+  })
+})
+
+/**
+ * `fp:diff` is what makes billing-by-change possible, so its pricing policy must
+ * be reachable from the file the contract lives in. It was reachable from
+ * nowhere: `factors` was a typed extension point only a test could use.
+ */
+test.group('cli: how change is priced', () => {
+  const silentPrinter = { log: () => {}, error: () => {}, note: () => {} }
+
+  test('the config file sets the change factors', async ({ assert }) => {
+    const root = await mkdtemp(path.join(tmpdir(), 'fp-diff-'))
+    const counts = path.join(root, 'counts')
+
+    await writeFile(path.join(root, 'adonisrc.ts'), 'export default {}\n')
+    await mkdir(path.join(root, 'config'), { recursive: true })
+    await writeFile(
+      path.join(root, 'config', 'function_points.ts'),
+      `export default { diff: { reasonFactors: { implementation: 0.25 } } }\n`
+    )
+
+    const previous = { ...SYNTHETIC, functions: [SYNTHETIC.functions[0]] }
+    const current = {
+      ...SYNTHETIC,
+      functions: [{ ...SYNTHETIC.functions[0], scopeHash: 'changed' }],
+    }
+
+    await writeFile(`${counts}-a.json`, JSON.stringify(previous))
+    await writeFile(`${counts}-b.json`, JSON.stringify(current))
+
+    const priced = await runDiff({
+      root,
+      previous: `${counts}-a.json`,
+      current: `${counts}-b.json`,
+    })
+    const flat = await runDiff({
+      root: appFixturePath('minimal_flat'),
+      previous: `${counts}-a.json`,
+      current: `${counts}-b.json`,
+    })
+
+    assert.equal(printResult(priced, silentPrinter), 0)
+    assert.include(priced.output, 'Billable FP: 2.5')
+    assert.include(flat.output, 'Billable FP: 10', 'without the config the default stands')
+  })
+
+  /**
+   * On a real pair of releases the per-function list is over a hundred lines, and
+   * the caveat about how most of the total was priced sat below all of them. A
+   * warning that has to be scrolled to is not a warning.
+   */
+  test('a warning comes before the per-function list', async ({ assert }) => {
+    const root = await mkdtemp(path.join(tmpdir(), 'fp-diff-order-'))
+    const previous = path.join(root, 'a.json')
+    const current = path.join(root, 'b.json')
+
+    await writeFile(previous, JSON.stringify(SYNTHETIC))
+    await writeFile(
+      current,
+      JSON.stringify({
+        ...SYNTHETIC,
+        functions: [{ ...SYNTHETIC.functions[0], scopeHash: 'changed' }],
+      })
+    )
+
+    const { output } = await runDiff({
+      root: appFixturePath('minimal_flat'),
+      previous,
+      current,
+    })
+
+    const lines = output.split('\n')
+    const warning = lines.findIndex((line) => line.startsWith('Warning:'))
+    /** the per-function list, anchored on the function name — not the summary row */
+    const list = lines.findIndex((line) => line.includes('POST /books'))
+
+    assert.isAbove(warning, -1)
+    assert.isAbove(list, warning, 'the caveat is read before the hundred lines, not after')
   })
 })

@@ -100,7 +100,7 @@ export function renderMetrics(
 
   lines.push('Conformance')
   for (const [label, value] of [
-    ['writes with a validator', conformance.writesWithValidator],
+    ['inputs with a validator', conformance.inputsWithValidator],
     ['entry points with a handler', conformance.entryPointsWithHandler],
     ['data stores reached', conformance.dataStoresReached],
   ] as const) {
@@ -233,9 +233,17 @@ export function renderDiff(diff: FunctionPointDiff): string {
     if (change === 'changed') {
       for (const [reason, split] of Object.entries(diff.changedByReason)) {
         if (split.count === 0) continue
+
+        /**
+         * The effective factor, per reason. Printing only the `changed` factor
+         * hid that `implementation` — no change in type, DET or FTR — was being
+         * billed at the same rate as a functional one.
+         */
+        const effective = diff.reasonFactors[reason as keyof typeof diff.reasonFactors]
         lines.push(
           `  ${pad(reason, 16)}${padStart(split.count, 3)} functions` +
-            `${padStart(split.points, 6)} FP`
+            `${padStart(split.points, 6)} FP` +
+            (effective === undefined ? '' : `  × ${effective}`)
         )
       }
     }
@@ -244,21 +252,29 @@ export function renderDiff(diff: FunctionPointDiff): string {
   lines.push('')
   lines.push(`Billable FP: ${diff.billable}`)
 
-  const mudou = diff.entries.filter((entry) => entry.change !== 'unchanged')
-  if (mudou.length > 0) {
+  /**
+   * Before the per-function list, not after it.
+   *
+   * On a real pair of releases the list is over a hundred lines, and a caveat
+   * about how most of the total was priced sat below all of them. A warning that
+   * has to be scrolled to is not a warning — and this particular number becomes
+   * an invoice.
+   */
+  for (const warning of diff.warnings) {
     lines.push('')
-    for (const entry of mudou) {
+    lines.push(`Warning: ${warning}`)
+  }
+
+  const moved = diff.entries.filter((entry) => entry.change !== 'unchanged')
+  if (moved.length > 0) {
+    lines.push('')
+    for (const entry of moved) {
       const label = entry.reason ? `${entry.change} (${entry.reason})` : entry.change
       lines.push(
         `  ${pad(label, 26)} ${pad(entry.function.name.slice(0, 40), 41)}` +
           `${padStart(entry.function.points, 4)} PF${movementOf(entry)}`
       )
     }
-  }
-
-  for (const warning of diff.warnings) {
-    lines.push('')
-    lines.push(`Warning: ${warning}`)
   }
 
   return lines.join('\n')

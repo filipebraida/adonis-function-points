@@ -131,8 +131,22 @@ export function measureStructure(inventory: Inventory, count: CountResult): Stru
  * is what turns into a standards audit.
  */
 export type Conformance = {
-  /** write transactions whose input fields come from a validator */
-  writesWithValidator: { ok: number; total: number; ratio: number }
+  /**
+   * Of the transactions that TAKE input, how many declare it with a validator.
+   *
+   * The first version of this measured validators over all writes, and read
+   * 39% on a healthy application — which invited the conclusion that 61% of its
+   * writes were unvalidated. They were not: most were workflow triggers
+   * (`POST /orders/:id/submit`, `POST /orders/:id/clear`) that carry nothing
+   * beyond the route parameter, exactly as counting-decisions §7 describes. A
+   * metric that makes a reader draw a false conclusion is worse than no metric,
+   * and this one made its own author draw it.
+   *
+   * The denominator is therefore the transactions that read something: a
+   * validator, a `request.input(…)`, or an `all()`/`body()` the analysis cannot
+   * enumerate.
+   */
+  inputsWithValidator: { ok: number; total: number; ratio: number }
   /** entry points whose handler was resolved */
   entryPointsWithHandler: { ok: number; total: number; ratio: number }
   /** data stores reached by at least one transaction */
@@ -142,15 +156,18 @@ export type Conformance = {
 export function measureConformance(inventory: Inventory): Conformance {
   const behaviors = inventory.behaviors
 
-  const writes = behaviors.filter((behavior) => behavior.writes)
-  const withValidator = writes.filter((behavior) => behavior.inputFields.length > 0)
+  const takesInput = behaviors.filter(
+    (behavior) =>
+      behavior.inputFields.length > 0 || behavior.requestFields.length > 0 || behavior.opaqueRequest
+  )
+  const withValidator = takesInput.filter((behavior) => behavior.inputFields.length > 0)
 
   const withHandler = inventory.entryPoints.filter((entry) => entry.handler !== null)
 
   const reached = new Set(behaviors.flatMap((behavior) => behavior.touches))
 
   return {
-    writesWithValidator: ratio(withValidator.length, writes.length),
+    inputsWithValidator: ratio(withValidator.length, takesInput.length),
     entryPointsWithHandler: ratio(withHandler.length, inventory.entryPoints.length),
     dataStoresReached: ratio(reached.size, inventory.dataStores.length),
   }

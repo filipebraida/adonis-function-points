@@ -230,6 +230,42 @@ An ace command that imports a spreadsheet and a scheduled job that syncs with
 an external system are transactional functions under IFPUG. In v1 only HTTP
 routes are collected; the entry point collection seam is what opens that path.
 
+## What belongs in the package, and what belongs in a configuration file
+
+The package is developed against a handful of real applications, which is the
+only reason the defects that matter get found at all. It is also the standing
+risk: four applications written by one team share habits, and a rule fitted to a
+habit is a framework for those four applications wearing the costume of a general
+tool.
+
+So a rule may live in the package only if it follows from one of three things:
+
+1. **The standard** — AFP, AEP or the IFPUG CPM, cited by section.
+2. **The language** — TypeScript semantics that hold in any codebase. An import
+   alias binds a different local name; a call on a call operates on a value.
+3. **A published API** — AdonisJS, Lucid, VineJS, or a package named in its own
+   `package.json`. `emitter.on(event, [listeners])` is a documented framework
+   contract; `@nemoventures/adonis-jobs` naming its method `process` is a fact
+   about that package, not about the team that installed it.
+
+Anything that follows from **how one team writes code** belongs in
+`config/function_points.ts`. That is what `boundary`, `overrides`, `resolvers`
+and `ignores()` are for, and why each of them costs a written justification: the
+cost is the point, because it keeps app-specific facts out of the tool.
+
+### The test that catches a violation
+
+A rule from the three sources above can be demonstrated on a fixture written
+from scratch, with invented names. A rule fitted to a habit cannot — its fixture
+ends up being a copy of the real application, and that is the signal.
+
+This is not hypothetical. A warning about writes with no validator was built from
+a single number measured on those applications, and the first two versions
+flagged `POST /orders/:id/submit` and `DELETE /questions/:id` — transactions that
+correctly carry no input. What survived keys on `request.all()`, a documented API
+that enumerates nothing, and it fires on none of the four. The measurement being
+undramatic is the evidence it generalises, not evidence it was wasted.
+
 ## Traceability is a requirement
 
 Every counted function carries a `Rationale`: the rule applied, the origin of

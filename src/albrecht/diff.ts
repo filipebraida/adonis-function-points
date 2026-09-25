@@ -61,8 +61,25 @@ export const AEP_FACTORS: ChangeFactors = {
   unchanged: 0,
 }
 
+/**
+ * Factors for a modified function, by WHAT changed about it.
+ *
+ * The distinction is already measured — `type`, `size` and `implementation` come
+ * out of the same comparison — and pricing all three at 1 throws that away. It
+ * showed up on a real pair of releases: of 378 FP billed as changed, 151 came
+ * from functions whose type, DET and FTR were all identical and only the body
+ * differed. Charging a refactor at full functional value is not defensible, and
+ * charging it at a number this package invented would be worse.
+ *
+ * So no default changes: each reason falls back to `factors.changed`, and the
+ * contract sets what it agreed to price. What the tool owes is the split.
+ */
+export type ChangeReasonFactors = Partial<Record<ChangeReason, number>>
+
 export type DiffOptions = {
   factors?: Partial<ChangeFactors>
+  /** per-reason factors for modified functions; each falls back to `factors.changed` */
+  reasonFactors?: ChangeReasonFactors
   /** labels for the two measurements, for the report only */
   labels?: { from: string; to: string }
 }
@@ -71,6 +88,8 @@ export type FunctionPointDiff = DiffResult & {
   /** function points weighted by the factors — this is what gets billed */
   billable: number
   factors: ChangeFactors
+  /** what the modified functions were actually billed at, by reason */
+  reasonFactors: ChangeReasonFactors
   warnings: string[]
 }
 
@@ -112,6 +131,13 @@ export function diffCounts(
   }
 
   const factors = { ...AEP_FACTORS, ...options.factors }
+  const reasonFactors = options.reasonFactors ?? {}
+
+  /** the factor a single entry is billed at, which is the per-reason one when set */
+  const factorFor = (entry: DiffEntry) =>
+    entry.change === 'changed' && entry.reason
+      ? (reasonFactors[entry.reason] ?? factors.changed)
+      : factors[entry.change]
   const before = new Map(from.functions.map((fn) => [fn.id, fn]))
   const after = new Map(to.functions.map((fn) => [fn.id, fn]))
 
@@ -175,11 +201,30 @@ export function diffCounts(
     )
   }
 
-  if (entries.some((entry) => entry.change === 'changed') && factors.changed === 1) {
+  /**
+   * Quantified, because the generic sentence was not actionable.
+   *
+   * On a real pair of releases this warning sat under 118 lines of per-function
+   * output, saying only that the factor was pinned. What a client disputes is
+   * the amount, so the amount is what it has to say.
+   */
+  const changedPoints = entries
+    .filter((entry) => entry.change === 'changed')
+    .reduce((total, entry) => total + entry.function.points, 0)
+
+  if (changedPoints > 0 && factors.changed === 1 && reasonFactors.implementation === undefined) {
+    const byReason = changedByReasonOf(entries)
+    const billable = round2(
+      entries.reduce((total, entry) => total + entry.function.points * factorFor(entry), 0)
+    )
+    const share = billable === 0 ? 0 : Math.round((changedPoints / billable) * 100)
+
     warnings.push(
-      'change factor pinned at 1: AEP grades it from 0.25 to 1.75 through Effort ' +
-        'Complexity variation, which requires cyclomatic complexity — not measured ' +
-        'yet. Changed functions are being billed at full value.'
+      `${changedPoints} of ${billable} billable FP (${share}%) are modified functions at a ` +
+        `factor pinned to 1. AEP grades it from 0.25 to 1.75 through Effort Complexity ` +
+        `variation, which needs cyclomatic complexity — not measured yet. Of those, ` +
+        `${byReason.implementation.points} FP changed implementation only (same type, DET ` +
+        `and FTR): set \`reasonFactors\` to price that differently.`
     )
   }
 
@@ -189,11 +234,18 @@ export function diffCounts(
     entries: entries.sort(byChangeThenName),
     totals: totalsOf(entries),
     changedByReason: changedByReasonOf(entries),
-    billable: entries.reduce(
-      (total, entry) => total + entry.function.points * factors[entry.change],
-      0
+    /**
+     * Rounded to cents at the source, not at the print.
+     *
+     * `485.00000000000006` appeared on the first real diff. It is arithmetically
+     * the same number and it is not the same document: this value is quoted in
+     * an invoice, and a reader who sees that tail stops trusting the rest.
+     */
+    billable: round2(
+      entries.reduce((total, entry) => total + entry.function.points * factorFor(entry), 0)
     ),
     factors,
+    reasonFactors,
     warnings,
   }
 }
@@ -266,3 +318,6 @@ function totalsOf(entries: DiffEntry[]): DiffResult['totals'] {
 
   return totals
 }
+
+/** two decimals: this number is quoted in an invoice */
+const round2 = (value: number) => Math.round(value * 100) / 100

@@ -101,6 +101,16 @@ export type HandlerBehavior = {
   touches: string[]
   /** declared input fields (validators) */
   inputFields: Field[]
+  /**
+   * Input fields read straight off the request, with no validator.
+   *
+   * Kept apart from `inputFields` so the conformance metric keeps meaning what it
+   * says. They are DETs all the same: `request.input('title')` is a
+   * user-recognisable field crossing the boundary, which is §7.2's definition.
+   */
+  requestFields: Field[]
+  /** the transaction reads the request in a way that enumerates nothing */
+  opaqueRequest: boolean
   /** declared output fields (transformers, DTOs) */
   outputFields: Field[]
   /** path walked through the call graph — what `fp:explain` prints */

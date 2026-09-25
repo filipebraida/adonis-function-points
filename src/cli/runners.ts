@@ -217,7 +217,13 @@ export async function runDiff(
   try {
     return {
       notes,
-      output: renderDiff(diffCounts(previous, current, { labels: { from: options.previous, to } })),
+      output: renderDiff(
+        diffCounts(previous, current, {
+          labels: { from: options.previous, to },
+          factors: config.diff?.factors,
+          reasonFactors: config.diff?.reasonFactors,
+        })
+      ),
     }
   } catch (error) {
     if (error instanceof IncomparableRulesetsError || error instanceof IncomparableSourcesError) {

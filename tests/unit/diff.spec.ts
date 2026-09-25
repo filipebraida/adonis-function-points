@@ -216,6 +216,79 @@ test.group('diff: factors and billing', () => {
     // these synthetic counts carry no `source`, which warns for its own reason
     assert.isFalse(diff.warnings.some((warning) => /Effort Complexity/.test(warning)))
   })
+
+  /**
+   * The warning has to carry the amount, because the amount is what a client
+   * disputes. On a real pair of releases the generic sentence sat under 118 lines
+   * of per-function output and said only that the factor was pinned.
+   */
+  test('the factor warning says how much is at stake', async ({ assert }) => {
+    const diff = diffCounts(
+      result([fn({ points: 10 })]),
+      result([fn({ points: 10, scopeHash: 'h2' })])
+    )
+
+    const warning = diff.warnings.find((line) => /Effort Complexity/.test(line))!
+    assert.match(warning, /10 of 10 billable FP \(100%\)/)
+    assert.include(warning, 'implementation only')
+  })
+
+  /**
+   * The tool already distinguishes a change of type, of size, and of
+   * implementation only. Pricing all three at 1 throws that away: on a real pair
+   * of releases, 151 of 378 FP billed as change were functions whose type, DET and
+   * FTR were identical and only the body differed.
+   *
+   * The number comes from the contract. Inventing one would be worse than the
+   * overestimate it replaces.
+   */
+  test('a modification can be priced by what changed about it', async ({ assert }) => {
+    const previous = result([fn({ points: 10 })])
+    const current = result([fn({ points: 10, scopeHash: 'h2' })])
+
+    assert.equal(diffCounts(previous, current).billable, 10)
+    assert.equal(
+      diffCounts(previous, current, { reasonFactors: { implementation: 0.25 } }).billable,
+      2.5
+    )
+  })
+
+  test('a size change is untouched by the implementation factor', async ({ assert }) => {
+    const diff = diffCounts(
+      result([fn({ points: 10 })]),
+      result([fn({ points: 10, det: 9, scopeHash: 'h2' })]),
+      { reasonFactors: { implementation: 0.25 } }
+    )
+
+    assert.equal(diff.entries[0].reason, 'size')
+    assert.equal(diff.billable, 10)
+  })
+
+  test('pricing implementation change silences the pinned-factor warning', async ({ assert }) => {
+    const diff = diffCounts(result([fn()]), result([fn({ scopeHash: 'h2' })]), {
+      reasonFactors: { implementation: 0.5 },
+    })
+
+    assert.isFalse(
+      diff.warnings.some((warning) => /Effort Complexity/.test(warning)),
+      'the contract decided: there is nothing left to warn about'
+    )
+  })
+
+  /**
+   * `485.00000000000006` appeared on the first real diff. Arithmetically the same
+   * number, and not the same document: this value is quoted in an invoice, and a
+   * reader who sees that tail stops trusting the rest of it.
+   */
+  test('the billable total is money, not a float artefact', async ({ assert }) => {
+    const previous = result([fn({ id: 'a', name: 'a', points: 3 }), fn({ id: 'b', name: 'b' })])
+    const current = result([fn({ id: 'a', name: 'a', points: 3, scopeHash: 'h2' })])
+
+    const diff = diffCounts(previous, current, { reasonFactors: { implementation: 0.35 } })
+
+    assert.equal(String(diff.billable), String(Math.round(diff.billable * 100) / 100))
+    assert.notInclude(String(diff.billable), '000000')
+  })
 })
 
 test.group('diff: ruleset', () => {
