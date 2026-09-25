@@ -349,6 +349,8 @@ Inherited from the AFP standard itself, not from this implementation:
   data functions are unaffected, and only the form-submission transaction loses
   complexity.
 
+  `fp:count` names every opaque column a transaction reaches, so the limitation
+  is visible where you read the number rather than only in a design document.
   The way out is to declare the number rather than let the tool guess it:
   `overrides: { 'POST /petitions': { det: 42, reason: '…' } }`. The reason is
   required by the type, `fp:explain` prints it beside the number, and `fp:count`

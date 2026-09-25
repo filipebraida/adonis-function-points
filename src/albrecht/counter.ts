@@ -99,6 +99,8 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     weights,
   })
 
+  warnings.push(...opaqueColumnWarnings(countable, input))
+
   const functions = applyOverrides(
     [...dataFunctions, ...transactionalFunctions],
     options.overrides ?? {},
@@ -115,6 +117,54 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     confidence: confidenceOf(input, warnings),
   }
 }
+
+/**
+ * Columns whose content static analysis cannot read — counting-decisions §8.
+ *
+ * A JSON column holding a form the user fills counts as 1 DET, because the
+ * schema is runtime data. That is the documented trade, and until now it was
+ * documented ONLY: the count said nothing, which is the one known blind spot
+ * this package reported nowhere. It reports an unresolved call, a technical
+ * table, an unresolved mixin and a handler-less route — and stayed silent here.
+ *
+ * Only columns on a store some transaction reaches are named. An untouched
+ * `metadata` column changes no number, and warning about it would be the noise
+ * that teaches people to stop reading the confidence block.
+ */
+function opaqueColumnWarnings(stores: CollectedDataStore[], input: CountInput): string[] {
+  const reached = new Map<string, number>()
+  for (const entry of input.entryPoints) {
+    for (const store of input.behaviors.get(entry.id)?.touches ?? []) {
+      reached.set(store, (reached.get(store) ?? 0) + 1)
+    }
+  }
+
+  const found: string[] = []
+
+  for (const store of stores) {
+    const transactions = reached.get(store.name)
+    if (!transactions) continue
+
+    for (const attribute of store.attributes) {
+      if (!attribute.type || !OPAQUE_TYPE.test(attribute.type)) continue
+      found.push(
+        `  ${store.name}.${attribute.name} (${attribute.type}) — ${transactions} transaction(s)`
+      )
+    }
+  }
+
+  if (found.length === 0) return []
+
+  // the advice once, then the list: repeating it per column is a wall nobody reads
+  return [
+    `${found.length} opaque column(s), each counted as 1 DET. If the user recognises fields ` +
+      `inside one, declare the count with \`overrides\` — counting-decisions §8:`,
+    ...found,
+  ]
+}
+
+/** a column whose shape says nothing about what it holds */
+const OPAQUE_TYPE = /^(object|any|unknown|Record<|Json|JSON)/
 
 /**
  * Replaces what the analysis found with what a person declared.
