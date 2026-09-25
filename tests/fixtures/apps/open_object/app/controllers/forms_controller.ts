@@ -2,7 +2,12 @@ import type { HttpContext } from '@adonisjs/core/http'
 
 import Form from '#models/form'
 import Note from '#models/note'
-import { createFormValidator, createNoteValidator, payValidator } from '#validators/form'
+import {
+  createFormValidator,
+  createNoteValidator,
+  payValidator,
+  wrappedValidator,
+} from '#validators/form'
 
 export default class FormsController {
   async store({ request, response }: HttpContext) {
@@ -20,6 +25,13 @@ export default class FormsController {
    */
   async pay({ request, response }: HttpContext) {
     const payload = await request.validateUsing(payValidator)
+
+    return response.created(await Note.create(payload as never))
+  }
+
+  /** Formatting must not decide what counts. */
+  async wrapped({ request, response }: HttpContext) {
+    const payload = await request.validateUsing(wrappedValidator)
 
     return response.created(await Note.create(payload as never))
   }

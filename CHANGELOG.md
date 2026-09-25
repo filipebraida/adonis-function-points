@@ -15,6 +15,22 @@ Five items reported from real use of 0.3.0, three of them defects.
 
 ### Fixed
 
+- **A newline decided whether a field counted.** The recogniser for a nested schema
+  was a regex over the property's source text (`/vine\.object/`), and Prettier breaks
+  a long chain across lines — `data: vine` then `.object({})` — so the regex missed
+  and the field was counted as one leaf instead of its nested ones, and never marked
+  opaque. Decided by structure now: is this literal the argument of a call named
+  `object`? The same applied to `.merge(…)` and `group.if(…)`, which had the same
+  kind of check. A count that depends on where the formatter put a newline is not a
+  measurement — the reason the implementation-scope hash strips whitespace before
+  hashing.
+- **The list of unreadable DETs ignored the overrides that answered it.** It was
+  computed before `applyOverrides` ran, so a function whose floor `detFromSchema` had
+  already replaced still appeared under "this is a FLOOR", telling the reader to map
+  something already mapped. It caused a real misreading of a production report, by
+  the author of this code. It now runs after the overrides, is grouped by FUNCTION,
+  and states per function how many were replaced by an override, how many reviewed,
+  and how many are still unanswered — only the last being a request to do anything.
 - **Emitted artefacts carried absolute paths.** `CountSource.app` is documented as
   never being one, because that says where the machine keeps its files and travels
   with every artefact sent anywhere — and the rule was applied to that one field. A

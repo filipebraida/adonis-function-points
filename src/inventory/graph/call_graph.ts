@@ -227,6 +227,44 @@ function findValidator(name: string, file: SourceFile, app: AppContext): Node | 
  * opaque placeholder with the schema's fields, and there was no placeholder to
  * replace, so the subtraction ate a real field instead.
  */
+/**
+ * Is this literal the argument of a call named `name`?
+ *
+ * Structural, because the test used to be a regex over the property's source text
+ * (`/vine\.object/`) and Prettier breaks a long chain across lines:
+ *
+ *     data: vine
+ *       .object({})
+ *       .allowUnknownProperties()
+ *
+ * `vine` and `.object` then sit on different lines, the regex misses, and the field
+ * silently stops being recognised as an open object. A count that depends on where
+ * the formatter put a newline is not a measurement — the same reason the
+ * implementation-scope hash strips whitespace before hashing.
+ */
+function isArgumentOfCallNamed(literal: ObjectLiteralExpression, name: string): boolean {
+  const call = literal.getParent()
+  if (!call || !Node.isCallExpression(call)) return false
+
+  const callee = call.getExpression()
+  return Node.isPropertyAccessExpression(callee) && callee.getName() === name
+}
+
+/** The last member of a call's callee: `vine.group.if(…)` is `if`, however it is wrapped. */
+function calleeName(call: CallExpression): string | undefined {
+  const callee = call.getExpression()
+  return Node.isPropertyAccessExpression(callee) ? callee.getName() : undefined
+}
+
+/** …and the member before it, so `group.if` can be told from any other `if`. */
+function calleeOwner(call: CallExpression): string | undefined {
+  const callee = call.getExpression()
+  if (!Node.isPropertyAccessExpression(callee)) return undefined
+
+  const owner = callee.getExpression()
+  return Node.isPropertyAccessExpression(owner) ? owner.getName() : undefined
+}
+
 type SchemaLeaves = { leaves: string[]; opaque: string[] }
 
 function leavesOf(node: Node, resolveRef?: (name: string) => Node | null): SchemaLeaves {
@@ -242,12 +280,11 @@ function leavesOf(node: Node, resolveRef?: (name: string) => Node | null): Schem
       if (!Node.isPropertyAssignment(property)) continue
 
       const name = property.getName().replace(/['"]/g, '')
-      const text = property.getText()
       const nested = property.getFirstDescendantByKind(SyntaxKind.ObjectLiteralExpression)
 
       // nested `vine.object({...})`: leaves count individually
       // `vine.array(vine.object({...}))`: repeating group, leaves counted once
-      if (nested && /vine\.object/.test(text)) {
+      if (nested && isArgumentOfCallNamed(nested, 'object')) {
         const path = prefix ? `${prefix}.${name}` : name
 
         /**
@@ -317,9 +354,9 @@ function groupBranchesIn(
   const found: ObjectLiteralExpression[] = []
 
   for (const call of node.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    const callee = call.getExpression().getText()
+    const method = calleeName(call)
 
-    if (/\bgroup\.if$|\bgroup\.else$/.test(callee)) {
+    if ((method === 'if' || method === 'else') && calleeOwner(call) === 'group') {
       for (const argument of call.getArguments()) {
         const literal = argument.asKind(SyntaxKind.ObjectLiteralExpression)
         // inside the outer object it is a nested schema, which `walk` already reads
@@ -329,7 +366,7 @@ function groupBranchesIn(
     }
 
     /** `.merge(openaiOrAws)`: the group is declared elsewhere */
-    if (!/\.merge$/.test(callee) || !resolveRef) continue
+    if (method !== 'merge' || !resolveRef) continue
 
     const reference = call.getArguments()[0]
     if (!reference || !Node.isIdentifier(reference)) continue

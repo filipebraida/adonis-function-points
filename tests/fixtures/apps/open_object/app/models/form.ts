@@ -11,4 +11,8 @@ export default class Form extends BaseModel {
 
   @column()
   declare answers: any
+
+  /** A second opaque column: the override names ONE schema, so only one is replaced. */
+  @column()
+  declare snapshot: any
 }

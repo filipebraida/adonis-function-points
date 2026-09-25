@@ -32,16 +32,24 @@ test.group('opaque columns: the one blind spot the count used to hide', () => {
     assert.isTrue(warnings.some((w) => /Form\.definition \(object\)/.test(w)))
   })
 
-  test('the advice points at the override that fixes it', async ({ assert }) => {
+  test('the advice points at both ways of answering it', async ({ assert }) => {
     const warnings = await warningsOf('opaque_columns')
+    const advice = warnings.join('\n')
 
-    assert.isTrue(warnings.some((w) => /overrides/.test(w) && /§8/.test(w)))
+    assert.include(advice, 'overrides.detFromSchema')
+    assert.include(advice, 'opaqueReviewed')
+    assert.include(advice, '§8')
   })
 
+  /**
+   * Grouped by FUNCTION rather than listed flat, because a flat list could not say
+   * what had already been answered — and, computed before the overrides ran, it named
+   * functions whose floor `detFromSchema` had already replaced.
+   */
   test('how many transactions reach it, so the reader can judge', async ({ assert }) => {
     const warnings = await warningsOf('opaque_columns')
 
-    assert.isTrue(warnings.some((w) => /1 transaction\(s\)/.test(w)))
+    assert.isTrue(warnings.some((w) => /reached by 1 transaction\(s\)/.test(w)))
   })
 
   /**

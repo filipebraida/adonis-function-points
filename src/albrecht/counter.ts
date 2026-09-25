@@ -156,10 +156,6 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
    */
   const reviewed = reviewedOpaque(options.overrides ?? {})
 
-  warnings.push(...opaqueColumnWarnings(countable, input, reviewed))
-  warnings.push(...unreadableInputWarnings(input))
-  warnings.push(...openValidatorWarnings(input, reviewed))
-
   const functions = applyOverrides(
     [...dataFunctions, ...transactionalFunctions],
     options.overrides ?? {},
@@ -168,6 +164,24 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     weights,
     warnings
   )
+
+  /**
+   * Reported AFTER the overrides are applied, because the overrides are the answer
+   * to it.
+   *
+   * Computed first, the list kept naming functions whose floor had already been
+   * replaced by `detFromSchema` — telling the reader to go and map something that
+   * was mapped. It cost a real misreading: a report was taken as "two forms still
+   * unmapped" when both were declared, by whoever wrote this code.
+   */
+  const declared = new Set(
+    functions
+      .filter((fn) => fn.rationale.overrides?.some((o) => o.fields.includes('det')))
+      .map((fn) => fn.name)
+  )
+
+  warnings.push(...opaqueWarnings(countable, input, { reviewed, declared }))
+  warnings.push(...unreadableInputWarnings(input))
 
   return {
     ruleset: RULESET,
@@ -192,7 +206,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
  * that teaches people to stop reading the confidence block.
  */
 /**
- * Opaque DETs declared reviewed, in both spellings a person might use.
+ * Opaque DETs someone has declared reviewed, in both spellings a person might use.
  *
  * Qualified (`Petition.schema`) is unambiguous; bare (`schema`) is what someone reads
  * off the warning line.
@@ -210,10 +224,34 @@ function reviewedOpaque(overrides: Record<string, FunctionOverride>): Set<string
   return reviewed
 }
 
-function opaqueColumnWarnings(
+/** a column whose shape says nothing about what it holds */
+const OPAQUE_TYPE = /^(object|any|unknown|Record<|Json|JSON)/
+
+type OpaqueState = { reviewed: Set<string>; declared: Set<string> }
+
+/**
+ * DETs the analysis cannot read: an opaque column, or an open input object.
+ *
+ * Both count 1, which is a FLOOR rather than a measurement, and counting-decisions §8
+ * is the trade. Reporting it is the point — this was the one known blind spot the
+ * package reported nowhere.
+ *
+ * Grouped by FUNCTION and stating what has already been answered, because a flat list
+ * of columns could not say that. Computed before the overrides ran, it named functions
+ * whose floor `detFromSchema` had already replaced, which reads as "go and map this"
+ * about something already mapped. That misreading actually happened, to the author of
+ * this code, reading someone else's report.
+ *
+ * Three states per function, and only the third is a request to do something:
+ *
+ *   replaced   a `detFromSchema` override stands in for one of them
+ *   reviewed   someone looked and 1 is the right answer
+ *   floor      still unanswered
+ */
+function opaqueWarnings(
   stores: CollectedDataStore[],
   input: CountInput,
-  reviewed: Set<string>
+  state: OpaqueState
 ): string[] {
   const reached = new Map<string, number>()
   for (const entry of input.entryPoints) {
@@ -222,84 +260,90 @@ function opaqueColumnWarnings(
     }
   }
 
-  const found: string[] = []
-  let accepted = 0
+  type Tally = { kind: string; floor: string[]; reviewed: number; transactions: number }
+  const byFunction = new Map<string, Tally>()
+
+  const tally = (name: string, kind: string, transactions: number) => {
+    const found = byFunction.get(name) ?? { kind, floor: [], reviewed: 0, transactions }
+    byFunction.set(name, found)
+    return found
+  }
 
   for (const store of stores) {
-    const transactions = reached.get(store.name)
-    if (!transactions) continue
+    if (!reached.get(store.name)) continue
 
     for (const attribute of store.attributes) {
       if (!attribute.type || !OPAQUE_TYPE.test(attribute.type)) continue
 
-      if (reviewed.has(`${store.name}.${attribute.name}`) || reviewed.has(attribute.name)) {
-        accepted += 1
-        continue
+      const entry = tally(store.name, 'column', reached.get(store.name) ?? 0)
+      if (
+        state.reviewed.has(`${store.name}.${attribute.name}`) ||
+        state.reviewed.has(attribute.name)
+      ) {
+        entry.reviewed += 1
+      } else {
+        entry.floor.push(`${attribute.name} (${attribute.type})`)
       }
-
-      found.push(
-        `  ${store.name}.${attribute.name} (${attribute.type}) — ${transactions} transaction(s)`
-      )
     }
   }
 
-  /** printed even when nothing is left to warn about: the fact is recorded, not erased */
-  const note =
-    accepted === 0 ? [] : [`${accepted} opaque column(s) declared reviewed, left at 1 DET.`]
-
-  if (found.length === 0) return note
-
-  // the advice once, then the list: repeating it per column is a wall nobody reads
-  return [
-    `${found.length} opaque column(s), each counted as 1 DET. If the user recognises fields ` +
-      `inside one, declare the count with \`overrides\`; if 1 is the right answer, record that ` +
-      `someone checked with \`overrides.<fn>.opaqueReviewed\` — counting-decisions §8:`,
-    ...found,
-    ...note,
-  ]
-}
-
-/**
- * Input fields declared as an open object: `vine.object({}).allowUnknownProperties()`.
- *
- * The same blind spot as an opaque column and, until now, reported nowhere — the
- * opaque-column warning names stores, and this one is on the transaction side, so
- * a route whose whole form arrives through one of these was invisible in the
- * confidence block. On a production application that was the route that saves the
- * main document, and it was the reason its EI never looked wrong.
- *
- * It counts 1 DET, which is a floor. When the fields are declared in the code
- * somewhere — a seeder, a schema module — `detFromSchema` replaces the floor with
- * the real count, and §8 of counting-decisions says how.
- */
-function openValidatorWarnings(input: CountInput, reviewed: Set<string>): string[] {
-  const found: string[] = []
-  let accepted = 0
-
-  for (const entry of input.entryPoints) {
-    const fields = input.behaviors.get(entry.id)?.opaqueInputFields ?? []
-
-    for (const field of fields) {
-      if (reviewed.has(field) || reviewed.has(`${entry.identity}.${field}`)) {
-        accepted += 1
-        continue
+  for (const point of input.entryPoints) {
+    for (const field of input.behaviors.get(point.id)?.opaqueInputFields ?? []) {
+      const entry = tally(point.identity, 'input object', 1)
+      if (state.reviewed.has(field) || state.reviewed.has(`${point.identity}.${field}`)) {
+        entry.reviewed += 1
+      } else {
+        entry.floor.push(field)
       }
-      found.push(`  ${entry.trigger} ${entry.signature} — ${field}`)
     }
   }
 
-  const note =
-    accepted === 0 ? [] : [`${accepted} open input object(s) declared reviewed, left at 1 DET.`]
+  const lines: string[] = []
+  let answered = 0
 
-  if (found.length === 0) return note
+  for (const [name, entry] of byFunction) {
+    /** a declared schema stands in for exactly one placeholder — §8, and the override warns when there are more */
+    const replaced = state.declared.has(name) && entry.floor.length > 0 ? 1 : 0
+    const remaining = entry.floor.slice(replaced)
+
+    if (remaining.length === 0) {
+      answered += 1
+      continue
+    }
+
+    const answeredHere = [
+      ...(replaced > 0 ? [`${replaced} replaced by override`] : []),
+      ...(entry.reviewed > 0 ? [`${entry.reviewed} reviewed`] : []),
+    ]
+
+    /**
+     * How many transactions reach the store, so the reader can judge whether the
+     * floor is worth answering. A blob nothing touches changes no number.
+     */
+    const reach = entry.kind === 'column' ? `, reached by ${entry.transactions} transaction(s)` : ''
+
+    lines.push(
+      `  ${name} — ${remaining.length} ${entry.kind}(s) at 1 DET${reach}` +
+        (answeredHere.length > 0 ? ` (${answeredHere.join(', ')} already)` : '') +
+        /** a column is qualified by its store; an input field already names its validator */
+        `: ${remaining.map((f) => (entry.kind === 'column' ? `${name}.${f}` : f)).join(', ')}`
+    )
+  }
+
+  const settled =
+    answered === 0
+      ? []
+      : [`  (${answered} more function(s) whose opaque DETs are all accounted for)`]
+
+  if (lines.length === 0) return settled
 
   return [
-    `${found.length} open input object(s), each counted as 1 DET. The fields the user fills ` +
-      `are data, not code, so this is a FLOOR: if they are declared anywhere in the source, ` +
-      `name that schema with \`overrides.detFromSchema\` — counting-decisions §8:`,
-    ...found.slice(0, 10),
-    ...(found.length > 10 ? [`  … and ${found.length - 10} more`] : []),
-    ...note,
+    `${lines.length} function(s) with a DET the analysis cannot read, counted as 1 each — a FLOOR, ` +
+      `not a measurement. Where the fields are declared in the source, name that schema with ` +
+      `\`overrides.detFromSchema\`; where 1 is the right answer, record it with ` +
+      `\`overrides.<fn>.opaqueReviewed\` — counting-decisions §8:`,
+    ...lines,
+    ...settled,
   ]
 }
 
@@ -343,9 +387,6 @@ function unreadableInputWarnings(input: CountInput): string[] {
     ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
   ]
 }
-
-/** a column whose shape says nothing about what it holds */
-const OPAQUE_TYPE = /^(object|any|unknown|Record<|Json|JSON)/
 
 /**
  * Replaces what the analysis found with what a person declared.

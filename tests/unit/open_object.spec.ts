@@ -31,13 +31,11 @@ test.group('open input object: a floor, never a zero', () => {
 
   test('it is reported, because the number is a floor', async ({ assert }) => {
     const { count } = await ei()
-    const warning = count.confidence.warnings.find((w) => w.includes('open input object'))
+    const text = count.confidence.warnings.join('\n')
 
-    assert.exists(warning, 'the opaque-column warning names stores; this side had none')
-    assert.include(
-      count.confidence.warnings.join('\n'),
-      'POST /forms — createFormValidator.answers'
-    )
+    assert.include(text, 'input object(s) at 1 DET', 'this side of the boundary had no warning')
+    assert.include(text, 'POST /forms')
+    assert.include(text, 'createFormValidator.answers')
   })
 
   test('the opaque column on the same field is marked too', async ({ assert }) => {
@@ -93,8 +91,8 @@ test.group('detFromSchema: replace the placeholder, do not assume it', () => {
 
     const form = count.functions.find((f) => f.name === 'Form')!
 
-    // 2 read - 1 placeholder + 6 declared
-    assert.equal(form.det, 7)
+    // 3 read (title, answers, snapshot) - 1 placeholder + 6 declared
+    assert.equal(form.det, 8)
   })
 
   /**
@@ -220,10 +218,15 @@ test.group('opaqueReviewed: answering a warning that is correct', () => {
     const after = await analyze(ROOT, reviewed)
 
     assert.isTrue(
-      before.count.confidence.warnings.some((w) => w.includes('opaque column(s), each'))
+      before.count.confidence.warnings.some((w) => w.includes('Form.answers')),
+      'unanswered, it is listed'
+    )
+    assert.isFalse(
+      after.count.confidence.warnings.some((w) => w.includes('Form.answers')),
+      'reviewed, it stops asking'
     )
     assert.isTrue(
-      after.count.confidence.warnings.some((w) => w.includes('declared reviewed, left at 1 DET')),
+      after.count.confidence.warnings.some((w) => w.includes('1 reviewed already')),
       'the fact is recorded, not erased'
     )
   })
@@ -249,5 +252,49 @@ test.group('opaqueReviewed: answering a warning that is correct', () => {
     const { count } = await analyze(ROOT, reviewed)
 
     assert.isUndefined(count.functions.find((f) => f.name === 'Form')!.rationale.overrides)
+  })
+})
+
+/**
+ * The recogniser for a nested schema was a regex over the property's SOURCE TEXT
+ * (`/vine\.object/`). Prettier breaks a long chain across lines:
+ *
+ *     data: vine
+ *       .object({})
+ *       .allowUnknownProperties()
+ *
+ * so `vine` and `.object` land on different lines, the regex misses, and the field
+ * stops being recognised — counted as one leaf instead of its nested ones, and never
+ * marked opaque. A count that depends on where the formatter put a newline is not a
+ * measurement, which is the same reason the implementation-scope hash strips
+ * whitespace before hashing.
+ */
+test.group('formatting must not decide what counts', () => {
+  test('a wrapped chain reads the same as an inline one', async ({ assert }) => {
+    const { count } = await analyze(ROOT)
+    const fn = count.functions.find((f) => f.name === 'POST /wrapped')!
+
+    assert.deepEqual(fn.rationale.detSources, [
+      'validator:wrappedValidator.inline.a',
+      'validator:wrappedValidator.inline.b',
+      'validator:wrappedValidator.openWrapped (opaque)',
+      'validator:wrappedValidator.wrapped.c',
+      'validator:wrappedValidator.wrapped.d',
+    ])
+  })
+
+  /**
+   * The literal in `.use(somethingElse({ note: … }))` sits further down the same
+   * chain. Deciding by structure — is this literal the argument of a call named
+   * `object`? — is immune to both the newline and the decoy.
+   */
+  test('an object literal later in the chain is not mistaken for the schema', async ({
+    assert,
+  }) => {
+    const { count } = await analyze(ROOT)
+    const fn = count.functions.find((f) => f.name === 'POST /wrapped')!
+
+    assert.notInclude(fn.rationale.detSources.join(' '), 'note')
+    assert.include(fn.rationale.detSources, 'validator:wrappedValidator.openWrapped (opaque)')
   })
 })

@@ -46,3 +46,27 @@ const paymentBranches = vine.group([
 ])
 
 export const payValidator = vine.create(vine.object({}).merge(paymentBranches))
+
+/**
+ * The same two fields, written across lines the way Prettier formats a long chain.
+ *
+ * The recogniser used to be a regex over the property's source text
+ * (`/vine\.object/`), so `vine` and `.object` landing on different lines made the
+ * field stop being recognised. A count that depends on where the formatter put a
+ * newline is not a measurement.
+ */
+export const wrappedValidator = vine.create(
+  vine.object({
+    inline: vine.object({ a: vine.string(), b: vine.string() }),
+    wrapped: vine
+      .object({ c: vine.string(), d: vine.string() })
+      .optional(),
+    openWrapped: vine
+      .object({})
+      .allowUnknownProperties()
+      .optional()
+      .use(somethingElse({ note: 'an object literal further down the chain' })),
+  })
+)
+
+declare function somethingElse(options: { note: string }): never
