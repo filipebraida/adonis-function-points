@@ -29,8 +29,16 @@ export const RULESET = 'afp'
  * It appears in every report, and `fp:diff` refuses to compare counts produced
  * by different versions — otherwise the difference would measure the rule
  * change rather than the work.
+ *
+ * It must be bumped by ANY change that moves the number for unchanged code, and
+ * that is easy to forget: four such changes landed in 1.1.0 — maintenance read
+ * across the whole project rather than from routes alone, a job followed into
+ * `process`, an event followed into its listeners, and `request.input(…)` counted
+ * as a DET. Without the bump, a baseline saved by the previous version would have
+ * compared cleanly against this one and billed the tool's own improvement as work
+ * done. The guard exists for exactly that, and only this constant arms it.
  */
-export const RULESET_VERSION = '1.0.0'
+export const RULESET_VERSION = '1.1.0'
 
 export type CountInput = {
   app: AppContext
