@@ -40,6 +40,13 @@ export type DataFunctionOptions = {
   weights: Record<FunctionType, Record<Complexity, number>>
 }
 
+/**
+ * A column whose shape says nothing about what it holds. Marked in the rationale
+ * because `detFromSchema` replaces exactly this placeholder, and because a reader
+ * deserves to know which of the DETs is a floor rather than a count.
+ */
+const OPAQUE_TYPE = /^(object|any|unknown|Record<|Json|JSON)/
+
 export function countDataFunctions(
   stores: CollectedDataStore[],
   usage: Map<string, StoreUsage>,
@@ -94,7 +101,9 @@ export function countDataFunctions(
             ? 'afp:6.5.4 maintained by an application transaction -> ILF'
             : 'afp:6.5.4 used but not maintained -> EIF',
         detSources: detAttributes.map(
-          (attribute) => `${store.columnSource}:${store.table ?? store.name}.${attribute.name}`
+          (attribute) =>
+            `${store.columnSource}:${store.table ?? store.name}.${attribute.name}` +
+            (attribute.type && OPAQUE_TYPE.test(attribute.type) ? ' (opaque)' : '')
         ),
         refSources:
           options.retStrategy === 'composition'

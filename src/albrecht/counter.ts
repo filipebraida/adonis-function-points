@@ -31,14 +31,18 @@ export const RULESET = 'afp'
  * change rather than the work.
  *
  * It must be bumped by ANY change that moves the number for unchanged code, and
- * that is easy to forget: four such changes landed in 1.1.0 — maintenance read
+ * that is easy to forget. Four such changes landed in 1.1.0 — maintenance read
  * across the whole project rather than from routes alone, a job followed into
  * `process`, an event followed into its listeners, and `request.input(…)` counted
- * as a DET. Without the bump, a baseline saved by the previous version would have
- * compared cleanly against this one and billed the tool's own improvement as work
- * done. The guard exists for exactly that, and only this constant arms it.
+ * as a DET — and three more in 1.2.0: an open input object counting 1 instead of 0,
+ * `detFromSchema` no longer subtracting a placeholder that was not there, and a
+ * write through `related(…)` maintaining the related table.
+ *
+ * Without the bump, a baseline saved by the previous version compares cleanly
+ * against this one and bills the tool's own improvement as work done. The guard
+ * exists for exactly that, and only this constant arms it.
  */
-export const RULESET_VERSION = '1.1.0'
+export const RULESET_VERSION = '1.2.0'
 
 export type CountInput = {
   app: AppContext
@@ -141,6 +145,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
 
   warnings.push(...opaqueColumnWarnings(countable, input))
   warnings.push(...unreadableInputWarnings(input))
+  warnings.push(...openValidatorWarnings(input))
 
   const functions = applyOverrides(
     [...dataFunctions, ...transactionalFunctions],
@@ -202,6 +207,38 @@ function opaqueColumnWarnings(stores: CollectedDataStore[], input: CountInput): 
     `${found.length} opaque column(s), each counted as 1 DET. If the user recognises fields ` +
       `inside one, declare the count with \`overrides\` — counting-decisions §8:`,
     ...found,
+  ]
+}
+
+/**
+ * Input fields declared as an open object: `vine.object({}).allowUnknownProperties()`.
+ *
+ * The same blind spot as an opaque column and, until now, reported nowhere — the
+ * opaque-column warning names stores, and this one is on the transaction side, so
+ * a route whose whole form arrives through one of these was invisible in the
+ * confidence block. On a production application that was the route that saves the
+ * main document, and it was the reason its EI never looked wrong.
+ *
+ * It counts 1 DET, which is a floor. When the fields are declared in the code
+ * somewhere — a seeder, a schema module — `detFromSchema` replaces the floor with
+ * the real count, and §8 of counting-decisions says how.
+ */
+function openValidatorWarnings(input: CountInput): string[] {
+  const found: string[] = []
+
+  for (const entry of input.entryPoints) {
+    const fields = input.behaviors.get(entry.id)?.opaqueInputFields ?? []
+    for (const field of fields) found.push(`  ${entry.trigger} ${entry.signature} — ${field}`)
+  }
+
+  if (found.length === 0) return []
+
+  return [
+    `${found.length} open input object(s), each counted as 1 DET. The fields the user fills ` +
+      `are data, not code, so this is a FLOOR: if they are declared anywhere in the source, ` +
+      `name that schema with \`overrides.detFromSchema\` — counting-decisions §8:`,
+    ...found.slice(0, 10),
+    ...(found.length > 10 ? [`  … and ${found.length - 10} more`] : []),
   ]
 }
 
@@ -298,9 +335,33 @@ function applyOverrides(
     if (override.detFromSchema) {
       const schema = schemas.get(override.detFromSchema)
       if (schema) {
-        // the opaque column contributed exactly 1 DET; the schema says how many
-        det = Math.max(fn.det - 1, 0) + schema.fields
+        /**
+         * Replaces the opaque placeholder — the one the rationale marks — rather
+         * than assuming there is one and that it is worth 1.
+         *
+         * That assumption was wrong twice over. An open `vine.object` counted
+         * ZERO, not 1, so subtracting 1 removed a field the analysis had read
+         * correctly: 86 DETs where 87 was right. And a function with no opaque
+         * DET at all was silently charged the subtraction too.
+         */
+        const placeholders = fn.rationale.detSources.filter((source) => source.endsWith('(opaque)'))
+
+        det = Math.max(fn.det - Math.min(placeholders.length, 1), 0) + schema.fields
         by = `config:overrides.${fn.name} (from ${schema.name}: ${schema.fields} fields)`
+
+        if (placeholders.length === 0) {
+          warnings.push(
+            `override for "${fn.name}" names schema "${schema.name}", but this function has no ` +
+              `opaque DET for it to stand in for: the ${schema.fields} fields were ADDED to the ` +
+              `${fn.det} already counted. Check the override is on the right function.`
+          )
+        } else if (placeholders.length > 1) {
+          warnings.push(
+            `override for "${fn.name}" names one schema and the function has ` +
+              `${placeholders.length} opaque DETs (${placeholders.join(', ')}). Only one was ` +
+              `replaced; the others still count 1 each.`
+          )
+        }
       } else {
         warnings.push(
           `override for "${fn.name}" names schema "${override.detFromSchema}", which is not ` +

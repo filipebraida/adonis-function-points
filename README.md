@@ -13,7 +13,7 @@ node ace fp:count
 
 ```
 Unadjusted count: 46 FP
-Ruleset: afp@1.1.0
+Ruleset: afp@1.2.0
 
 type      n     FP
 ILF       2     14

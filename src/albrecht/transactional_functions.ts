@@ -140,9 +140,17 @@ function detsFor(
     add(param.slice(1), `param:${param}`)
   }
 
+  /**
+   * `(opaque)` is not decoration: `detFromSchema` replaces the opaque placeholder
+   * with a schema's fields, and it used to assume there was exactly one and that
+   * it was worth 1. An open `vine.object` counted zero, so the subtraction ate a
+   * real field — off by one, in the direction of undercounting.
+   */
+  const opaqueInputs = new Set(behavior.opaqueInputFields)
+
   for (const field of behavior.inputFields) {
     const name = field.split('.').pop()!
-    add(name, `validator:${field}`)
+    add(name, `validator:${field}${opaqueInputs.has(field) ? ' (opaque)' : ''}`)
   }
 
   /**

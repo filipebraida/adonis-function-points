@@ -549,6 +549,60 @@ crossed a complexity band. The measurement got more complete without the total
 moving — which is the granularity effect §7 already describes, seen from the
 other side.
 
+### An input that enumerates nothing is a floor, never a zero
+
+`answers: vine.object({}).allowUnknownProperties()` declares a field whose own
+fields live in data. The leaf walk descended into the empty literal, found
+nothing, and then never pushed `answers` either — so the field counted **zero**,
+while an opaque JSON column in the identical position counts 1. Nothing in the
+report said so, because the opaque-column warning names stores and this one is on
+the transaction side.
+
+**Decision.** It counts 1 and is reported, exactly as a column is. Zero would make
+an unreadable field cheaper than a plain string, which is the wrong direction for a
+number that becomes an invoice.
+
+That zero is also what made `detFromSchema` off by one. Its formula replaces the
+opaque placeholder with a schema's field count, and it did so by subtracting 1 on
+faith. With no placeholder to replace, the subtraction ate a field the analysis had
+read correctly. The rationale now marks opaque DETs — `(opaque)` — and the override
+replaces a marked one or none, warning when it finds nothing to stand in for.
+
+Found by installing the package in a production application: the route that saves
+its main document was not counting the form at all, which is why its EI had never
+looked wrong.
+
+### A write through a relation maintains the related table
+
+`distribution.related('files').create({…})` is ordinary Lucid, and the relation is
+the **subject** of the write. Every relation access was treated as a read, with a
+comment asserting it, so a table written exclusively that way came back as an EIF —
+somebody else's table.
+
+**Decision.** `related(…)` followed by a write method writes the relation target;
+`preload` and `load` do not, because they hand back the parent and what follows
+acts on the parent. The distinction is the API's, not a heuristic: `related` returns
+the relation's own query builder.
+
+The control that keeps this honest is a fixture where a model is only ever
+preloaded and stays an EIF. Without it, widening this to "any relation access
+writes" would pass every other test in the suite.
+
+### Where a form's schema is allowed to live
+
+`database/` is excluded from the application roots on purpose: test factories and
+migrations contain real persistence calls, and scanning them would turn a test
+write into a counted function.
+
+But `node ace make:seeder` puts seeders in `database/seeders`, which is where seed
+data — and therefore a form's schema — normally lives. So `overrides.detFromSchema`
+naming a schema declared in a seeder reported "not declared anywhere in the code"
+and left the count at the floor: the exact case the override exists for.
+
+**Decision.** The schema catalogue reads `database/` as well. Reading a literal
+counts nothing, so the exclusion still protects what it was for — the call graph —
+and only the catalogue is widened.
+
 ### Three outcomes, where a resolver had two
 
 `resolve` returning `[]` meant _not recognised_. A strategy that recognised a

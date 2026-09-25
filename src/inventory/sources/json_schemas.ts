@@ -43,7 +43,23 @@ export function collectJsonSchemas(app: AppContext): Map<string, DiscoveredSchem
     compilerOptions: { allowJs: false },
   })
 
-  for (const root of app.scanRoots) project.addSourceFilesAtPaths(`${root}/**/*.ts`)
+  /**
+   * Wider than `scanRoots`, and only here.
+   *
+   * `database/` is excluded from the application roots on purpose: test factories
+   * and migrations contain real persistence calls, and scanning them would turn a
+   * test write into a counted function. But `node ace make:seeder` puts seeders in
+   * `database/seeders`, which is where seed data — and therefore a form's schema —
+   * normally lives. Reading a literal counts nothing, so there is no conflict: the
+   * exclusion protects the call graph, not the schema catalogue.
+   *
+   * Without this, `overrides.detFromSchema` naming a schema declared in a seeder
+   * reported "not declared anywhere in the code" and left the DET count at the
+   * floor — the exact case the override exists for.
+   */
+  for (const root of [...app.scanRoots.map(toPosix), `${toPosix(app.root)}/database`]) {
+    project.addSourceFilesAtPaths(`${root}/**/*.ts`)
+  }
 
   const found = new Map<string, DiscoveredSchema>()
 

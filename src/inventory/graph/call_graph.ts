@@ -51,6 +51,8 @@ export type Behavior = {
    * fields of the VineJS schema — counting-decisions §7.
    */
   inputFields: string[]
+  /** input fields that enumerate nothing: an open `vine.object` */
+  opaqueInputFields: string[]
   /**
    * Fields read straight off the request. Kept apart from `inputFields` so the
    * conformance metric keeps meaning what it says: these are DETs, and they are
@@ -77,8 +79,13 @@ export type Behavior = {
  *   array of object                  leaves, counted once
  *   unresolved spread                0, and reported — never guessed
  */
-function validatorFieldsIn(body: Node, file: SourceFile, app: AppContext): string[] {
+function validatorFieldsIn(
+  body: Node,
+  file: SourceFile,
+  app: AppContext
+): { fields: string[]; opaque: string[] } {
   const fields: string[] = []
+  const opaque: string[] = []
 
   for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const expression = call.getExpression()
@@ -92,10 +99,17 @@ function validatorFieldsIn(body: Node, file: SourceFile, app: AppContext): strin
     const declaration = findValidator(name, file, app)
     if (!declaration) continue
 
-    for (const leaf of leavesOf(declaration)) fields.push(`${name}.${leaf}`)
+    const { leaves, opaque: unreadable } = leavesOf(declaration)
+    const isOpaque = new Set(unreadable)
+
+    for (const leaf of leaves) {
+      const field = `${name}.${leaf}`
+      fields.push(field)
+      if (isOpaque.has(leaf)) opaque.push(field)
+    }
   }
 
-  return fields
+  return { fields, opaque }
 }
 
 /**
@@ -189,12 +203,28 @@ function findValidator(name: string, file: SourceFile, app: AppContext): Node | 
   return null
 }
 
-/** leaves of a VineJS schema, per the table in §7 */
-function leavesOf(node: Node): string[] {
+/**
+ * Leaves of a VineJS schema, per the table in §7, and which of them are opaque.
+ *
+ * `answers: vine.object({}).allowUnknownProperties()` declares a field whose own
+ * fields live in data, not in code. Walking into the empty literal found nothing
+ * and then never pushed `answers` either, so the field counted ZERO — while an
+ * opaque JSON column in the same position counts 1. The two are the same
+ * situation and now get the same answer: one DET, and a warning that says the
+ * number is a floor.
+ *
+ * That zero is also why `detFromSchema` was off by one. Its formula replaces the
+ * opaque placeholder with the schema's fields, and there was no placeholder to
+ * replace, so the subtraction ate a real field instead.
+ */
+type SchemaLeaves = { leaves: string[]; opaque: string[] }
+
+function leavesOf(node: Node): SchemaLeaves {
   const object = node.getFirstDescendantByKind(SyntaxKind.ObjectLiteralExpression)
-  if (!object) return []
+  if (!object) return { leaves: [], opaque: [] }
 
   const leaves: string[] = []
+  const opaque: string[] = []
 
   const walk = (literal: typeof object, prefix: string) => {
     for (const property of literal.getProperties()) {
@@ -208,7 +238,20 @@ function leavesOf(node: Node): string[] {
       // nested `vine.object({...})`: leaves count individually
       // `vine.array(vine.object({...}))`: repeating group, leaves counted once
       if (nested && /vine\.object/.test(text)) {
-        walk(nested, prefix ? `${prefix}.${name}` : name)
+        const path = prefix ? `${prefix}.${name}` : name
+
+        /**
+         * An object declaring no properties enumerates nothing. It is the field
+         * itself that crosses the boundary, so it counts once — never zero,
+         * which would make it cheaper than a plain string.
+         */
+        if (nested.getProperties().length === 0) {
+          leaves.push(path)
+          opaque.push(path)
+          continue
+        }
+
+        walk(nested, path)
         continue
       }
 
@@ -217,7 +260,16 @@ function leavesOf(node: Node): string[] {
   }
 
   walk(object, '')
-  return leaves
+
+  /**
+   * The whole validator is an open object: nothing is enumerable, and the body
+   * that carries it is measured at the floor. Counted as one, reported as such.
+   */
+  if (leaves.length === 0 && object.getProperties().length === 0) {
+    return { leaves: ['*'], opaque: ['*'] }
+  }
+
+  return { leaves, opaque }
 }
 
 /** file name, to identify the unresolved call without dumping the full path */
@@ -228,6 +280,8 @@ type BodyFacts = {
   accesses: { store: string; write: boolean }[]
   /** validators used in this body */
   validators: string[]
+  /** validator fields that enumerate nothing: an open `vine.object` */
+  opaqueValidators: string[]
   /** fields read straight off the request, with no validator in between */
   requestFields: string[]
   /** the body reads the request in a way that enumerates nothing */
@@ -392,15 +446,21 @@ export function createAnalyzer(
     const accesses: { store: string; write: boolean }[] = []
     const followUps: { ref: HandlerRef; by: string }[] = []
     const unresolved: UnresolvedCall[] = []
-    const validators = validatorFieldsIn(body, file, app)
+    const validator = validatorFieldsIn(body, file, app)
     const request = requestFieldsIn(body)
 
     for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const access = detectAccess(call, symbols, relationsByStore)
       if (access) {
         accesses.push({ store: access.store, write: access.mode === 'write' })
-        // a table reached through a relation is read, never written by this access
-        if (access.viaRelation) accesses.push({ store: access.viaRelation, write: false })
+        /**
+         * A relation reached by `preload`/`load` is read; one written through
+         * `related('files').create(…)` is written. Assuming read either way made
+         * a table maintained only through a relation come out as an EIF.
+         */
+        if (access.viaRelation) {
+          accesses.push({ store: access.viaRelation, write: access.relationWritten === true })
+        }
 
         /**
          * counting-decisions §3: a hook belongs to the transaction that fired
@@ -450,7 +510,8 @@ export function createAnalyzer(
       accesses,
       followUps,
       unresolved,
-      validators,
+      validators: validator.fields,
+      opaqueValidators: validator.opaque,
       requestFields: request.fields,
       opaqueRequest: request.opaque,
       bodyHash: hashOf(body),
@@ -481,7 +542,17 @@ export function createAnalyzer(
 
       for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
         const access = detectAccess(call, symbols, relationsByStore)
-        if (access?.mode === 'write') written.add(access.store)
+        if (access?.mode !== 'write') continue
+
+        written.add(access.store)
+
+        /**
+         * `distribution.related('files').create(…)` maintains the related table.
+         * Recording only the parent left a table written exclusively that way
+         * looking like somebody else's — reported by a production application as
+         * an EIF it was sure it maintained.
+         */
+        if (access.viaRelation && access.relationWritten) written.add(access.viaRelation)
       }
     }
 
@@ -498,6 +569,7 @@ export function createAnalyzer(
   function run(handler: HandlerRef): Behavior {
     const touches = new Set<string>()
     const inputFields = new Set<string>()
+    const opaqueInputFields = new Set<string>()
     const requestFields = new Set<string>()
     let opaqueRequest = false
     const trace: TraceStep[] = []
@@ -544,6 +616,7 @@ export function createAnalyzer(
 
       unresolved.push(...facts.unresolved)
       for (const field of facts.validators) inputFields.add(field)
+      for (const field of facts.opaqueValidators) opaqueInputFields.add(field)
       for (const field of facts.requestFields) requestFields.add(field)
       if (facts.opaqueRequest) opaqueRequest = true
 
@@ -572,6 +645,7 @@ export function createAnalyzer(
       writes,
       touches: [...touches].sort(),
       inputFields: [...inputFields].sort(),
+      opaqueInputFields: [...opaqueInputFields].sort(),
       requestFields: [...requestFields].sort(),
       opaqueRequest,
       trace,

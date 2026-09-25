@@ -35,6 +35,14 @@ export type PersistenceAccess = {
    */
   viaRelation?: string
   /**
+   * Whether the access WRITES the related table.
+   *
+   * `preload('author')` reads it; `related('files').create(…)` writes it. Treating
+   * every relation access as a read made a table written only through a relation
+   * look externally maintained.
+   */
+  relationWritten?: boolean
+  /**
    * Does this access fire the model's hooks?
    *
    * Lucid fires instance hooks for `document.delete()` and does NOT fire them
@@ -180,14 +188,62 @@ export function detectAccess(
     symbols.get(pathSymbolOf(receiver) ?? '') ?? symbols.get(rootSymbolOf(receiver) ?? '')
   if (!store) return null
 
+  /**
+   * `distribution.related('files').create({…})` — the relation is the SUBJECT of
+   * the write, not a table read along the way.
+   *
+   * `relationTargetOf` reads the current method, and here the current method is
+   * `create`, whose receiver is the `related(…)` call. Without looking back up the
+   * chain the write was attributed to `distributions` alone and `distribution_files`
+   * came out as a table this application only reads — an EIF, maintained by
+   * somebody else. That is what a production application reported, and it is
+   * ordinary Lucid: `related(…)` followed by `create`, `createMany`, `save`,
+   * `saveMany`, `attach`, `detach` or `sync` writes the related table.
+   */
+  const related = relatedCallIn(receiver)
+  const viaRelation =
+    relationTargetOf(method, call, store, relations) ??
+    (related ? relationTargetOf('related', related, store, relations) : undefined)
+
   return {
     mode: isWrite ? 'write' : 'read',
     store,
     method,
     line: call.getStartLineNumber(),
-    viaRelation: relationTargetOf(method, call, store, relations),
+    viaRelation,
+    /** the relation is written when the method acting on it writes */
+    relationWritten: isWrite,
     firesHooks: firesHooks(receiver),
   }
+}
+
+/**
+ * The `related('x')` call inside a receiver chain, if any.
+ *
+ * Only `related` qualifies: `preload` and `load` hand back the parent, so a write
+ * after them acts on the parent. `related` hands back the relation's own query
+ * builder, and that is what makes the difference.
+ */
+function relatedCallIn(receiver: Node): CallExpression | null {
+  let current: Node | undefined = receiver
+
+  for (let depth = 0; depth < 20 && current; depth++) {
+    if (Node.isCallExpression(current)) {
+      const expression = current.getExpression()
+      if (Node.isPropertyAccessExpression(expression) && expression.getName() === 'related') {
+        return current
+      }
+      current = expression
+      continue
+    }
+    if (Node.isPropertyAccessExpression(current) || Node.isAwaitExpression(current)) {
+      current = current.getExpression()
+      continue
+    }
+    break
+  }
+
+  return null
 }
 
 /**

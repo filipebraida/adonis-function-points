@@ -50,8 +50,8 @@ test.group('ILF vs EIF: maintenance is a property of the application', () => {
         .filter((f) => f.type === 'EI' || f.type === 'EO' || f.type === 'EQ')
         .map((f) => f.name)
         .sort(),
-      ['GET /reports', 'POST /reports/:param/notify'],
-      'only the two routes — the job the scheduler runs invents no elementary process'
+      ['GET /reports', 'POST /reports/:param/lines', 'POST /reports/:param/notify'],
+      'only the routes — the job the scheduler runs invents no elementary process'
     )
   })
 })
@@ -78,5 +78,48 @@ test.group('job dispatch: the write is in the execution method', () => {
       0,
       'falling back to `dispatch` resolved a file and then no body: both a false gap and a lost write'
     )
+  })
+})
+
+/**
+ * `report.related('lines').create(…)` — the relation is the SUBJECT of the write,
+ * not a table read along the way. Every relation access was treated as a read, so
+ * a table written exclusively that way came out as an EIF: a production
+ * application reported one it was sure it maintained.
+ */
+test.group('relations: a write through one maintains the related table', () => {
+  test('a store written only through a relation is an ILF', async ({ assert }) => {
+    const { count } = await analyze(appFixturePath('job_maintained'))
+
+    const line = count.functions.find((f) => f.name === 'ReportLine')
+    assert.exists(line, 'nothing names it on the left of a write')
+    assert.equal(line!.type, 'ILF')
+  })
+
+  test('the transaction counts the related table as an FTR', async ({ assert }) => {
+    const { count } = await analyze(appFixturePath('job_maintained'))
+
+    assert.deepEqual(
+      count.functions.find((f) => f.name === 'POST /reports/:param/lines')!.rationale.refSources,
+      ['reaches:Report', 'reaches:ReportLine']
+    )
+  })
+
+  /**
+   * The control, and the reason this cannot be "any relation access writes":
+   * `preload` and `load` hand back the parent, so what follows acts on the parent.
+   * Only `related` hands back the relation's own builder.
+   */
+  test('a relation reached by preload is still only read', async ({ assert }) => {
+    const { count } = await analyze(appFixturePath('minimal_flat'))
+
+    /**
+     * `Author` is only ever preloaded in this fixture — nothing writes it. So EIF
+     * is the right answer, and it is the sharpest possible control: if `preload`
+     * counted as a relation write, this would flip to ILF and nothing else in the
+     * suite would notice.
+     */
+    assert.equal(count.functions.find((f) => f.name === 'Author')!.type, 'EIF')
+    assert.equal(count.functions.find((f) => f.name === 'Book')!.type, 'ILF')
   })
 })

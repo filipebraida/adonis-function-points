@@ -102,6 +102,13 @@ export type HandlerBehavior = {
   /** declared input fields (validators) */
   inputFields: Field[]
   /**
+   * Input fields that enumerate nothing — an open `vine.object`.
+   *
+   * They count 1 DET each, like an opaque column, and are reported: the number
+   * is a floor, not a measurement.
+   */
+  opaqueInputFields: Field[]
+  /**
    * Input fields read straight off the request, with no validator.
    *
    * Kept apart from `inputFields` so the conformance metric keeps meaning what it

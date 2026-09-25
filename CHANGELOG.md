@@ -6,6 +6,46 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## Unreleased
+
+**Rule set `afp@1.2.0`.** Three counting fixes move the number for unchanged code,
+so a 0.2.0 baseline has to be recounted.
+
+All four were found by installing 0.2.0 in a production application, which is the
+only way any of them could have been found.
+
+### Fixed
+
+- **An open input object counted zero.** `vine.object({}).allowUnknownProperties()`
+  declares a field whose own fields live in data; the leaf walk descended into the
+  empty literal, found nothing, and never pushed the field either. An opaque JSON
+  column in the identical position counts 1. It now counts 1 too, and is reported —
+  the opaque-column warning names stores, and this side had no warning at all, which
+  is why the route saving the application's main document had never looked wrong.
+- **`detFromSchema` was off by one.** It replaced the opaque placeholder by
+  subtracting 1 on faith. With no placeholder to replace — the case above — the
+  subtraction removed a field the analysis had read correctly. Opaque DETs are now
+  marked `(opaque)` in the rationale, and the override replaces a marked one or
+  none, warning when it finds nothing to stand in for.
+- **A schema declared in a seeder was not found.** `database/` is excluded from the
+  application roots so a test factory's writes never become counted functions, but
+  `make:seeder` puts seeders there. Naming such a schema reported "not declared
+  anywhere in the code" and left the count at the floor — the exact case the
+  override exists for. The schema catalogue now reads `database/` as well; the call
+  graph still does not.
+- **A write through a relation did not maintain the related table.**
+  `distribution.related('files').create({…})` is ordinary Lucid and the relation is
+  the subject of the write. Every relation access was treated as a read, so a table
+  written exclusively that way came out as an EIF. `preload` and `load` still only
+  read, because they hand back the parent.
+
+### New
+
+- `analyze`, `diffCounts`, `measureStructure`, `measureConformance`, `calibrate`,
+  `RULESET_VERSION` and the diff types are exported. The two front-ends were the
+  only way to reach any of this, so anything built on top had to shell out to the
+  CLI and parse its output.
+
 ## 0.2.0
 
 **Rule set `afp@1.1.0`.** A baseline saved with 0.1.0 cannot be compared against
