@@ -7,7 +7,8 @@ import {
   IncomparableSourcesError,
   diffCounts,
 } from '../albrecht/diff.js'
-import { renderCount, renderDiff, renderExplain } from '../reporters/table.js'
+import { measureConformance, measureStructure } from '../metrics/structure.js'
+import { renderCount, renderDiff, renderExplain, renderMetrics } from '../reporters/table.js'
 import { loadConfig } from './load_config.js'
 import type { CountResult } from '../types.js'
 
@@ -116,6 +117,46 @@ export async function runCount(
   }
 
   return { notes, output: options.json ? JSON.stringify(count, null, 2) : renderCount(count) }
+}
+
+/**
+ * Structure and conformance, from the same inventory as the count.
+ *
+ * These were implemented and tested and reachable from no front-end at all,
+ * which is the recurring defect of this package: a capability that exists,
+ * typed and covered, and that nobody can run. A metric nobody can run is not a
+ * metric.
+ */
+export async function runMetrics(
+  options: Common & { out?: string; json?: boolean }
+): Promise<RunResult> {
+  const { config, notes } = await configFor(options.root)
+  const { inventory, count } = await analyze(options.root, config)
+
+  const empty = refuseIfEmpty(
+    options.root,
+    inventory.dataStores.length,
+    inventory.entryPoints.length
+  )
+  if (empty) return { output: '', notes, errors: empty }
+
+  const structure = measureStructure(inventory, count)
+  const conformance = measureConformance(inventory)
+
+  if (options.out) {
+    await writeFile(
+      options.out,
+      JSON.stringify({ source: count.source, structure, conformance }, null, 2)
+    )
+    notes.push(`metrics written to ${options.out}`)
+  }
+
+  return {
+    notes,
+    output: options.json
+      ? JSON.stringify({ source: count.source, structure, conformance }, null, 2)
+      : renderMetrics(structure, conformance, inventory.coverage),
+  }
 }
 
 export async function runExplain(options: Common & { name: string }): Promise<RunResult> {

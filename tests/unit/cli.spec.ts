@@ -7,7 +7,7 @@ import { analyze } from '../../src/pipeline.js'
 
 import { ConfigLoadError, loadConfig } from '../../src/cli/load_config.js'
 import { printResult } from '../../src/cli/print.js'
-import { runCount, runDiff, runExplain, runInventory } from '../../src/cli/runners.js'
+import { runCount, runDiff, runExplain, runInventory, runMetrics } from '../../src/cli/runners.js'
 import { packageVersion, parseArgv, run } from '../../src/cli.js'
 import { appFixturePath, fixturePath } from '../helpers.js'
 
@@ -281,6 +281,59 @@ test.group('cli: exit codes', () => {
     )
     assert.doesNotThrow(() => JSON.parse(out.join('\n')))
     assert.isTrue(notes.some((note) => note.includes('config')))
+  })
+
+  /**
+   * `measureStructure` and `measureConformance` were implemented, typed and
+   * covered by tests, and reachable from no front-end. That is the recurring
+   * defect of this package, and a metric nobody can run is not a metric.
+   */
+  test('metrics is a command, not just a function', async ({ assert }) => {
+    const { out, printer } = capture()
+
+    assert.equal(await run(['metrics', '--root', appFixturePath('minimal_flat')], printer), 0)
+    assert.isTrue(out.some((line) => line.includes('FP per data store')))
+    assert.isTrue(out.some((line) => line.includes('writes with a validator')))
+  })
+
+  test('metrics --json is parseable, and carries the source', async ({ assert }) => {
+    const { out, printer } = capture()
+
+    assert.equal(
+      await run(['metrics', '--root', appFixturePath('minimal_flat'), '--json'], printer),
+      0
+    )
+
+    const parsed = JSON.parse(out.join('\n'))
+    assert.exists(parsed.structure)
+    assert.exists(parsed.conformance)
+    assert.exists(parsed.source, 'a metric without its revision cannot be compared to another')
+  })
+
+  test('metrics refuses a root that is not the application', async ({ assert }) => {
+    const result = await runMetrics({ root: fixturePath('monorepo') })
+
+    assert.equal(printResult(result, silent), 1)
+  })
+
+  test('metrics reports the module graph it found', async ({ assert }) => {
+    const { out, printer } = capture()
+
+    await run(['metrics', '--root', appFixturePath('coupled_modules')], printer)
+
+    /** the column header, and the two modules of the fixture under it */
+    const lines = out.join('\n').split('\n')
+    const header = lines.findIndex((line) => line.startsWith('module'))
+
+    assert.isAbove(header, -1)
+    assert.deepEqual(
+      lines.slice(header + 1, header + 3).map((line) => line.split(' ')[0]),
+      ['catalogo', 'faturamento']
+    )
+    assert.isTrue(
+      lines[header + 2].includes('catalogo'),
+      'faturamento depends on catalogo, and the report has to say on what'
+    )
   })
 
   /** a flag documented in the usage that does nothing is the defect we keep fixing */

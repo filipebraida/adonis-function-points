@@ -1,5 +1,6 @@
-import type { CountResult, CountedFunction, DiffEntry } from '../types.js'
+import type { CountResult, CountedFunction, DiffEntry, Inventory } from '../types.js'
 import type { FunctionPointDiff } from '../albrecht/diff.js'
+import type { Conformance, StructureMetrics } from '../metrics/structure.js'
 
 /**
  * Text reports.
@@ -77,6 +78,68 @@ export function renderCount(result: CountResult): string {
 }
 
 /** `fp:explain`: a function's provenance, which is what supports a dispute */
+/**
+ * Structure and conformance, beside the count and never instead of it.
+ *
+ * If function points pay, the team optimises function points — more models, more
+ * endpoints, less reuse. Density and coupling on the same report are the
+ * counterweight, which is why this shares the inventory rather than collecting
+ * anything of its own.
+ */
+export function renderMetrics(
+  structure: StructureMetrics,
+  conformance: Conformance,
+  coverage: Inventory['coverage']
+): string {
+  const lines: string[] = []
+
+  lines.push('Density')
+  lines.push(`  FP per data store:            ${structure.pointsPerDataStore.toFixed(1)}`)
+  lines.push(`  transactions per data store:  ${structure.transactionsPerDataStore.toFixed(1)}`)
+  lines.push('')
+
+  lines.push('Conformance')
+  for (const [label, value] of [
+    ['writes with a validator', conformance.writesWithValidator],
+    ['entry points with a handler', conformance.entryPointsWithHandler],
+    ['data stores reached', conformance.dataStoresReached],
+  ] as const) {
+    lines.push(
+      `  ${pad(label, 28)}${padStart(`${(value.ratio * 100).toFixed(1)}%`, 7)}` +
+        `   (${value.ok}/${value.total})`
+    )
+  }
+  lines.push(
+    `  ${pad('tracing coverage', 28)}${padStart(`${(coverage.ratio * 100).toFixed(1)}%`, 7)}` +
+      `   (${coverage.unresolvedCalls} unresolved calls)`
+  )
+  lines.push('')
+
+  lines.push(
+    `${pad('module', 20)}${padStart('FP', 6)}${padStart('trans', 7)}${padStart('stores', 7)}` +
+      `${padStart('I', 6)}  depends on`
+  )
+  for (const module of structure.modules) {
+    lines.push(
+      `${pad(module.module.slice(0, 19), 20)}${padStart(module.functionPoints, 6)}` +
+        `${padStart(module.transactions, 7)}${padStart(module.dataStores, 7)}` +
+        `${padStart(module.instability.toFixed(2), 6)}  ${module.dependsOn.join(', ')}`
+    )
+  }
+
+  /**
+   * Reported, not scored. A cycle between two modules is a fact about the code
+   * that a number would hide, and the decision about it is the team's.
+   */
+  if (structure.mutualDependencies.length > 0) {
+    lines.push('')
+    lines.push('Mutual dependencies (cycle candidates)')
+    for (const [a, b] of structure.mutualDependencies) lines.push(`  ${a} <-> ${b}`)
+  }
+
+  return lines.join('\n')
+}
+
 export function renderExplain(fn: CountedFunction): string {
   const lines: string[] = []
 

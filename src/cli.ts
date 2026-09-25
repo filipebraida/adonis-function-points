@@ -5,7 +5,14 @@ import { fileURLToPath } from 'node:url'
 import { CoverageTooLowError } from './pipeline.js'
 import { ConfigLoadError } from './cli/load_config.js'
 import { printResult } from './cli/print.js'
-import { runCalibrate, runCount, runDiff, runExplain, runInventory } from './cli/runners.js'
+import {
+  runCalibrate,
+  runCount,
+  runDiff,
+  runExplain,
+  runInventory,
+  runMetrics,
+} from './cli/runners.js'
 import type { RunResult } from './cli/runners.js'
 
 /**
@@ -28,6 +35,7 @@ Usage
 Commands
   count                    count the unadjusted function points
   inventory                the raw facts: stores, routes, tracing coverage
+  metrics                  density, coupling and conformance, from the same run
   explain <name>           why one function was counted that way
   diff <a.json> [b.json]   additions / modifications / deletions, and billable FP
                            one file compares against the current tree; two
@@ -132,7 +140,7 @@ export async function run(argv: string[], printer: Printer = CONSOLE): Promise<n
    * error wherever you run it, and reporting "this is not an application root"
    * for a typo would point at the wrong problem.
    */
-  const KNOWN = ['count', 'inventory', 'explain', 'diff', 'calibrate']
+  const KNOWN = ['count', 'inventory', 'metrics', 'explain', 'diff', 'calibrate']
   if (!KNOWN.includes(command)) {
     printer.error(`unknown command "${command}"`)
     printer.log(USAGE.trimEnd())
@@ -184,6 +192,14 @@ export async function run(argv: string[], printer: Printer = CONSOLE): Promise<n
 
     case 'inventory':
       result = await runInventory({ root, out: text(flags.get('out')) })
+      break
+
+    case 'metrics':
+      result = await runMetrics({
+        root,
+        out: text(flags.get('out')),
+        json: flags.get('json') === true,
+      })
       break
 
     case 'explain':

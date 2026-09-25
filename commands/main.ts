@@ -17,6 +17,7 @@ const commands: Array<{
   importer: () => Promise<{ default: { commandName: string; serialize(): CommandMetaData } }>
 }> = [
   { commandName: 'fp:inventory', importer: () => import('./fp_inventory.js') },
+  { commandName: 'fp:metrics', importer: () => import('./fp_metrics.js') },
   { commandName: 'fp:count', importer: () => import('./fp_count.js') },
   { commandName: 'fp:explain', importer: () => import('./fp_explain.js') },
   { commandName: 'fp:diff', importer: () => import('./fp_diff.js') },

@@ -134,6 +134,7 @@ owes you is a number that is still defensible wherever it lands.
 | ------------------------------------- | ---------------------------------------------------------- |
 | `node ace fp:count`                   | counts unadjusted function points                          |
 | `node ace fp:inventory`               | the raw facts: stores, routes, tracing coverage            |
+| `node ace fp:metrics`                 | density, coupling and conformance, from the same run       |
 | `node ace fp:explain <name>`          | why one function was counted that way                      |
 | `node ace fp:diff <previous.json>`    | additions / modifications / deletions, and the billable FP |
 | `node ace fp:calibrate <samples.csv>` | correction factors against a manual count                  |
@@ -142,6 +143,37 @@ owes you is a number that is still defensible wherever it lands.
 saved count against the current state of the application. It deliberately does
 **not** take a git ref: booting an older checkout, with possibly different
 dependencies, is a problem not worth solving.
+
+### `fp:metrics` — the counterweight
+
+If function points pay, the team optimises function points: more models, more
+endpoints, less reuse. So density and coupling are reported from the **same**
+inventory, and this command exists to put them on the same page as the number.
+
+```
+Density
+  FP per data store:            27.0
+  transactions per data store:  5.4
+
+Conformance
+  writes with a validator       39.0%   (30/77)
+  entry points with a handler  100.0%   (163/163)
+  data stores reached           96.7%   (29/30)
+  tracing coverage              95.1%   (15 unresolved calls)
+
+module                  FP  trans stores     I  depends on
+pedidos                211     33      8  0.60  inventores, tecnologias, users
+portal                  69     15      0  1.00  contato, documentos, inventores, ...
+inpi                    70     11      6  0.00
+
+Mutual dependencies (cycle candidates)
+  inventores <-> tecnologias
+```
+
+`I` is Martin's instability, `Ce / (Ca + Ce)`: 0 means everyone depends on it and
+it depends on nobody, 1 means the reverse. A module at 0 that changes often is
+where change hurts. Cycles are **reported, not scored** — what to do about one is
+the team's decision, and a number would hide it.
 
 ### `fp:explain` — the number has to be defensible
 
