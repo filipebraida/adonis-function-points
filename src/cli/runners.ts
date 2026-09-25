@@ -163,9 +163,20 @@ export async function runExplain(options: Common & { name: string }): Promise<Ru
   const { config, notes } = await configFor(options.root)
   const { count } = await analyze(options.root, config)
 
-  const matched = count.functions.filter((fn) =>
-    fn.name.toLowerCase().includes(options.name.toLowerCase())
-  )
+  /**
+   * An exact name wins outright; the substring search is the fallback.
+   *
+   * `fp:explain "POST /orders/:param/submit"` returned four functions, because
+   * `/submit`, `/submit-ready` and `/submit-ready/return` all contain it. Asking
+   * about a function by its exact name and being handed its neighbours makes the
+   * command useless for the thing it exists for — defending one number.
+   */
+  const wanted = options.name.toLowerCase()
+  const exact = count.functions.filter((fn) => fn.name.toLowerCase() === wanted)
+  const matched =
+    exact.length > 0
+      ? exact
+      : count.functions.filter((fn) => fn.name.toLowerCase().includes(wanted))
 
   if (matched.length === 0) {
     return { output: '', notes, errors: [`no function matching "${options.name}"`] }

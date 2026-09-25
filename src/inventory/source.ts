@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
-import { toPosix } from './paths.js'
+import { relativeTo } from './paths.js'
 
 /**
  * What a count counted.
@@ -39,7 +39,14 @@ export type CountSource = {
    */
   dirty?: boolean
   countedAt: string
-  /** configuration file that shaped the count, or null for the defaults */
+  /**
+   * Configuration file that shaped the count, RELATIVE to the application root,
+   * or null for the defaults.
+   *
+   * Relative for the same reason `app` is a name: an absolute path says where the
+   * machine keeps its files, and this artefact is what goes into a ledger and to
+   * whoever receives the invoice.
+   */
   config: string | null
 }
 
@@ -71,7 +78,7 @@ export function describeSource(root: string, config: string | null): CountSource
     branch: revision === undefined ? undefined : git(root, ['rev-parse', '--abbrev-ref', 'HEAD']),
     dirty: status === undefined ? undefined : status.length > 0,
     countedAt: new Date().toISOString(),
-    config: config === null ? null : toPosix(config),
+    config: config === null ? null : relativeTo(root, config),
   }
 }
 

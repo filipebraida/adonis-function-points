@@ -127,3 +127,127 @@ test.group('detFromSchema: replace the placeholder, do not assume it', () => {
     )
   })
 })
+
+/**
+ * `vine.object({}).merge(vine.group([vine.group.if(p, {…})]))` — the branches are
+ * mutually exclusive at runtime and the transaction can carry any of them, so §7.2
+ * counts the fields the elementary process handles: their union.
+ *
+ * Read from the first object literal alone, the whole validator looked like an open
+ * object. The report then said the fields were data when they are plainly in the
+ * code, and `detFromSchema` could not correct it, because a group is not a JSON
+ * Schema.
+ */
+test.group('conditional groups: the union of the branches', () => {
+  test('every branch field counts', async ({ assert }) => {
+    const { count } = await analyze(ROOT)
+    const pay = count.functions.find((f) => f.name === 'POST /pay')!
+
+    assert.deepEqual(pay.rationale.detSources, [
+      'validator:payValidator.cardNumber',
+      'validator:payValidator.cvv',
+      'validator:payValidator.iban',
+      'validator:payValidator.shared',
+    ])
+  })
+
+  test('a field in two branches is one DET', async ({ assert }) => {
+    const { count } = await analyze(ROOT)
+    const pay = count.functions.find((f) => f.name === 'POST /pay')!
+
+    assert.equal(pay.det, 4, '5 declarations, 4 fields the user recognises')
+  })
+
+  test('the validator is no longer reported as an open object', async ({ assert }) => {
+    const { count } = await analyze(ROOT)
+
+    assert.notInclude(
+      count.confidence.warnings.join('\n'),
+      'payValidator',
+      'the fields are code; saying otherwise is a false blind spot'
+    )
+  })
+})
+
+/**
+ * An ILF's DETs are the fields the user recognises in the file, and an application
+ * with one schema per template recognises all of them. Pointing at the largest and
+ * justifying it in `reason` gives the same answer only while they land in the same
+ * complexity band — reasoning the configuration should not have to carry.
+ */
+test.group('detFromSchema: several schemas, unioned', () => {
+  const over = (detFromSchema: string | string[]) => ({
+    overrides: { 'POST /forms': { detFromSchema, reason: 'one schema per template' } },
+  })
+
+  test('the union is over leaf paths, not a sum of counts', async ({ assert }) => {
+    const one = await analyze(ROOT, over('intakeSchema'))
+    const both = await analyze(ROOT, over(['intakeSchema', 'reviewSchema']))
+
+    // 6 fields, and 4 more of which 2 are shared
+    assert.equal(one.count.functions.find((f) => f.name === 'POST /forms')!.det, 8)
+    assert.equal(both.count.functions.find((f) => f.name === 'POST /forms')!.det, 10)
+  })
+
+  test('a name that matches nothing warns and contributes nothing', async ({ assert }) => {
+    const { count } = await analyze(ROOT, over(['intakeSchema', 'absent']))
+    const form = count.functions.find((f) => f.name === 'POST /forms')!
+
+    assert.equal(form.det, 8, 'the schemas that resolved still count')
+    assert.include(
+      form.rationale.overrides![0].by,
+      'from intakeSchema:',
+      'naming a schema that contributed nothing would mislead'
+    )
+    assert.isTrue(count.confidence.warnings.some((w) => w.includes('"absent"')))
+  })
+})
+
+/**
+ * 1 DET for an opaque column is a floor, and `fp:count` says so on every run. Some
+ * of those columns really are one field — a copy, a checksum, a bag of metadata —
+ * and there was no way to record that someone had looked, so the warning fired
+ * forever. A warning that cannot be answered is one the team learns to scroll past,
+ * which costs more than the warning reports.
+ */
+test.group('opaqueReviewed: answering a warning that is correct', () => {
+  const reviewed = {
+    overrides: { Form: { opaqueReviewed: ['answers'], reason: 'a copy of the form; one field' } },
+  }
+
+  test('the warning becomes a record instead of a nag', async ({ assert }) => {
+    const before = await analyze(ROOT)
+    const after = await analyze(ROOT, reviewed)
+
+    assert.isTrue(
+      before.count.confidence.warnings.some((w) => w.includes('opaque column(s), each'))
+    )
+    assert.isTrue(
+      after.count.confidence.warnings.some((w) => w.includes('declared reviewed, left at 1 DET')),
+      'the fact is recorded, not erased'
+    )
+  })
+
+  test('it moves no number', async ({ assert }) => {
+    const before = await analyze(ROOT)
+    const after = await analyze(ROOT, reviewed)
+
+    assert.equal(after.count.totals.unadjusted, before.count.totals.unadjusted)
+    assert.equal(
+      after.count.functions.find((f) => f.name === 'Form')!.det,
+      before.count.functions.find((f) => f.name === 'Form')!.det
+    )
+  })
+
+  /**
+   * `fp:count` prints what share of the total came from a person, and that line is
+   * why the whole mechanism is acceptable. An entry declaring no number read as
+   * "1 function, 7 FP, 35% declared by override", misrepresenting the one number
+   * that exists to keep this honest.
+   */
+  test('a review is not a declared number', async ({ assert }) => {
+    const { count } = await analyze(ROOT, reviewed)
+
+    assert.isUndefined(count.functions.find((f) => f.name === 'Form')!.rationale.overrides)
+  })
+})

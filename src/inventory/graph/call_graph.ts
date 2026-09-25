@@ -3,6 +3,7 @@ import { Node, Project, SyntaxKind } from 'ts-morph'
 import type {
   CallExpression,
   ClassDeclaration,
+  ObjectLiteralExpression,
   ParameterDeclaration,
   PropertyDeclaration,
   SourceFile,
@@ -99,7 +100,16 @@ function validatorFieldsIn(
     const declaration = findValidator(name, file, app)
     if (!declaration) continue
 
-    const { leaves, opaque: unreadable } = leavesOf(declaration)
+    /**
+     * The reference is resolved in the VALIDATOR's file, not the caller's.
+     *
+     * `vine.object({}).merge(openaiOrAws)` names a constant that lives beside the
+     * validator and is usually not exported, so looking for it where the call site
+     * is finds nothing — which is how five fields stayed invisible.
+     */
+    const { leaves, opaque: unreadable } = leavesOf(declaration, (ref) =>
+      findValidator(ref, declaration.getSourceFile(), app)
+    )
     const isOpaque = new Set(unreadable)
 
     for (const leaf of leaves) {
@@ -219,7 +229,7 @@ function findValidator(name: string, file: SourceFile, app: AppContext): Node | 
  */
 type SchemaLeaves = { leaves: string[]; opaque: string[] }
 
-function leavesOf(node: Node): SchemaLeaves {
+function leavesOf(node: Node, resolveRef?: (name: string) => Node | null): SchemaLeaves {
   const object = node.getFirstDescendantByKind(SyntaxKind.ObjectLiteralExpression)
   if (!object) return { leaves: [], opaque: [] }
 
@@ -262,6 +272,23 @@ function leavesOf(node: Node): SchemaLeaves {
   walk(object, '')
 
   /**
+   * Conditional groups: `vine.object({}).merge(vine.group([vine.group.if(p, {…})]))`.
+   *
+   * The branches are mutually exclusive at runtime and the transaction can carry
+   * any of them, so §7.2 counts the UNION — the fields the elementary process
+   * handles. Read from the first object literal alone, the whole validator looked
+   * like an open object and the count said the fields were data when they are
+   * plainly in the code: five fields reported as one, and `detFromSchema` could not
+   * fix it, because a group is not a JSON Schema.
+   *
+   * A `group.if` literal inside the outer object would be a nested schema `walk`
+   * already handled, so only the ones outside it are roots here.
+   */
+  for (const branch of groupBranchesIn(node, object, resolveRef)) {
+    walk(branch, '')
+  }
+
+  /**
    * The whole validator is an open object: nothing is enumerable, and the body
    * that carries it is measured at the floor. Counted as one, reported as such.
    */
@@ -269,7 +296,49 @@ function leavesOf(node: Node): SchemaLeaves {
     return { leaves: ['*'], opaque: ['*'] }
   }
 
-  return { leaves, opaque }
+  return { leaves: [...new Set(leaves)], opaque: [...new Set(opaque)] }
+}
+
+/**
+ * Object literals passed to `vine.group.if(…)`, following `.merge(x)` when `x` is
+ * a name this file can resolve.
+ *
+ * The groups usually live in their own constant — which is why following the
+ * reference matters more than recognising the inline form.
+ */
+function groupBranchesIn(
+  node: Node,
+  outer: ObjectLiteralExpression,
+  resolveRef?: (name: string) => Node | null,
+  depth = 0
+): ObjectLiteralExpression[] {
+  if (depth > 3) return []
+
+  const found: ObjectLiteralExpression[] = []
+
+  for (const call of node.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const callee = call.getExpression().getText()
+
+    if (/\bgroup\.if$|\bgroup\.else$/.test(callee)) {
+      for (const argument of call.getArguments()) {
+        const literal = argument.asKind(SyntaxKind.ObjectLiteralExpression)
+        // inside the outer object it is a nested schema, which `walk` already reads
+        if (literal && !outer.getDescendants().includes(literal)) found.push(literal)
+      }
+      continue
+    }
+
+    /** `.merge(openaiOrAws)`: the group is declared elsewhere */
+    if (!/\.merge$/.test(callee) || !resolveRef) continue
+
+    const reference = call.getArguments()[0]
+    if (!reference || !Node.isIdentifier(reference)) continue
+
+    const declaration = resolveRef(reference.getText())
+    if (declaration) found.push(...groupBranchesIn(declaration, outer, resolveRef, depth + 1))
+  }
+
+  return found
 }
 
 /** file name, to identify the unresolved call without dumping the full path */

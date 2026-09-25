@@ -14,3 +14,17 @@ export const intakeSchema = {
     notes: { type: 'string' },
   },
 } as const
+
+/**
+ * A second template. Two fields it shares with the first, two of its own — so the
+ * union is 8, not 12, because a field the user recognises in both is one DET.
+ */
+export const reviewSchema = {
+  type: 'object',
+  properties: {
+    fullName: { type: 'string' },
+    email: { type: 'string' },
+    reviewer: { type: 'string' },
+    decision: { type: 'string' },
+  },
+} as const

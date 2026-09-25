@@ -170,9 +170,34 @@ export type FunctionOverride = {
    *
    * A name that matches no schema is a warning, never a silent fallback.
    */
-  detFromSchema?: string
+  /**
+   * Name of a declared schema, or several whose fields are UNIONED.
+   *
+   * An ILF's DETs are the fields the user recognises in the file, and an
+   * application with one schema per template recognises the fields of all of them.
+   * Pointing at the largest and justifying it in `reason` gives the same answer
+   * only while they land in the same complexity band — which is a piece of
+   * reasoning the configuration should not have to carry.
+   *
+   * Unioned by leaf path, so a field two templates share counts once.
+   */
+  detFromSchema?: string | string[]
   /** declared RET (data function) or FTR (transaction) */
   refs?: number
+  /**
+   * Opaque DETs someone has looked at and decided are correct at 1.
+   *
+   * `fp:count` reports every opaque column and open input object, because 1 DET is
+   * a floor rather than a measurement. But some of them ARE one field — a copy, a
+   * checksum, a bag of metadata — and there was no way to say so, so the warning
+   * fired on every run forever. A warning that cannot be answered is a warning the
+   * team learns to scroll past, which costs more than the one it reports.
+   *
+   * It silences nothing else: the count does not move, and `fp:count` still says
+   * how many were reviewed. Names are matched bare (`schema`) or qualified
+   * (`Petition.schema`).
+   */
+  opaqueReviewed?: string[]
   /** why — required, and printed by `fp:explain` beside the number */
   reason: string
 }

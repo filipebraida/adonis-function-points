@@ -6,6 +6,49 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## Unreleased
+
+**Rule set `afp@1.3.0`.** Conditional validator groups now count, so a 0.3.0
+baseline has to be recounted.
+
+Five items reported from real use of 0.3.0, three of them defects.
+
+### Fixed
+
+- **Emitted artefacts carried absolute paths.** `CountSource.app` is documented as
+  never being one, because that says where the machine keeps its files and travels
+  with every artefact sent anywhere — and the rule was applied to that one field. A
+  production count carried **858** absolute paths in its traces; an inventory
+  carried **2036** across ten fields, including the data-store `id`. Every path that
+  leaves is now relative to the application root, and the internal absolute form is
+  untouched because that is what ts-morph resolves against.
+- **`vine.group` and `.merge()` were not read.**
+  `vine.object({}).merge(vine.group([vine.group.if(p, {…})]))` reported the whole
+  validator as an open input object: five fields counted as one, and the report said
+  they were data when they are in the code. The branches are mutually exclusive at
+  runtime and the transaction can carry any of them, so §7.2 counts their union — a
+  field two branches share counts once. The group usually lives in an unexported
+  constant beside the validator, so the reference is resolved in the validator's own
+  file rather than the caller's.
+- **`fp:explain` matched by substring even when the exact name existed.** Asking
+  about `POST /orders/:param/submit` returned four functions, because
+  `/submit-ready` and `/submit-ready/return` contain it. An exact name now wins
+  outright; the substring search is the fallback.
+
+### New
+
+- **`detFromSchema` accepts a list**, unioned by leaf path. An ILF's DETs are the
+  fields the user recognises in the file, and an application with one schema per
+  template recognises all of them. Pointing at the largest and justifying it in
+  `reason` gives the same answer only while they land in the same band — reasoning
+  the configuration should not have to carry.
+- **`overrides.<fn>.opaqueReviewed`** records that someone looked at an opaque DET
+  and decided 1 is right. 1 DET is a floor and `fp:count` says so on every run, but
+  some of those columns really are one field, and a warning that cannot be answered
+  is one the team learns to scroll past. It moves no number, it is not counted as a
+  declared override in the "Declared by override" share, and the volume reviewed is
+  still printed.
+
 ## 0.3.0
 
 **Rule set `afp@1.2.0`.** Three counting fixes move the number for unchanged code,

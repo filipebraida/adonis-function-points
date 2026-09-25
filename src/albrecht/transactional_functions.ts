@@ -1,3 +1,4 @@
+import { relativeTo } from '../inventory/paths.js'
 import type { CollectedDataStore } from '../inventory/sources/data_stores.js'
 import type { CollectedEntryPoint } from '../inventory/sources/routes_ast.js'
 import type { Behavior } from '../inventory/graph/call_graph.js'
@@ -34,6 +35,15 @@ export type TransactionOptions = {
   messageDet: number
   tables: Record<FunctionType, ComplexityTable>
   weights: Record<FunctionType, Record<Complexity, number>>
+  /**
+   * Application root, used only to relativise the paths that LEAVE in the trace.
+   *
+   * `CountSource.app` is documented as never being the absolute path, because it
+   * says where the machine keeps its files and travels with every count sent
+   * anywhere. The trace shipped the absolute path regardless — 858 times in a
+   * single production count, which is most of the artefact a ledger would store.
+   */
+  root: string
 }
 
 export function countTransactionalFunctions(
@@ -78,7 +88,10 @@ export function countTransactionalFunctions(
           : 'afp:6.5.3 uses without modifying -> EO (EQ collapsed per 6.5.3)',
         detSources: sources,
         refSources: touched.map((store) => `reaches:${store}`),
-        trace: behavior.trace,
+        trace: behavior.trace.map((step) => ({
+          ...step,
+          file: relativeTo(options.root, step.file),
+        })),
       },
     })
   }

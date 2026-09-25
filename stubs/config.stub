@@ -42,7 +42,13 @@ export default defineConfig({
    * here.
    */
   // overrides: {
-  //   'POST /forms': { det: 42, reason: 'JSON Schema form; 42 user fields' },
+  //   // one schema, or several whose fields are unioned by leaf path
+  //   Form: { detFromSchema: ['intakeSchema', 'reviewSchema'], reason: 'one per template' },
+  //
+  //   // 1 DET is a floor, and `fp:count` says so on every run. When 1 IS the right
+  //   // answer, record that someone checked — otherwise the warning becomes noise
+  //   // the team learns to scroll past. It moves no number.
+  //   Petition: { opaqueReviewed: ['schema', 'uiSchema'], reason: 'metadata; one field each' },
   // },
 
   /**

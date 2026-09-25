@@ -603,6 +603,50 @@ and left the count at the floor: the exact case the override exists for.
 counts nothing, so the exclusion still protects what it was for — the call graph —
 and only the catalogue is widened.
 
+### Conditional groups count as their union
+
+`vine.object({}).merge(vine.group([vine.group.if(p, {…})]))` declares fields in
+branches that are mutually exclusive at runtime. The elementary process can carry
+any of them, so §7.2 counts the fields it handles: the **union**, with a field two
+branches share counting once.
+
+Read from the first object literal alone, the outer `{}` made the whole validator
+look like an open input object — five fields counted as one, and the report said the
+fields were data when they are plainly in the code. `detFromSchema` could not
+correct it either, because a group is not a JSON Schema.
+
+**Decision.** The union, and the reference in `.merge(x)` is resolved in the
+VALIDATOR's file rather than the caller's: the group normally lives in an unexported
+constant beside it, so looking where the call site is finds nothing.
+
+### An artefact never says where the machine keeps its files
+
+`CountSource.app` is the manifest name precisely so a count carries no absolute
+path. The rule was stated on that field and applied to that field: a production
+count carried 858 absolute paths in its traces, and an inventory 2036 across ten
+fields, including the data-store `id`.
+
+**Decision.** Every path that LEAVES is relative to the application root. Absolute
+is right internally — it is what ts-morph resolves and what the call graph keys its
+caches on — so the conversion happens at the boundary, once, and the store `id` is
+converted only after the ancestor filter has used it. A path outside the root keeps
+its `../` prefix, which says how deep the root is and nothing about where it lives.
+
+### A warning that cannot be answered
+
+An opaque DET counts 1, and `fp:count` reports it on every run because 1 is a floor
+rather than a measurement. But some of those columns really are one field — a copy,
+a checksum, a bag of metadata — and there was no way to record that someone had
+looked. The warning then fires forever, and a warning that cannot be answered is one
+the team learns to scroll past. That costs more than the warning reports, and it is
+the same failure mode as a coverage gate that fails spuriously.
+
+**Decision.** `overrides.<fn>.opaqueReviewed` records the review, with the same
+mandatory `reason` every override carries. It moves no number; it is deliberately
+NOT counted in the "Declared by override" share, because that line exists to show
+how much of the total came from a person and a review declares nothing; and the
+count of reviewed items is still printed, so the fact is recorded rather than erased.
+
 ### Three outcomes, where a resolver had two
 
 `resolve` returning `[]` meant _not recognised_. A strategy that recognised a

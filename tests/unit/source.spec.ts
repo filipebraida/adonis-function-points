@@ -4,7 +4,7 @@ import { IncomparableSourcesError, diffCounts } from '../../src/albrecht/diff.js
 import { describeSource } from '../../src/inventory/source.js'
 import { analyze } from '../../src/pipeline.js'
 import type { CountResult } from '../../src/types.js'
-import { appFixturePath } from '../helpers.js'
+import { appFixturePath, posix } from '../helpers.js'
 
 const countLike = (source?: CountResult['source']): CountResult => ({
   ruleset: 'afp',
@@ -47,21 +47,41 @@ test.group('source: a count says what it counted', () => {
     assert.notInclude(count.source!.app, '/', 'an absolute path would leak the machine layout')
   })
 
-  test('it records the configuration that shaped it', async ({ assert }) => {
+  /**
+   * Relative to the application, for the same reason `app` is a name: an absolute
+   * path says where the machine keeps its files, and this artefact goes into a
+   * ledger and to whoever receives the invoice. A config outside the root keeps its
+   * `../` prefix, which describes where it is without naming a home directory.
+   */
+  test('it records the configuration that shaped it, relative to the app', async ({ assert }) => {
+    const root = appFixturePath('minimal_flat')
+    const { count } = await analyze(root, { configFile: `${root}/config/fp.ts` })
+
+    assert.equal(posix(count.source!.config!), 'config/fp.ts')
+  })
+
+  test('a config outside the root leaks no absolute prefix', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('minimal_flat'), { configFile: '/x/config.ts' })
-    assert.equal(count.source!.config, '/x/config.ts')
+
+    /**
+     * The `../` prefix reveals how deep the root is and nothing about where it
+     * lives, which is the honest description of a file outside the application.
+     */
+    assert.isTrue(count.source!.config!.startsWith('..'))
+    assert.isFalse(count.source!.config!.startsWith('/'), 'no absolute prefix')
   })
 
   /**
-   * Has teeth on any platform: the input is deliberately mixed, so a product
-   * that merely stored what it was given would fail here on Linux too.
+   * Has teeth on any platform: the input is deliberately mixed, so a product that
+   * merely stored what it was given would fail here on Linux too.
    */
   test('the recorded config path is canonical whatever the caller passed', async ({ assert }) => {
-    const { count } = await analyze(appFixturePath('minimal_flat'), {
-      configFile: 'D:\\app\\config/function_points.ts',
+    const root = appFixturePath('minimal_flat')
+    const { count } = await analyze(root, {
+      configFile: `${root}\\config/function_points.ts`,
     })
 
-    assert.equal(count.source!.config, 'D:/app/config/function_points.ts')
+    assert.equal(posix(count.source!.config!), 'config/function_points.ts')
   })
 
   test('and a timestamp', async ({ assert }) => {
@@ -125,5 +145,42 @@ test.group('source: what the diff refuses and what it qualifies', () => {
     )
 
     assert.isFalse(diff.warnings.some((w) => /same revision/.test(w)))
+  })
+})
+
+/**
+ * `CountSource.app` is documented as never being the absolute path, because that
+ * says where the machine keeps its files and travels with every artefact sent
+ * anywhere. The rule was stated on one field and applied to one field: a production
+ * count carried 858 absolute paths in its traces and an inventory carried 2036
+ * across ten fields — and those artefacts are what a ledger stores.
+ */
+test.group('emitted artefacts carry no absolute path', () => {
+  const home = process.env.HOME ?? '/home'
+
+  test('the count has none', async ({ assert }) => {
+    const { count } = await analyze(appFixturePath('minimal_flat'))
+
+    assert.notInclude(JSON.stringify(count), home)
+    assert.isTrue(
+      count.functions.some((fn) => (fn.rationale.trace ?? []).length > 0),
+      'a count with no trace would pass this vacuously'
+    )
+  })
+
+  test('the inventory has none', async ({ assert }) => {
+    const { inventory } = await analyze(appFixturePath('minimal_flat'))
+
+    assert.notInclude(JSON.stringify(inventory), home)
+    assert.isNotEmpty(inventory.dataStores)
+    assert.isNotEmpty(inventory.behaviors)
+  })
+
+  test('the paths are relative to the application, and still usable', async ({ assert }) => {
+    const { inventory } = await analyze(appFixturePath('minimal_flat'))
+
+    const book = inventory.dataStores.find((store) => store.name === 'Book')!
+    assert.equal(posix(book.provenance.file), 'app/models/book.ts')
+    assert.include(posix(book.id), 'app/models/book.ts#Book')
   })
 })

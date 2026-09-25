@@ -136,6 +136,26 @@ test.group('runners: the config reaches the count', () => {
     await assert.rejects(() => runCount({ root: appFixturePath('configured'), minCoverage: 1.01 }))
   })
 
+  /**
+   * `fp:explain "POST /orders/:param/submit"` returned four functions, because
+   * `/submit`, `/submit-ready` and `/submit-ready/return` all contain it. Asking
+   * about a function by its exact name and being handed its neighbours makes the
+   * command useless for the one thing it exists for: defending a single number.
+   */
+  test('an exact name beats the substring search', async ({ assert }) => {
+    const root = appFixturePath('minimal_flat')
+
+    const exact = await runExplain({ root, name: 'GET /books' })
+    const prefix = await runExplain({ root, name: '/books' })
+
+    assert.lengthOf(exact.output.split('-'.repeat(70)), 1, 'one function, no separator')
+    assert.isAbove(
+      prefix.output.split('-'.repeat(70)).length,
+      1,
+      'the substring search is still the fallback'
+    )
+  })
+
   test('a function that matches nothing is an error, not empty output', async ({ assert }) => {
     const result = await runExplain({ root: appFixturePath('minimal_flat'), name: 'nope' })
 

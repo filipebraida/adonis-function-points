@@ -42,7 +42,7 @@ export const RULESET = 'afp'
  * against this one and bills the tool's own improvement as work done. The guard
  * exists for exactly that, and only this constant arms it.
  */
-export const RULESET_VERSION = '1.2.0'
+export const RULESET_VERSION = '1.3.0'
 
 export type CountInput = {
   app: AppContext
@@ -138,14 +138,27 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
 
   const transactionalFunctions = countTransactionalFunctions(entryPoints, input.behaviors, {
     countedStores,
+    root: input.app.root,
     messageDet: options.messageDet ?? 0,
     tables,
     weights,
   })
 
-  warnings.push(...opaqueColumnWarnings(countable, input))
+  /**
+   * `opaqueReviewed` answers a warning that is CORRECT and therefore permanent.
+   *
+   * 1 DET for an opaque column is a floor, and `fp:count` says so on every run. But
+   * some of those columns are one field — a copy, a checksum, a bag of metadata —
+   * and there was no way to record that someone had looked. A warning that cannot be
+   * answered is one the team learns to scroll past, which costs more than the warning
+   * reports. It silences nothing else: the count does not move, and how many were
+   * reviewed is still printed.
+   */
+  const reviewed = reviewedOpaque(options.overrides ?? {})
+
+  warnings.push(...opaqueColumnWarnings(countable, input, reviewed))
   warnings.push(...unreadableInputWarnings(input))
-  warnings.push(...openValidatorWarnings(input))
+  warnings.push(...openValidatorWarnings(input, reviewed))
 
   const functions = applyOverrides(
     [...dataFunctions, ...transactionalFunctions],
@@ -178,7 +191,30 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
  * `metadata` column changes no number, and warning about it would be the noise
  * that teaches people to stop reading the confidence block.
  */
-function opaqueColumnWarnings(stores: CollectedDataStore[], input: CountInput): string[] {
+/**
+ * Opaque DETs declared reviewed, in both spellings a person might use.
+ *
+ * Qualified (`Petition.schema`) is unambiguous; bare (`schema`) is what someone reads
+ * off the warning line.
+ */
+function reviewedOpaque(overrides: Record<string, FunctionOverride>): Set<string> {
+  const reviewed = new Set<string>()
+
+  for (const [name, override] of Object.entries(overrides)) {
+    for (const entry of override.opaqueReviewed ?? []) {
+      reviewed.add(entry)
+      reviewed.add(`${name}.${entry}`)
+    }
+  }
+
+  return reviewed
+}
+
+function opaqueColumnWarnings(
+  stores: CollectedDataStore[],
+  input: CountInput,
+  reviewed: Set<string>
+): string[] {
   const reached = new Map<string, number>()
   for (const entry of input.entryPoints) {
     for (const store of input.behaviors.get(entry.id)?.touches ?? []) {
@@ -187,6 +223,7 @@ function opaqueColumnWarnings(stores: CollectedDataStore[], input: CountInput): 
   }
 
   const found: string[] = []
+  let accepted = 0
 
   for (const store of stores) {
     const transactions = reached.get(store.name)
@@ -194,19 +231,31 @@ function opaqueColumnWarnings(stores: CollectedDataStore[], input: CountInput): 
 
     for (const attribute of store.attributes) {
       if (!attribute.type || !OPAQUE_TYPE.test(attribute.type)) continue
+
+      if (reviewed.has(`${store.name}.${attribute.name}`) || reviewed.has(attribute.name)) {
+        accepted += 1
+        continue
+      }
+
       found.push(
         `  ${store.name}.${attribute.name} (${attribute.type}) — ${transactions} transaction(s)`
       )
     }
   }
 
-  if (found.length === 0) return []
+  /** printed even when nothing is left to warn about: the fact is recorded, not erased */
+  const note =
+    accepted === 0 ? [] : [`${accepted} opaque column(s) declared reviewed, left at 1 DET.`]
+
+  if (found.length === 0) return note
 
   // the advice once, then the list: repeating it per column is a wall nobody reads
   return [
     `${found.length} opaque column(s), each counted as 1 DET. If the user recognises fields ` +
-      `inside one, declare the count with \`overrides\` — counting-decisions §8:`,
+      `inside one, declare the count with \`overrides\`; if 1 is the right answer, record that ` +
+      `someone checked with \`overrides.<fn>.opaqueReviewed\` — counting-decisions §8:`,
     ...found,
+    ...note,
   ]
 }
 
@@ -223,15 +272,26 @@ function opaqueColumnWarnings(stores: CollectedDataStore[], input: CountInput): 
  * somewhere — a seeder, a schema module — `detFromSchema` replaces the floor with
  * the real count, and §8 of counting-decisions says how.
  */
-function openValidatorWarnings(input: CountInput): string[] {
+function openValidatorWarnings(input: CountInput, reviewed: Set<string>): string[] {
   const found: string[] = []
+  let accepted = 0
 
   for (const entry of input.entryPoints) {
     const fields = input.behaviors.get(entry.id)?.opaqueInputFields ?? []
-    for (const field of fields) found.push(`  ${entry.trigger} ${entry.signature} — ${field}`)
+
+    for (const field of fields) {
+      if (reviewed.has(field) || reviewed.has(`${entry.identity}.${field}`)) {
+        accepted += 1
+        continue
+      }
+      found.push(`  ${entry.trigger} ${entry.signature} — ${field}`)
+    }
   }
 
-  if (found.length === 0) return []
+  const note =
+    accepted === 0 ? [] : [`${accepted} open input object(s) declared reviewed, left at 1 DET.`]
+
+  if (found.length === 0) return note
 
   return [
     `${found.length} open input object(s), each counted as 1 DET. The fields the user fills ` +
@@ -239,6 +299,7 @@ function openValidatorWarnings(input: CountInput): string[] {
       `name that schema with \`overrides.detFromSchema\` — counting-decisions §8:`,
     ...found.slice(0, 10),
     ...(found.length > 10 ? [`  … and ${found.length - 10} more`] : []),
+    ...note,
   ]
 }
 
@@ -333,7 +394,37 @@ function applyOverrides(
      * is born, not when a field is.
      */
     if (override.detFromSchema) {
-      const schema = schemas.get(override.detFromSchema)
+      /**
+       * One name or several, unioned by leaf path.
+       *
+       * An ILF's DETs are the fields the user recognises in the file, and an
+       * application with one schema per template recognises all of them. A field
+       * two templates share is one DET, so the union is over paths rather than a
+       * sum of counts.
+       */
+      const named = [override.detFromSchema].flat()
+      const resolved = named.map((name) => schemas.get(name)).filter((s) => s !== undefined)
+      const missing = named.filter((name) => !schemas.has(name))
+
+      const union = new Set(resolved.flatMap((s) => s.leaves))
+      const schema =
+        resolved.length === 0
+          ? undefined
+          : {
+              /** only what resolved: naming a schema that contributed nothing would mislead */
+              name: resolved.map((s) => s.name).join(' + '),
+              fields: union.size,
+              leaves: [...union],
+            }
+
+      for (const name of missing) {
+        warnings.push(
+          `override for "${fn.name}" names schema "${name}", which is not declared ` +
+            `anywhere in the code: it contributed nothing. A renamed or moved schema breaks ` +
+            `the mapping, and this says so rather than counting on silently.`
+        )
+      }
+
       if (schema) {
         /**
          * Replaces the opaque placeholder — the one the rationale marks — rather
@@ -362,17 +453,22 @@ function applyOverrides(
               `replaced; the others still count 1 each.`
           )
         }
-      } else {
-        warnings.push(
-          `override for "${fn.name}" names schema "${override.detFromSchema}", which is not ` +
-            `declared anywhere in the code: the DET count was left as found. A renamed or moved ` +
-            `schema breaks the mapping, and this says so rather than counting on silently.`
-        )
       }
     }
 
     const refs = override.refs ?? fn.refs
     const complexity = complexityOf(fn.type, refs, det, tables)
+
+    /**
+     * Only a DECLARED NUMBER is an override in the rationale.
+     *
+     * `fp:count` prints what share of the total came from a person, and that line is
+     * the reason the mechanism is acceptable at all. An `opaqueReviewed`-only entry
+     * declares no number, and recording it here read as "1 function, 7 FP, 35% of the
+     * total declared by override" — misrepresenting the one number that exists to keep
+     * this honest. The review is recorded in the warning, which is where it belongs.
+     */
+    if (fields.length === 0) return fn
 
     return {
       ...fn,
