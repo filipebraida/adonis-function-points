@@ -6,10 +6,11 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
-## Unreleased
+## 0.4.0
 
-**Rule set `afp@1.3.0`.** Conditional validator groups now count, so a 0.3.0
-baseline has to be recounted.
+**Rule set `afp@1.3.0`.** Conditional validator groups now count, and a nested
+schema is recognised however the formatter wrapped it — so a 0.3.0 baseline has to
+be recounted.
 
 Five items reported from real use of 0.3.0, three of them defects.
 
