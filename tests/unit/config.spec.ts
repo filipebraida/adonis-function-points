@@ -43,6 +43,52 @@ test.group('config: application boundary', () => {
     assert.equal(count.functions.find((fn) => fn.name === 'Book')!.type, 'EIF')
   })
 
+  /**
+   * The AFP naming filter (§6.5.2.1.3) is a heuristic over names: it excludes
+   * anything containing `session`, `template`, `error`, `types`. In most
+   * applications those hold infrastructure; when they hold the business — a chat
+   * session the user manages, a document template they maintain — the exclusion
+   * is wrong, and no heuristic can tell the difference.
+   *
+   * Until this existed there was no way to disagree with the filter, and on a
+   * production application it was silently removing 30 function points.
+   */
+  test('`business` overrules the AFP naming filter', async ({ assert }) => {
+    const filtered = await analyze(appFixturePath('edges_boundary'))
+    assert.notExists(filtered.count.functions.find((fn) => fn.name === 'UserSession'))
+
+    const kept = await analyze(appFixturePath('edges_boundary'), {
+      boundary: { business: ['UserSession'] },
+    })
+
+    assert.exists(
+      kept.count.functions.find((fn) => fn.name === 'UserSession'),
+      'a declaration has to win over a pattern match on the name'
+    )
+  })
+
+  test('and the report says the filter was overruled', async ({ assert }) => {
+    const { count } = await analyze(appFixturePath('edges_boundary'), {
+      boundary: { business: ['UserSession'] },
+    })
+
+    assert.isTrue(
+      count.confidence.warnings.some(
+        (w) => /kept by boundary configuration: UserSession/.test(w) && /naming filter/.test(w)
+      ),
+      'bringing a store back has to be as visible as excluding one'
+    )
+  })
+
+  test('`business` naming nothing filtered changes nothing', async ({ assert }) => {
+    const plain = await analyze(appFixturePath('minimal_flat'))
+    const declared = await analyze(appFixturePath('minimal_flat'), {
+      boundary: { business: ['Nonexistent'] },
+    })
+
+    assert.equal(declared.count.totals.unadjusted, plain.count.totals.unadjusted)
+  })
+
   test('`ignoreEntryPoints` removes the route from the count', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('minimal_flat'), {
       boundary: { ignoreEntryPoints: ['books.index'] },

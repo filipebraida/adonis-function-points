@@ -49,6 +49,8 @@ export type CountOptions = {
   boundary?: {
     infrastructure?: string[]
     externallyMaintained?: string[]
+    /** restores what the AFP naming filter caught by accident */
+    business?: string[]
     ignoreEntryPoints?: string[]
   }
   messageDet?: number
@@ -67,14 +69,34 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
   const infrastructure = new Set(options.boundary?.infrastructure ?? [])
 
   // 2. technical data filter — AFP §6.5.2.1.1, plus the configured boundary
+  const business = new Set(options.boundary?.business ?? [])
+
   const countable = input.stores.filter((store) => {
     if (infrastructure.has(store.name) || infrastructure.has(store.table ?? '')) {
       warnings.push(`excluded by boundary configuration: ${store.name}`)
       return false
     }
+
     const technical = isTechnical(store)
-    if (technical) warnings.push(`technical, excluded: ${store.name} (${technical})`)
-    return !technical
+    if (!technical) return true
+
+    /**
+     * The naming filter is a heuristic over names, so it catches business data
+     * whose name happens to match — a chat session the user manages, a document
+     * template they maintain. Only a person knows which, so a declaration wins
+     * over the pattern, and the report says it was overruled rather than
+     * quietly counting one more store.
+     */
+    if (business.has(store.name) || business.has(store.table ?? '')) {
+      warnings.push(
+        `kept by boundary configuration: ${store.name} — the AFP naming filter had excluded it ` +
+          `(${technical})`
+      )
+      return true
+    }
+
+    warnings.push(`technical, excluded: ${store.name} (${technical})`)
+    return false
   })
 
   // 3. data functions

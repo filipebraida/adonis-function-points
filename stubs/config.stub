@@ -12,6 +12,16 @@ export default defineConfig({
     infrastructure: ['access_tokens', 'reset_password_tokens', 'audits'],
     ignoreEntryPoints: ['drive.fs.serve', 'prometheus.metrics'],
     externallyMaintained: [],
+
+    /**
+     * Business data the AFP naming filter excluded by accident.
+     *
+     * It drops anything containing `session`, `template`, `error` or `types`,
+     * which is right for infrastructure and wrong for, say, a chat session the
+     * user manages. Check the confidence block of `fp:count` for what it
+     * excluded, and list here what is really business.
+     */
+    business: [],
   },
 
   /** Logical subgroups (RET). `constant` pins it at 1, which is honest. */

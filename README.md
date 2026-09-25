@@ -251,6 +251,7 @@ export default defineConfig({
   boundary: {
     infrastructure: ['access_tokens', 'audits'], // excluded, with the reason in the report
     externallyMaintained: ['erp_customers'], // counted as EIF instead of ILF
+    business: ['chat_sessions'], // the AFP naming filter caught it by accident
     ignoreEntryPoints: ['prometheus.metrics'],
   },
 

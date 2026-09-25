@@ -37,6 +37,20 @@ export type FunctionPointsConfig = {
      */
     externallyMaintained?: string[]
     /**
+     * Stores the AFP naming filter excluded, which are business data here.
+     *
+     * The filter (§6.5.2.1.1, patterns in §6.5.2.1.3) catches names containing
+     * `session`, `template`, `error`, `types` and so on, because in most
+     * applications those hold infrastructure. When they hold the business —
+     * a chat session the user manages, a document template they maintain — the
+     * exclusion is wrong and no heuristic can know it. This wins over the
+     * filter, and the report says which stores were brought back.
+     *
+     * It is the counterpart of `infrastructure`: that one excludes what the
+     * filter missed, this one restores what it caught by accident.
+     */
+    business?: string[]
+    /**
      * Entry points with no functional value to the user, by route name or by
      * identity (`GET /health`).
      *
