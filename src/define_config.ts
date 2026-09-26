@@ -88,13 +88,6 @@ export type FunctionPointsConfig = {
   }
 
   /**
-   * @deprecated Removed in 0.6.0 — it is no longer read. RET comes from
-   * `dataFunctions.grouping`. Left in the type so an old configuration still
-   * loads, and `fp:count` warns that the key has no effect.
-   */
-  retStrategy?: 'constant' | 'composition'
-
-  /**
    * Maximum depth in the call graph, starting at the handler.
    *
    * Too deep and a large shared service contaminates its callers; too shallow
@@ -169,8 +162,8 @@ export type FunctionPointsConfig = {
    * What a person declares about a DET the analysis cannot read, keyed by its
    * ORIGIN — counting-decisions §8:
    *
-   *   'Petition.components'              a JSON column (model or table name)
-   *   'savePetitionValidator.components' an open field of a validator
+   *   'Survey.answers'                a JSON column (model or table name)
+   *   'answerSurveyValidator.answers' an open field of a validator
    *
    * A declaration applies to every function carrying that DET: the data
    * function and each transaction that takes or shows the column. Keyed by
@@ -203,18 +196,6 @@ export type FunctionOverride = {
   det?: number
   /** declared RET (data function) or FTR (transaction) */
   refs?: number
-  /**
-   * @deprecated Moved to `opaque.<Store.column | validator.field>.schemas` in
-   * 0.6.0 — a schema is a fact about the column, not about one function. No
-   * longer read here; `fp:count` warns when it is present.
-   */
-  detFromSchema?: string | string[]
-  /**
-   * @deprecated Moved to `opaque.<Store.column | validator.field>.reviewed` in
-   * 0.6.0, keyed exactly: matching by bare name meant reviewing `Message.schema`
-   * reviewed every `schema` column of every table. No longer read here.
-   */
-  opaqueReviewed?: string[]
   /** why — required, and printed by `fp:explain` beside the number */
   reason: string
 }

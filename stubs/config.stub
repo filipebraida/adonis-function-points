@@ -48,12 +48,12 @@ export default defineConfig({
   // opaque: {
   //   // the fields live in a JSON Schema declared in the code: name it (or several,
   //   // unioned by leaf path), and the count keeps coming from the code
-  //   'Form.definition': { schemas: ['intakeSchema', 'reviewSchema'], reason: 'one per template' },
-  //   'createFormValidator.answers': { schemas: 'intakeSchema', reason: 'the same form, submitted' },
+  //   'Survey.answers': { schemas: ['surveySchema', 'feedbackSchema'], reason: 'one schema per survey template' },
+  //   'answerSurveyValidator.answers': { schemas: 'surveySchema', reason: 'the same form, submitted' },
   //
   //   // 1 DET is a floor, and `fp:count` says so on every run. When 1 IS the right
   //   // answer, record that someone checked — it moves no number
-  //   'Petition.uiSchema': { reviewed: true, reason: 'metadata; one field' },
+  //   'Attachment.metadata': { reviewed: true, reason: 'size and mime type: one bag, one field' },
   // },
 
   /**
@@ -61,7 +61,7 @@ export default defineConfig({
    * only in the database. It freezes: prefer `opaque.<origin>.schemas`.
    */
   // overrides: {
-  //   'POST /petitions': { det: 42, reason: 'the form has 42 fields in the database' },
+  //   'POST /surveys/:id/answers': { det: 42, reason: 'the form has 42 fields, defined in the database' },
   // },
 
   /**

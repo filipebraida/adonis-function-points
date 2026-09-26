@@ -96,9 +96,11 @@ test.group('overrides: a declared fact replaces one the analysis cannot read', (
    */
   test('the keys that moved to `opaque` are reported, and do nothing here', async ({ assert }) => {
     const plain = await withOverride({})
-    const { count } = await withOverride({
+    // no longer in the type; a config file is loaded without types, so it still arrives
+    const legacy = {
       overrides: { Book: { opaqueReviewed: ['schema'], reason: REASON } },
-    })
+    } as unknown as Parameters<typeof analyze>[1]
+    const { count } = await withOverride(legacy)
 
     assert.equal(count.totals.unadjusted, plain.count.totals.unadjusted)
     assert.isTrue(

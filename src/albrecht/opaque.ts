@@ -10,8 +10,8 @@ import type { ComplexityTable } from './tables.js'
  * DETs the analysis cannot read, and what a person declared about them —
  * counting-decisions §8 and §9.
  *
- * Three shapes are opaque: a JSON column (`ast:petitions.components`), an open
- * input object (`validator:savePetitionValidator.components`), and a spread a
+ * Three shapes are opaque: a JSON column (`ast:surveys.answers`), an open
+ * input object (`validator:answerSurveyValidator.answers`), and a spread a
  * transformer emits (`transformer:X.<this.resource.serialize()>`). Each counts
  * 1 DET — a floor, never a zero — and is marked `(opaque)` in the rationale.
  *
@@ -20,7 +20,7 @@ import type { ComplexityTable } from './tables.js'
  * each transaction that takes or shows the column. Keyed by function it had to
  * be written twice and still missed the third place, so the same column was
  * worth two numbers in one count — and matching by bare name meant reviewing
- * `Message.schema` reviewed every `schema` column of every table.
+ * `Attachment.metadata` reviewed every `metadata` column of every table.
  */
 
 export const OPAQUE_TYPE = /^(object|any|unknown|Record<|Json|JSON)/
@@ -101,8 +101,8 @@ export type AppliedOpaque = {
  *              says which schema stood in
  *   reviewed   the placeholder stays 1, marked reviewed; the warning stops
  *
- * A declaration keyed by the physical table (`petitions.components`) is accepted
- * as well as one keyed by the model (`Petition.components`): the count prints
+ * A declaration keyed by the physical table (`surveys.answers`) is accepted
+ * as well as one keyed by the model (`Survey.answers`): the count prints
  * the model, `fp:explain` prints the table, and a person copies from either.
  */
 export function applyOpaque(

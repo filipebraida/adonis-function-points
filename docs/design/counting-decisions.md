@@ -507,17 +507,17 @@ versioned configuration, with a justification that is required by the type:
 ```ts
 export default defineConfig({
   opaque: {
-    'Petition.components': {
-      schemas: 'childSupportSchema',
+    'Survey.answers': {
+      schemas: 'surveySchema',
       reason: 'form driven by a JSON Schema; the fields are counted from the schema by §7',
     },
   },
 })
 ```
 
-The key is the **origin** of the opaque DET — a column (`Petition.components`,
-or `petitions.components` by table) or an open validator field
-(`savePetitionValidator.components`) — and the declaration applies to every
+The key is the **origin** of the opaque DET — a column (`Survey.answers`, or
+`surveys.answers` by table) or an open validator field
+(`answerSurveyValidator.answers`) — and the declaration applies to every
 function that carries it: the ILF, the transaction that submits the form, and
 each one that shows the column. See §9, "Declared by origin".
 
@@ -751,8 +751,8 @@ same column still at 1 DET, because nobody had written a third one: **the same
 column worth two numbers in one count**.
 
 It also matched reviews by bare field name, because the function side spelled
-the column by model and the rationale by table. So reviewing `Message.schema`
-reviewed every `schema` column of every store — and silenced warnings nobody
+the column by model and the rationale by table. So reviewing `Attachment.metadata`
+reviewed every `metadata` column of every store — and silenced warnings nobody
 had answered.
 
 **Decision.** A declaration is about the **origin** of the placeholder, and the
@@ -760,9 +760,9 @@ count applies it wherever that origin appears:
 
 ```ts
 opaque: {
-  'Petition.components':               { schemas: PETITION_SCHEMAS, reason: '…' }, // a column
-  'savePetitionValidator.components':  { schemas: PETITION_SCHEMAS, reason: '…' }, // a validator field
-  'Message.schema':                    { reviewed: true, reason: '…' },
+  'Survey.answers':                { schemas: SURVEY_SCHEMAS, reason: '…' }, // a column
+  'answerSurveyValidator.answers': { schemas: SURVEY_SCHEMAS, reason: '…' }, // a validator field
+  'Attachment.metadata':           { reviewed: true, reason: '…' },
 }
 ```
 

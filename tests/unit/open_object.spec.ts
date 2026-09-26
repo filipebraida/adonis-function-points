@@ -138,9 +138,11 @@ test.group('opaque schemas: replace the placeholder where it is', () => {
   test('the old per-function keys are reported as moved, not silently ignored', async ({
     assert,
   }) => {
-    const { count } = await analyze(ROOT, {
+    // no longer in the type; a config file is loaded without types, so it still arrives
+    const legacy = {
       overrides: { 'POST /forms': { detFromSchema: 'intakeSchema', reason: 'old spelling' } },
-    })
+    } as unknown as Parameters<typeof analyze>[1]
+    const { count } = await analyze(ROOT, legacy)
 
     assert.equal(count.functions.find((f) => f.name === 'POST /forms')!.det, 3, 'no effect')
     assert.isTrue(

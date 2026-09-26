@@ -65,12 +65,14 @@ of it is EOs losing DETs they never showed and one data function that was four.
   twice and a `GET` returning the same column still at 1 DET: the same column worth two
   numbers in one count. Reviews are matched exactly; matched by bare name, reviewing
   `Message.schema` reviewed every `schema` column of every store. A column may be keyed
-  by model or by table. The two old keys are no longer read, and a configuration still
-  carrying them is told so. `overrides.<fn>.det` / `.refs` remain per function.
+  by model or by table. The two old keys are gone from the type — an old configuration
+  fails to typecheck — and, because a configuration file is loaded without types,
+  `fp:count` still tells one that carries them that they had no effect.
+  `overrides.<fn>.det` / `.refs` remain per function.
 - **`dataFunctions.grouping: 'usage' | 'none'`** replaces `retStrategy`. `none` is the
   0.5.0 behaviour — every table its own data function at RET 1 — for comparing with an
-  old count; it is not a preference. `retStrategy` is no longer read, and `fp:count`
-  says so when it is present.
+  old count; it is not a preference. `retStrategy` is gone from the type, and `fp:count`
+  says so when an untyped configuration still carries it.
 - **`boundary.technicalPatterns`**, see above.
 
 ### New

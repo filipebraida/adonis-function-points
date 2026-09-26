@@ -177,7 +177,9 @@ test.group('master-detail: the controls', () => {
 
   /** a configuration the code does not honour is worse than none */
   test('the removed `retStrategy` key is reported, not ignored', async ({ assert }) => {
-    const { count } = await analyze(appFixturePath('mestre_detalhe'), { retStrategy: 'constant' })
+    // no longer in the type; a config file is loaded without types, so it still arrives
+    const legacy = { retStrategy: 'constant' } as unknown as Parameters<typeof analyze>[1]
+    const { count } = await analyze(appFixturePath('mestre_detalhe'), legacy)
 
     assert.exists(
       count.confidence.warnings.find((w) => w.includes('`retStrategy` is no longer read'))

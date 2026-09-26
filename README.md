@@ -274,7 +274,7 @@ Inherited from the AFP standard itself, not from this implementation:
 
   ```ts
   opaque: {
-    'Petition.components': { schemas: 'petitionSchema', reason: 'the form is a JSON Schema in the seed' },
+    'Survey.answers': { schemas: 'surveySchema', reason: 'the form is a JSON Schema in the seed' },
   }
   ```
 

@@ -82,8 +82,6 @@ export type CountInput = {
 
 export type CountOptions = {
   dataFunctions?: { grouping?: GroupingStrategy }
-  /** @deprecated no longer read; `fp:count` warns when it is present */
-  retStrategy?: 'constant' | 'composition'
   /** what a person declared about a DET the analysis cannot read, by origin — §8 */
   opaque?: Record<string, OpaqueDeclaration>
   /** a declared DET or RET for one function — the last resort, see §8 */
@@ -161,9 +159,11 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
 
   /**
    * A configuration the code does not honour is worse than none: whoever set it
-   * believes something changed. `retStrategy` stopped being read in 0.6.0.
+   * believes something changed. `retStrategy` left the type in 0.6.0 — but a
+   * configuration file is loaded without types, so an old one still arrives here
+   * and has to be told.
    */
-  if (options.retStrategy !== undefined) {
+  if ((options as Record<string, unknown>).retStrategy !== undefined) {
     warnings.push(
       `\`retStrategy\` is no longer read: RET comes from how the application uses each table ` +
         `(counting-decisions §10), configurable as \`dataFunctions.grouping: 'usage' | 'none'\`. ` +
@@ -453,13 +453,15 @@ function applyOverrides(
 
   /**
    * A configuration the code does not honour is worse than none. The two keys
-   * that used to live here moved to `opaque`, by origin, in 0.6.0 — and a config
-   * still carrying them believes something happened.
+   * that used to live here moved to `opaque`, by origin, in 0.6.0 and left the
+   * type — but a configuration file is loaded without types, so an old one still
+   * arrives here believing something happened.
    */
   for (const [name, override] of Object.entries(overrides)) {
+    const legacy = override as Record<string, unknown>
     const moved = [
-      ...(override.detFromSchema ? ['detFromSchema'] : []),
-      ...(override.opaqueReviewed ? ['opaqueReviewed'] : []),
+      ...(legacy.detFromSchema ? ['detFromSchema'] : []),
+      ...(legacy.opaqueReviewed ? ['opaqueReviewed'] : []),
     ]
     if (moved.length === 0) continue
     warnings.push(
