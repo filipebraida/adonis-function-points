@@ -97,12 +97,35 @@ test.group('data functions: source and boundary', () => {
    * (soft-delete adds `deletedAt`), pretending it does not exist would be
    * counting wrong in silence. See counting-decisions §4.
    */
-  test('an unresolved package mixin enters the coverage report', async ({ assert }) => {
+  test('a package mixin is a note about the declaration, not an unresolved call', async ({
+    assert,
+  }) => {
     const result = await collect(fixturePath('models', 'composed_mixin'))
 
-    const external = result.unresolved.find((u) => u.expression === 'Auditable')
-    assert.exists(external, 'the package mixin was not reported')
-    assert.match(external!.reason, /outside the application/i)
+    assert.isUndefined(
+      result.unresolved.find((u) => u.expression === 'Auditable'),
+      'a base from a package is not a gap in the walk'
+    )
+    const note = result.notes.find((n) => n.includes('@acme/auditable'))
+    assert.exists(note, 'the package mixin was not noted')
+    assert.match(note!, /^User: base or mixin from @acme\/auditable \(Auditable\) — technical/)
+  })
+
+  /**
+   * The framework's own auth mixin, applied through a local const:
+   * `const AuthFinder = withAuthFinder(…)` then `compose(Base, AuthFinder)`. A reviewing
+   * team saw it reported as "base class not found in the application" — code that IS in
+   * the application, built by a package's factory. A note, with the factory named.
+   */
+  test('a local const built by a package factory is a note too, naming the factory', async ({
+    assert,
+  }) => {
+    const result = await collect(fixturePath('models', 'composed_mixin'))
+
+    assert.isUndefined(result.unresolved.find((u) => u.expression === 'AuthFinder'))
+    const note = result.notes.find((n) => n.includes('@adonisjs/auth/mixins/lucid'))
+    assert.exists(note)
+    assert.include(note!, 'AuthFinder = withAuthFinder(')
   })
 
   /**

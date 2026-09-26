@@ -35,6 +35,13 @@ export type DataStoreCollection = {
   stores: CollectedDataStore[]
   /** chains that left the application, required by AFP §6.5.3 */
   unresolved: UnresolvedCall[]
+  /**
+   * Facts about the declarations that are not gaps: a base class or a mixin that
+   * comes from a package. What it adds is technical (a hashed password, audit
+   * stamps, a soft-delete mark) and never a user-recognisable attribute (§7.2); the
+   * model's own columns and the schema decide. Listed, never counted in coverage.
+   */
+  notes: string[]
 }
 
 const LUCID_ORM = '@adonisjs/lucid/orm'
@@ -60,6 +67,7 @@ export async function collectDataStores(app: AppContext): Promise<DataStoreColle
 
   const candidates: CollectedDataStore[] = []
   const unresolved: UnresolvedCall[] = []
+  const notes: string[] = []
 
   /**
    * Classes appearing as an ANCESTOR of some model.
@@ -75,7 +83,7 @@ export async function collectDataStores(app: AppContext): Promise<DataStoreColle
     if (samePath(file.getFilePath(), app.generated.dataSchema)) continue
 
     for (const cls of file.getClasses()) {
-      const described = describeStore(cls, app, project, unresolved)
+      const described = describeStore(cls, app, project, unresolved, notes)
       if (!described) continue
 
       candidates.push(described.store)
@@ -84,7 +92,7 @@ export async function collectDataStores(app: AppContext): Promise<DataStoreColle
   }
 
   const stores = candidates.filter((store) => !ancestors.has(store.id))
-  return { stores: stores.sort(byName), unresolved }
+  return { stores: stores.sort(byName), unresolved, notes }
 }
 
 /** stable identity of a class, to separate a base from a store */
@@ -99,7 +107,8 @@ function describeStore(
   cls: ClassDeclaration,
   app: AppContext,
   project: Project,
-  unresolved: UnresolvedCall[]
+  unresolved: UnresolvedCall[],
+  notes: string[]
 ): { store: CollectedDataStore; ancestors: string[] } | null {
   const name = cls.getName()
   if (!name) return null
@@ -108,6 +117,7 @@ function describeStore(
   if (!chain.reachesLucid) return null
 
   unresolved.push(...chain.unresolved)
+  notes.push(...chain.notes)
   const file = cls.getSourceFile().getFilePath()
 
   // the class itself is chain.classes[0]; the rest are ancestors
@@ -135,6 +145,8 @@ type Chain = {
   attributes: Attribute[]
   columnSource: ColumnSource
   unresolved: UnresolvedCall[]
+  /** bases and mixins from packages — facts, not gaps */
+  notes: string[]
 }
 
 /**
@@ -157,6 +169,7 @@ function walkChain(start: ClassDeclaration, app: AppContext, project: Project): 
    * the coverage report.
    */
   const unresolved: UnresolvedCall[] = []
+  const notes: string[] = []
   let reachesLucid = false
   let columnSource: ColumnSource = 'ast'
 
@@ -189,6 +202,24 @@ function walkChain(start: ClassDeclaration, app: AppContext, project: Project): 
         continue
       }
 
+      /**
+       * A base or a mixin from a PACKAGE — `compose(Base, Auditable)` imported from
+       * outside, `withAuthFinder(…)` inline or through a local const — is a fact about
+       * the declaration, not a gap in the walk: nobody follows a mixin. What it adds is
+       * technical (a hashed password, audit stamps) and never a user-recognisable
+       * attribute (§7.2); the model's own columns and the schema decide. Noted, and kept
+       * out of the coverage number. A base of the application that was not found stays
+       * a gap.
+       */
+      const packaged = packageOriginOf(parent, cls.getSourceFile(), app)
+      if (packaged) {
+        notes.push(
+          `${cls.getName() ?? '?'}: base or mixin from ${packaged.specifier} (${packaged.expression}) — ` +
+            `technical, adds no user-recognisable attribute; the model's own columns and the schema decide`
+        )
+        continue
+      }
+
       unresolved.push({
         file: cls.getSourceFile().getFilePath(),
         line: parent.getStartLineNumber(),
@@ -206,7 +237,55 @@ function walkChain(start: ClassDeclaration, app: AppContext, project: Project): 
     attributes: [...attributes.values()],
     columnSource,
     unresolved,
+    notes,
   }
+}
+
+/**
+ * Where a base or a mixin comes from, when it comes from a package: the class
+ * imported from a specifier the application does not resolve, a factory call whose
+ * callee is, or a local const initialised by such a call.
+ */
+function packageOriginOf(
+  parent: Node,
+  file: SourceFile,
+  app: AppContext
+): { specifier: string; expression: string } | null {
+  const fromPackage = (local: string) => {
+    const origin = originOf(local, file)
+    return origin && !app.resolveSpecifier(origin.specifier) ? origin.specifier : null
+  }
+  const rootOf = (node: Node): string | null => {
+    let current: Node = node
+    for (let depth = 0; depth < 20; depth++) {
+      if (Node.isCallExpression(current) || Node.isPropertyAccessExpression(current)) {
+        current = current.getExpression()
+        continue
+      }
+      return Node.isIdentifier(current) ? current.getText() : null
+    }
+    return null
+  }
+  const brief = (text: string) => text.replace(/\s+/g, ' ').slice(0, 60)
+
+  if (Node.isCallExpression(parent)) {
+    const root = rootOf(parent)
+    const specifier = root ? fromPackage(root) : null
+    return specifier ? { specifier, expression: brief(parent.getText()) } : null
+  }
+  if (!Node.isIdentifier(parent)) return null
+
+  const direct = fromPackage(parent.getText())
+  if (direct) return { specifier: direct, expression: parent.getText() }
+
+  const initializer = file.getVariableDeclaration(parent.getText())?.getInitializer()
+  if (initializer && Node.isCallExpression(initializer)) {
+    const root = rootOf(initializer)
+    const specifier = root ? fromPackage(root) : null
+    if (specifier)
+      return { specifier, expression: `${parent.getText()} = ${brief(initializer.getText())}` }
+  }
+  return null
 }
 
 /**

@@ -65,7 +65,7 @@ export class CoverageTooLowError extends Error {
 
 export async function analyze(root: string, options: AnalysisOptions = {}): Promise<Analysis> {
   const app = await discoverApp(root)
-  const { stores, unresolved: storeProblems } = await collectDataStores(app)
+  const { stores, unresolved: storeProblems, notes: storeNotes } = await collectDataStores(app)
   const routes = await collectEntryPoints(app)
   const routeProblems = routes.unresolved
   // ace commands are elementary processes too — counting-decisions §5, plan 0.7 §C
@@ -197,6 +197,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
       ratio: entryPoints.length === 0 ? 1 : resolved / entryPoints.length,
     },
     unresolved: unresolvedSites.map((site) => ({ ...site, file: emit(site.file) })),
+    notes: storeNotes,
   }
 
   const minimum = options.minCoverage ?? 0

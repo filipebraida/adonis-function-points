@@ -245,6 +245,18 @@ test.group('indirect writes: what the analysis cannot read, it says', () => {
     assert.lengthOf(exportar.unresolved, 0)
   })
 
+  /** `Usuario` composes the framework's auth mixin: a note, and the coverage number untouched */
+  test('a package mixin on a model is noted, not counted against coverage', async ({ assert }) => {
+    const { count: result, inventory } = await analyzed()
+    assert.equal(result.confidence.unresolvedCalls, REFERENCE.unresolved)
+    assert.isTrue(
+      inventory.notes.some((n) =>
+        n.startsWith('Usuario: base or mixin from @adonisjs/auth/mixins/lucid')
+      ),
+      inventory.notes.join('\n')
+    )
+  })
+
   /** every other transaction is fully read: the new rule adds no noise where the type is known */
   test('a write on a typed receiver is not reported', async ({ assert }) => {
     const { inventory } = await analyzed()

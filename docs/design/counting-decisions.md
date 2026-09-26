@@ -166,6 +166,19 @@ Today it is `Auditable`; tomorrow soft-delete (adding `deletedAt`),
 multi-tenancy (adding `tenantId`), versioning. A list of exceptions would be
 out of date the following week.
 
+### A base from a package is a fact, not a gap (0.10.1)
+
+`compose(Base, Auditable)` with `Auditable` imported from a package, `withAuthFinder(…)`
+inline or through a local const — the collector cannot read what these add, and used to
+report each as an unresolved call. But nobody _follows_ a mixin: this is a fact about the
+declaration, not a place the walk could not reach, and it was lowering the coverage number
+for using the framework's own auth mixin. In function points it is nothing: what such a
+mixin adds — a hashed password, audit stamps, a soft-delete mark — is technical, never a
+user-recognisable attribute (§7.2), and the model's own columns and the schema decide the
+DETs. So it is **noted** in the inventory (`User: base or mixin from @adonisjs/auth
+(withAuthFinder) — technical…`), listed by `fp:inventory`, and kept out of coverage. A base
+of the **application** that was not found stays an unresolved call: that one is a gap.
+
 ### Columns: the generated schema already settles it
 
 `database/schema.ts` is generated from the migrations, so it reflects the

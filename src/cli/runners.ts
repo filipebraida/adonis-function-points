@@ -96,6 +96,9 @@ export async function runInventory(options: Common & { out?: string }): Promise<
       `coverage:      ${(coverage.ratio * 100).toFixed(1)}% ` +
         `(${coverage.unresolvedCalls} unresolved calls)`,
       ...inventory.unresolved.map((site) => `  ${describeSite(site)}`),
+      ...(inventory.notes.length > 0
+        ? ['notes (declarations, not gaps):', ...inventory.notes.map((note) => `  ${note}`)]
+        : []),
     ].join('\n'),
   }
 }

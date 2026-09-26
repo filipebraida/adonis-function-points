@@ -230,6 +230,11 @@ export type Inventory = {
    * on. One entry per site — a body five routes reach is one gap, not five.
    */
   unresolved: UnresolvedSite[]
+  /**
+   * Facts about the declarations that are not gaps — a base class or a mixin from a
+   * package, whose additions are technical. Listed for the reader; never in coverage.
+   */
+  notes: string[]
 }
 
 // ---------------------------------------------------------------------------

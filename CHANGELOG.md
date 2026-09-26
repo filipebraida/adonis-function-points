@@ -6,6 +6,21 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## 0.10.1
+
+Rule set unchanged (`afp@1.9.0`); no number moves.
+
+### Fixed
+
+- **A base class or a mixin from a package is a fact about the declaration, not an
+  unresolved call.** `compose(Base, Auditable)`, `withAuthFinder(…)` inline or through a local
+  const (which came out as "base class not found in the application" — code that is in the
+  application, built by a package's factory). Nobody follows a mixin, and in function points
+  it is nothing: what it adds is technical, never a user-recognisable attribute; the model's
+  own columns and the schema decide. Listed as a **note** by `fp:inventory` and in
+  `inventory.notes`, kept out of the coverage number. A base of the application that was not
+  found stays an unresolved call.
+
 ## 0.10.0
 
 **Rule set `afp@1.9.0`.** One rule and two report fixes, from a team's third review of their
