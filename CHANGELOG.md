@@ -6,6 +6,74 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## 0.7.0
+
+**Rule set `afp@1.6.0`.** Three rules move the number for unchanged code, every one
+frozen in a fixture with a hand-written reference before the code, and every one
+recounted on the three validated applications function by function — four times for
+the first. A 0.6.0 baseline has to be recounted: the totals move −16, +8 and +21 FP,
+and most of that is new elementary processes the count had never seen.
+
+### Counting
+
+- **An output's DETs are what the transaction delivers.** The place an output crosses
+  the boundary is the delivery — the props of `inertia.render` / `inertia.modal` /
+  `view.render`, the payload of `response.json|ok|created|send`, what a command prints
+  — and each value delivered is read back to its origin: a followed call's classified
+  **return** (a key of it when destructured or picked: `const { data, meta } = …`,
+  `meta.pagina`), a store's columns when rows are handed on, a literal's leaves once, a
+  scalar as 1, an echoed input as 0 (it counted on entry, §7.3), and a value nobody can
+  read as 1, opaque, **reported by transaction**. A store read to authorise and
+  delivered by nothing stays an FTR and contributes no DET; a document built from rows
+  (`gerarCsv(produtos)`) carries the rows. A variant **replaces** `toObject()`; a
+  function of the same file and a function passed to `.map()` by reference are
+  followed; an echo stays an echo through `?? null` and `.toISOString()`;
+  `paginator.getMeta()` is four values; a literal with computed keys is one repeating
+  attribute; a yes/no, a formatted value, a framework service's answer and an Inertia
+  lazy prop are one value. Without a delivery point the output falls back to the
+  stores read, as before. On the applications: a home page at 1 DET became 10; a
+  petitions list at 8 DET became 60 — its nested transformers, which the unresolved
+  variant had hidden; every listing page stopped counting its filters twice.
+- **A function of the same file is followed** (`local-function`), and so is
+  `rows.map(paraLinha)`. Not only DETs: the stores those helpers read are FTRs now, and
+  two `POST`s that wrote through a local helper moved from EO to EI. Models and modules
+  imported **inside** a body (`const { default: X } = await import('#…')`) bind like a
+  static import — an importer that wrote four tables this way had touched nothing.
+- **An ace command is an elementary process.** `commands/**` extending `BaseCommand`
+  with a literal `static commandName` is an entry point (`ace <commandName>`, §5); its
+  body is `run()`, its input DETs the `@flags.*` / `@args.*` declared, by the name the
+  operator types; what it prints (`this.ui.table().row(…)`, `this.logger.info(…)`) is
+  its output, read by the same classifier. One that reaches no store is no transaction.
+  Every counted command is **listed with its FP**, a file importing `@faker-js/faker`
+  carries the hint "generates data, probably a development tool", and
+  `boundary.ignoreEntryPoints: ['<commandName>']` records the decision — the CPM does
+  not count the team's tools, and the code cannot tell a generator from an importer.
+
+### New
+
+- **A job no transaction reaches is reported, never counted**: "scheduled from
+  start/scheduler.ts, outside every transaction", "dispatched from app/…/service.ts,
+  which no transaction reaches", or "dispatched by nothing in the application". A
+  scheduled process is an elementary process nobody is counting; inventing one is the
+  error this package exists to avoid, so it becomes an entry point only once a
+  scheduler is read as a source (counting-decisions §9).
+- The `transform` before a `useVariant` is claimed and followed nowhere, instead of
+  falling to `static-service` and being reported as a package method with no body —
+  which is what every variant chain had been doing to the unresolved count.
+
+### Documented
+
+- counting-decisions §6 gains the delivery table and the eleven-row table of how a
+  delivered value is read back to its origin; §5 says how a command's identity is
+  rendered; §9 gains "A job no transaction reaches is reported, never counted".
+- Two reference fixtures written before their rules: `render_props` (62 FP, thirteen
+  shapes of delivery, one added per recount) and `ace_commands` (26 FP; the previous
+  rule set said 9 — the table only commands maintain looked like an EIF); a pattern
+  fixture `local_function` for the resolver.
+- Reading the page (`.tsx` / `.edge`) for what it shows of a raw prop — plan 0.7 §B —
+  is deferred to 0.8, as the plan allowed: the delivery rule made it a refinement of one
+  case, and the recounts spent the release on the cases that moved numbers.
+
 ## 0.6.0
 
 **Rule set `afp@1.5.0`.** Six rules change what a number is made of, all of them found

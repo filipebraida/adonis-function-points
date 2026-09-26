@@ -46,12 +46,16 @@ export const RULESET = 'afp'
  * column; system timestamps and `serializeAs: null` columns leaving the DETs;
  * master-detail folded into one data function; identity by table; token tables
  * technical; and opaque declarations reaching every function carrying the origin.
+ * Three in 1.6.0: an output's DETs are what the transaction DELIVERS (the render
+ * props, the response payload, what a command prints) read back to their origin;
+ * a function of the same file and a `.map(fn)` by reference are followed, so
+ * FTRs move; and ace commands are transactions, with flags as input.
  *
  * Without the bump, a baseline saved by the previous version compares cleanly
  * against this one and bills the tool's own improvement as work done. The guard
  * exists for exactly that, and only this constant arms it.
  */
-export const RULESET_VERSION = '1.5.0'
+export const RULESET_VERSION = '1.6.0'
 
 export type CountInput = {
   app: AppContext
