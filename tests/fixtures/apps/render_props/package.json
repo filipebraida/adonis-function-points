@@ -1,0 +1,13 @@
+{
+  "name": "render-props",
+  "type": "module",
+  "dependencies": { "@adonisjs/core": "^7.5.0", "@adonisjs/lucid": "^22.4.2" },
+  "imports": {
+    "#models/*": "./app/models/*.js",
+    "#controllers/*": "./app/controllers/*.js",
+    "#queries/*": "./app/queries/*.js",
+    "#transformers/*": "./app/transformers/*.js",
+    "#validators/*": "./app/validators/*.js",
+    "#start/*": "./start/*.js"
+  }
+}
