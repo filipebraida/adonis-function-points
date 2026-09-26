@@ -173,7 +173,7 @@ function detsFor(
     sources.push(source)
   }
 
-  // route parameters — `noticias:importar` is a command's name, not a pattern with one
+  // route parameters — `articles:import` is a command's name, not a pattern with one
   if (entry.kind === 'http') {
     for (const param of entry.signature.match(/:[A-Za-z_][\w]*/g) ?? []) {
       add(param.slice(1), `param:${param}`)

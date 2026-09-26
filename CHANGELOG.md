@@ -44,7 +44,7 @@ new X()`, `(await q.first()) ?? new X()`), as `auth.user` / `auth.getUserOrFail(
 - **A service is what the container returns.** `const svc = await
 app.container.make(X)` binds `svc` to X as `new X()` already did, so `svc.method()` is
   followed. On the reviewed application this shape carried the write of
-  `POST /gestao/atribuicao` and 31 more sites.
+  the assignment route and 31 more sites.
 - A method chain on store rows handed to a delivery (`rows.map(f).join('\n')`) delivers
   the rows, not one field.
 
@@ -60,7 +60,7 @@ app.container.make(X)` binds `svc` to X as `new X()` already did, so `svc.method
   spread, a function receiving the rows, a package's `<DataTable data={…} />`, two files
   answering to one name, one prop carrying several stores, members that are not columns
   — the store leaves whole and the count says why, by transaction. Measured on the three
-  applications: **0 FP moved** (sae: three pages read, 22 stores reported; the other two
+  applications: **0 FP moved** (one of them: three pages read, 22 stores reported; the other two
   hand every raw store through a transformer). Fixture `inertia_pages` (25 FP): the DETs
   change, the points do not.
 
@@ -102,10 +102,10 @@ and most of that is new elementary processes the count had never seen.
   attribute; a yes/no, a formatted value, a framework service's answer and an Inertia
   lazy prop are one value. Without a delivery point the output falls back to the
   stores read, as before. On the applications: a home page at 1 DET became 10; a
-  petitions list at 8 DET became 60 — its nested transformers, which the unresolved
+  list page at 8 DET became 60 — its nested transformers, which the unresolved
   variant had hidden; every listing page stopped counting its filters twice.
 - **A function of the same file is followed** (`local-function`), and so is
-  `rows.map(paraLinha)`. Not only DETs: the stores those helpers read are FTRs now, and
+  `rows.map(toRow)`. Not only DETs: the stores those helpers read are FTRs now, and
   two `POST`s that wrote through a local helper moved from EO to EI. Models and modules
   imported **inside** a body (`const { default: X } = await import('#…')`) bind like a
   static import — an importer that wrote four tables this way had touched nothing.
@@ -183,7 +183,7 @@ of it is EOs losing DETs they never showed and one data function that was four.
   benchmark depends on it); a child hanging off two parents stays apart and the report
   says why. Cascade delete was measured and rejected as the signal: on one application
   11 of 13 cascades pointed at the tenant table. On the three applications the rule
-  folds four stores in all — the `Inpi*` mirror of an external registry becomes **one**
+  folds four stores in all — the four-table mirror of an external registry becomes **one**
   EIF with 4 RET, which is what the CPM says.
 - **A data function is identified by its table**, as counting-decisions §5 always said.
   Keyed by the class, renaming a model billed as a deletion plus an addition.

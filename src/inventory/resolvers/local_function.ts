@@ -8,7 +8,7 @@ import type { CallResolver, ResolverContext } from './types.js'
  * "Local function" pattern: a helper declared in the same file, not imported.
  *
  *     const lista = await proximos(id)          // function proximos() { … }
- *     return rows.map(paraLinha)                // const paraLinha = (row) => …
+ *     return rows.map(toRow)                // const toRow = (row) => …
  *
  * A query object that keeps its helpers beside it is common, and before this
  * every such call was unresolved: the store a helper read was reached by nobody
@@ -34,7 +34,7 @@ export const localFunctionResolver: CallResolver = {
   },
 }
 
-/** callbacks that apply a function to each element: `rows.map(paraLinha)` calls `paraLinha` */
+/** callbacks that apply a function to each element: `rows.map(toRow)` calls `toRow` */
 const APPLIES_CALLBACK = new Set([
   'map',
   'flatMap',
@@ -48,8 +48,8 @@ const APPLIES_CALLBACK = new Set([
 ])
 
 /**
- * The function a call names: `proximos(id)` names `proximos`; `rows.map(paraLinha)`
- * names `paraLinha`, called once per row — the body the graph must read is the
+ * The function a call names: `proximos(id)` names `proximos`; `rows.map(toRow)`
+ * names `toRow`, called once per row — the body the graph must read is the
  * same, whichever way it was reached.
  */
 export function calledFunctionOf(call: CallExpression): import('ts-morph').Identifier | null {

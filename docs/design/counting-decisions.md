@@ -117,8 +117,8 @@ holds a `Document`. Until 0.8 it could say so only when the instance was born in
 the same body (`Document.find`, `Document.query`, `new Document()`) or arrived
 as a parameter typed inline — and the dominant shape on a reviewed application is
 "the controller loads, the action alters": `handle({ document, name }:
-RenameDocumentInput)`, `const { preIntake } = input`, `const session = await
-this.sessions.active(intake)`, `for (const item of pasta.documentos)`, a service
+RenameDocumentInput)`, `const { order } = input`, `const session = await
+this.sessions.active(order)`, `for (const item of pasta.documentos)`, a service
 the container resolved. Every one of those writes was invisible, six EIs were
 counted as EOs, and the coverage said 99.5%.
 
@@ -474,9 +474,9 @@ its origin**, and each refinement is a row of the render_props fixture:
 | shape                                                                                                                 | reading                                                                                                                                                                              |
 | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `const { data, meta } = await q.handle()`; `resultado.linhas`; `meta.pagina`                                          | one **key** of what the call returns, resolved against the body's return, classified — `data` hands on the rows, `meta.pagina` one value                                             |
-| `X.transform(r).useVariant('forEgresso')`                                                                             | the variant **replaces** `toObject()`: only its keys leave; following both had doubled a list page to 65 DET                                                                         |
+| `X.transform(r).useVariant('forSummary')`                                                                             | the variant **replaces** `toObject()`: only its keys leave; following both had doubled a list page to 65 DET                                                                         |
 | `function proximos()` / `const f = () =>` in the same file                                                            | followed like an import (`local-function`): what it reads is an FTR, what it returns is delivered                                                                                    |
-| `rows.map(paraLinha)` — a function by reference                                                                       | a call to that function over the rows: its literal, once. A home page mapping this way had fallen to 1 DET                                                                           |
+| `rows.map(toRow)` — a function by reference                                                                           | a call to that function over the rows: its literal, once. A home page mapping this way had fallen to 1 DET                                                                           |
 | `q ?? null`, `page \|\| 1`, `startDate?.toISOString()`                                                                | the input, with a default or formatted: still the echo, counted on entry. Every listing page had counted its filters twice                                                           |
 | `paginator.getMeta()`                                                                                                 | `total`, `perPage`, `currentPage`, `lastPage`: four values the page can show; the URLs are navigation, `firstPage` a constant                                                        |
 | `{ [STATUS.A]: n, [STATUS.B]: m }`                                                                                    | a map: **one** repeating attribute (`porStatus.*`), as a `.map()` counts its leaves once (§7). A status board had counted 11                                                         |
@@ -512,11 +512,11 @@ result), a page that reads members that are not columns (a row serialised on the
 way), or a page that never reads the rows. Never a floor: a floor would undercount
 what the user sees. A transformer-covered store is not raw and is not read here.
 
-Measured on the three applications before it landed: **0 FP moved**. On sae the
+Measured on the three applications before it landed: **0 FP moved**. On one of them the
 reader read three pages (`GET /vagas` 34 → 22 DET, still 7 FP) and reported 22
 stores it could not read — four pages hand their rows to a generic `<DataTable>`,
 two to a second level of components, and one dashboard hands six stores under one
-prop. On peticao-ia and agencia-inovacao every raw store reaching a page is
+prop. On the other two every raw store reaching a page is
 transformer-covered, so nothing was read and nothing changed. The rule is right and
 the moved number is zero, which is what the fixture `inertia_pages` (25 FP, five
 shapes) asserts too: the DETs change, the points do not. It is here for the
@@ -1039,8 +1039,8 @@ Consequences, all needed for the number to close:
 
 **Measured** on the three applications this package was validated against:
 one groups nothing (every model has a query of its own), one folds `Fragment`
-into `Page`, one folds `InpiClassificacao`, `InpiDespacho` and `InpiTitular`
-into `InpiProcesso` — the "4 EIFs mirrored from an external registry" §9
+into `Page`, one folds the three detail tables of an external registry's mirror
+into their master — the "4 EIFs mirrored from an external registry" §9
 mentions, which under the CPM are **one** EIF with 4 RET. About 15 FP over
 ~2,500. The rule groups little and never groups wrong, which is the right side
 to err on: an invented RET is invisible; an invented ILF is 7 PF on an invoice.

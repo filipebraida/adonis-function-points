@@ -65,10 +65,10 @@ function classOfReceiver(receiver: Node): string | null {
     }
 
     /**
-     * `const svc = await app.container.make(IntakeService)`: the container hands
+     * `const svc = await app.container.make(AssignmentService)`: the container hands
      * back an instance of the class named — the same binding as `new`, written the
      * way a controller writes it when the service has dependencies of its own. On a
-     * reviewed application this shape carried the write of `POST /gestao/atribuicao`
+     * reviewed application this shape carried the write of `POST /assignments`
      * and 31 more sites, and none was followed (plan 0.8 §B).
      */
     if (init?.isKind(SyntaxKind.CallExpression)) {

@@ -18,7 +18,7 @@ Conformance
 module                  FP  trans stores     I  depends on
 pedidos                211     33      8  0.60  inventores, tecnologias, users
 portal                  69     15      0  1.00  contato, documentos, inventores, ...
-inpi                    70     11      6  0.00
+catalogo                70     11      6  0.00
 
 Mutual dependencies (cycle candidates)
   inventores <-> tecnologias

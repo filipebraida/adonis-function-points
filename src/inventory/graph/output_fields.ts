@@ -94,7 +94,7 @@ export function transformerResourceOf(cls: ClassDeclaration): string | null {
  *   { autor: AutorTransformer.transform } 0 here; the nested body contributes
  *   { endereco: { rua, cidade } }        leaves individually
  *   { tags: xs.map((t) => t.nome) }      1 — a repeating group of one attribute
- *   { itens: xs.map((i) => ({ a, b })) } the leaves, once
+ *   { items: xs.map((i) => ({ a, b })) } the leaves, once
  *   ...this.pick(this.resource, [...])   the listed names
  *   ...this.toObject()                   0 here; the followed body contributes
  *   ...anythingElse                      1, opaque, reported
@@ -168,7 +168,7 @@ type LeafOptions = {
  *   { autor: AutorTransformer.transform } 0 here; the followed body contributes
  *   { endereco: { rua, cidade } }        leaves individually
  *   { tags: xs.map((t) => t.nome) }      1 — a repeating group of one attribute
- *   { itens: xs.map((i) => ({ a, b })) } the leaves, once
+ *   { items: xs.map((i) => ({ a, b })) } the leaves, once
  *   ...this.pick(this.resource, [...])   the listed names
  *   ...this.toObject()                   0 here; the followed body contributes
  *   ...anythingElse                      1, opaque, reported

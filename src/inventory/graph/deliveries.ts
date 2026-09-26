@@ -45,7 +45,7 @@ type DeliveredValue =
       args: Delivery[]
       /**
        * One key of what the call returns — `const { data } = await q.handle()`,
-       * `relatorio.linhas` — rather than the whole result. Resolved against the
+       * `report.rows` — rather than the whole result. Resolved against the
        * body's classified return, keeping only that key.
        */
       pick?: string
@@ -70,8 +70,12 @@ const RESPONSE_METHODS = new Set(['json', 'ok', 'created', 'accepted', 'send'])
 const PRINTERS = new Set(['ui', 'logger', 'console'])
 /** `x.data`, `x.rows` on a paginated / wrapped result hand the collection on */
 const PASSES_THROUGH = new Set(['data', 'rows', 'all', 'toJSON', 'serialize'])
-/** keys of a result that carry its rows: picking one of these is not picking one value */
-export const PASSES_ROWS = new Set(['data', 'rows', 'items', 'results', 'list', 'linhas', 'itens'])
+/**
+ * Keys under which a paginator or a wrapper hands its rows on: picking one of these
+ * is not picking one value. Framework and JavaScript conventions only — a key named
+ * in one application's language is that application's, not a rule.
+ */
+export const PASSES_ROWS = new Set(['data', 'rows', 'items', 'results', 'records'])
 /** properties of a result that are one value, not its rows */
 const SCALAR_PROPS = new Set(['length', 'size', 'total', 'count'])
 /**
@@ -620,7 +624,7 @@ function classifyCall(
     /**
      * `rows.map(…).join('\n')` in a body whose parameter is `rows`: the whole input
      * transformed, so the input says what leaves — the caller's arguments decide,
-     * and the body itself says nothing. `noticia.publicadaEm?.toISO()` on that
+     * and the body itself says nothing. `article.publicadaEm?.toISO()` on that
      * parameter is one FIELD of it, and stays one value below.
      */
     if (Node.isPropertyAccessExpression(callee) && transformsParameter(callee, ctx.body)) {
@@ -634,7 +638,7 @@ function classifyCall(
 
     if (Node.isPropertyAccessExpression(callee)) {
       /**
-       * `comunicado.enviadoEm!.toISODate()`, `(a ?? b).toRFC2822()`: a FIELD read off
+       * `notice.enviadoEm!.toISODate()`, `(a ?? b).toRFC2822()`: a FIELD read off
        * the chain, or an expression, then a method — one value. A chain rooted at
        * `this` (`this.service.find()`) is a call into a service, and not this.
        */
@@ -661,7 +665,7 @@ function classifyCall(
 
 /**
  * `xs.map(cb)` with no literal in the callback: what the callback RETURNS,
- * once — a function passed by reference (`rows.map(paraLinha)`) is a call to
+ * once — a function passed by reference (`rows.map(toRow)`) is a call to
  * that function over the rows; an expression body (`(m) => new T(m).toObject()`)
  * is classified as if it were the value; anything else is one repeating attribute.
  */
@@ -675,7 +679,7 @@ function classifyMapped(
 ): void {
   const callback = unwrap(value.getArguments()[0])
 
-  // `rows.map(paraLinha)`: the strategies followed the function named — a call to it over the rows
+  // `rows.map(toRow)`: the strategies followed the function named — a call to it over the rows
   const refs = ctx.followed.get(value)
   if (callback && Node.isIdentifier(callback) && refs && refs.length > 0) {
     const rows: Delivery[] = []
@@ -711,7 +715,7 @@ function callbackValueOf(callback: Expression | null): Expression | null {
 
 /**
  * Does this chain read a property (not a method) or hold an expression before
- * the method is applied? `comunicado.enviadoEm.toISO()` does; `rows.map(f).join()`
+ * the method is applied? `notice.enviadoEm.toISO()` does; `rows.map(f).join()`
  * does not; a chain rooted at `this` is a service, and does not.
  */
 function readsField(node: Node): boolean {
@@ -743,7 +747,7 @@ function readsField(node: Node): boolean {
 
 /**
  * Is this chain a method (or methods) applied to a plain parameter of the body,
- * with no field read in between? `rows.map(f).join(s)` is; `noticia.capa?.toISO()`
+ * with no field read in between? `rows.map(f).join(s)` is; `article.capa?.toISO()`
  * reads a field first and is not.
  */
 function transformsParameter(
@@ -831,7 +835,7 @@ function returnsPrimitive(call: CallExpression): boolean {
 }
 
 /**
- * `x.data`, `resultado.linhas`, `rows[0]`: a part of a value the body holds.
+ * `x.data`, `result.rows`, `rows[0]`: a part of a value the body holds.
  *
  *   on a variable bound to a followed call    that key of what the call returns
  *   on a store-bound variable                 the store (`rows[0]`, `.data`) or a field (scalar)
@@ -870,7 +874,7 @@ function classifyAccess(
         return
       }
       /**
-       * `resultado.linhas`: one key of what the call returns; `meta.pagina` on a
+       * `result.rows`: one key of what the call returns; `meta.pagina` on a
        * destructured `meta`: the key under the key; `rows[0]`, `.data`: the whole.
        */
       const own = property && !PASSES_THROUGH.has(property) ? property : undefined

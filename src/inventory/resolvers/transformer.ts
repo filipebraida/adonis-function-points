@@ -120,7 +120,7 @@ export const transformerResolver: CallResolver = {
     const { file, owner } = found
 
     /**
-     * `X.transform(p).useVariant('forEgresso')`: the variant is a METHOD of the
+     * `X.transform(p).useVariant('forSummary')`: the variant is a METHOD of the
      * transformer, named after it, and it REPLACES `toObject()` — the shape that
      * leaves is the variant's. The chain is visited call by call: the `useVariant`
      * call resolves the variant's body, and the `transform` call before it resolves

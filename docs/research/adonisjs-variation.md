@@ -17,7 +17,7 @@ gerados que atravessam todos os layouts.
 
 | forma              | apps   | caminho de um model            |
 | ------------------ | ------ | ------------------------------ |
-| MVC plano          | 2 de 6 | `app/models/egresso.ts`        |
+| MVC plano          | 2 de 6 | `app/models/member.ts`         |
 | módulo por domínio | 4 de 6 | `app/collect/models/invite.ts` |
 
 Os _tipos_ de artefato são os mesmos nas duas (models, controllers, services,
@@ -64,7 +64,7 @@ que seguir o grafo de chamadas onde ele for.
 | -------------- | ----------------------------------------------------------------------- |
 | direto         | `class Invite extends BaseModel` com `@column` no próprio arquivo       |
 | base própria   | `class Invite extends BaseModel` onde `BaseModel` é local, não do Lucid |
-| schema gerado  | `class Egresso extends EgressoSchema` — sem nenhum `@column`            |
+| schema gerado  | `class Member extends MemberSchema` — sem nenhum `@column`              |
 | schema + mixin | `class User extends compose(UserSchema, Auditable)`                     |
 
 Em `app A`, **35 arquivos de model e zero `extends BaseModel` do Lucid**; só 3 têm

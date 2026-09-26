@@ -18,7 +18,7 @@ export const moduleFunctionResolver: CallResolver = {
   order: 50,
 
   resolve(call: CallExpression, ctx: ResolverContext): HandlerRef[] {
-    // `createUser(payload)`, or `rows.map(paraLinha)`: the function named is the body
+    // `createUser(payload)`, or `rows.map(toRow)`: the function named is the body
     const expr = calledFunctionOf(call)
     if (!expr) return []
 

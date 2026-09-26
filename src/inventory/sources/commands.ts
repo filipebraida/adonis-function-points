@@ -8,7 +8,7 @@ import type { CollectedEntryPoint } from './routes_ast.js'
 /**
  * Ace commands as entry points — counting-decisions §5, plan 0.7 §C.
  *
- * IFPUG counts batch processes an operator starts. `node ace noticias:importar`
+ * IFPUG counts batch processes an operator starts. `node ace articles:import`
  * reads a feed and writes news: an EI exactly like a `POST`, and until this the
  * collector emitted only `kind: 'http'`, although the type had `command` and §5
  * had decided its identity since 0.1.0.
@@ -81,7 +81,7 @@ function baseCommandNameIn(file: SourceFile): string | null {
   return null
 }
 
-/** `static commandName = 'noticias:importar'` — a literal; a computed name is nobody's identity */
+/** `static commandName = 'articles:import'` — a literal; a computed name is nobody's identity */
 function commandNameOf(cls: ClassDeclaration): string | null {
   const property = cls.getStaticProperty('commandName')
   if (!property || !Node.isPropertyDeclaration(property)) return null

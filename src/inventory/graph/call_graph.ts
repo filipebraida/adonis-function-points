@@ -708,9 +708,9 @@ export function createAnalyzer(
           if (!value) return null
           const unwrapped = unwrapAwait(value)
           if (unwrapped.getKind() === SyntaxKind.NullKeyword) continue
-          // `return this.createFromBuffer(buffer)`: what THAT body returns, one level down
+          // `return this.fromBuffer(buffer)`: what THAT body returns, one level down
           if (Node.isCallExpression(unwrapped) && !detectAccess(unwrapped, own, relationsByStore)) {
-            // resolved FROM the body that returns it: `this.createFromBuffer` is a method of that class
+            // resolved FROM the body that returns it: `this.fromBuffer` is a method of that class
             const inner: ResolverContext = {
               ...context,
               file: source!,
@@ -920,8 +920,8 @@ export function createAnalyzer(
          * A select list that is not literal is reported, and the store falls back
          * to every column, which overestimates in the open.
          *
-         * `related('itens').query().count()` reads the RELATION target, and the
-         * parent only as a receiver; `preload('itens')` reads the target whole.
+         * `related('items').query().count()` reads the RELATION target, and the
+         * parent only as a receiver; `preload('items')` reads the target whole.
          */
         if (access.mode === 'read') {
           const chain = chainShapeOf(call)
@@ -1078,7 +1078,7 @@ export function createAnalyzer(
    * Both project-wide facts come from one pass, computed once: which stores the
    * application WRITES (maintenance, §6.5.4) and which it ADDRESSES directly
    * (grouping, counting-decisions §10). A store reached only through a relation
-   * — `preload('itens')`, `related('itens').create()` — is read or written, but
+   * — `preload('items')`, `related('items').create()` — is read or written, but
    * not addressed: the user never sees it outside its parent.
    */
   let projectWide: { written: Set<string>; addressed: Set<string>; seeded: Set<string> } | undefined
@@ -1239,7 +1239,7 @@ export function createAnalyzer(
           if (depth > maxDepth + 2) return
           let resolved = false
           for (const ref of item.refs) {
-            // the same body may be delivered at two paths (`...paraLinha(x)` and `relacionadas: xs.map(paraLinha)`); a cycle is stopped by depth
+            // the same body may be delivered at two paths (`...toRow(x)` and `relacionadas: xs.map(toRow)`); a cycle is stopped by depth
             const key = `${ref.file}#${ref.member ?? ref.line ?? '*'}#${item.pick ?? ''}#${item.path}`
             if (seen.has(key)) continue
             seen.add(key)
@@ -1254,8 +1254,8 @@ export function createAnalyzer(
               (r) => !item.pick || r.path === item.pick || r.path.startsWith(`${item.pick}.`)
             )
             /**
-             * `egresso.curso` where the body returns the row itself (`return
-             * Egresso.query()…first()`, path ''): the pick lands INSIDE a returned
+             * `member.curso` where the body returns the row itself (`return
+             * Member.query()…first()`, path ''): the pick lands INSIDE a returned
              * value — one field of a store is one value; one key of a returned call
              * is that call picked deeper.
              */
@@ -1522,7 +1522,7 @@ function findBody(file: SourceFile, ref: HandlerRef): Node | null {
     }
     const fn = file.getFunction(ref.member)
     if (fn) return fn
-    // `const paraLinha = (row) => …` at module level: a function by another declaration
+    // `const toRow = (row) => …` at module level: a function by another declaration
     const initializer = file.getVariableDeclaration(ref.member)?.getInitializer()
     if (
       initializer &&
@@ -1576,7 +1576,7 @@ function storeSymbolsFor(
   }
 
   /**
-   * `const { default: Noticia } = await import('#noticias/models/noticia')`: a
+   * `const { default: Article } = await import('#articles/models/article')`: a
    * model imported INSIDE the body — an ace command does this to keep the app
    * from booting for `--help`. The store is the same; only the binding moved.
    */
@@ -1679,7 +1679,7 @@ function storeSymbolsFor(
   }
 
   /**
-   * `const { preIntake } = input` where `input.preIntake` is a registered path:
+   * `const { order } = input` where `input.order` is a registered path:
    * each element inherits the store of its path. Read AFTER the parameters, which
    * is where the paths come from.
    */
@@ -1965,8 +1965,8 @@ export function importMapsOf(
   }
 
   /**
-   * `const { default: SincronizarBulk } = await import('#inpi/actions/sincronizar_bulk')`
-   * `const { execucaoEmAndamento } = await import('#inpi/services/execucao')`
+   * `const { default: SyncCatalog } = await import('#catalog/actions/sync_catalog')`
+   * `const { runInProgress } = await import('#catalog/services/runs')`
    *
    * A module imported INSIDE a body — the shape ace commands use so `--help` does
    * not boot the application. The binding moved; the body it names did not, and

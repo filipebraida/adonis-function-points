@@ -33,7 +33,7 @@ export type PageReading = {
   columns: Map<string, Set<string>>
   /** store -> why the page could not be read for it (the store then leaves whole) */
   unreadable: Map<string, string>
-  /** store -> members the page reads that are NOT its columns (`inventor.nomeCompleto`, computed on the way) */
+  /** store -> members the page reads that are NOT its columns (`member.displayName`, computed on the way) */
   unknownMembers: Map<string, Set<string>>
 }
 
@@ -172,27 +172,31 @@ const SKIPPED_DIRS = new Set([
 ])
 
 /**
- * `inertia.render('livros/index')` → `inertia/pages/livros/index.tsx` (the default),
- * `app/<first>/ui/pages/<rest>.tsx` (a domain-module layout), or any `pages/` directory
- * under the root holding that path. The `resolve` function of the front-end is not
+ * `inertia.render('livros/index')` → `inertia/pages/livros/index.tsx` (the default), or any
+ * `pages/` directory under the root holding that path — a module-scoped one included. The `resolve` function of the front-end is not
  * run — a convention is read, a function is not.
  */
 function inertiaPageFiles(root: string, page: string): string[] {
   const found = new Set<string>()
-  // `pedidos/show` → `app/pedidos/ui/pages/show.tsx`: the first segment names the module
+  /**
+   * `orders/show` → `<…>/orders/<…>/pages/show.tsx`: a front-end that keeps one `pages/`
+   * directory per module names the module in the page name's first segment. Read
+   * structurally — a `pages/` directory whose path carries that segment — never as a
+   * fixed layout: the default is `inertia/pages/<name>`, and anything else is one
+   * application's convention.
+   */
   const [first, ...rest] = page.split('/')
-  if (rest.length > 0) {
-    for (const extension of ['.tsx', '.jsx', '.vue', '.svelte']) {
-      const file = join(root, 'app', first, 'ui', 'pages', `${rest.join('/')}${extension}`)
-      if (existsSync(file)) found.add(file)
-    }
-  }
   for (const dir of pagesDirectories(root)) {
+    const scopedToModule = rest.length > 0 && toPosix(dir).split('/').includes(first)
     for (const extension of ['.tsx', '.jsx', '.vue', '.svelte']) {
       const file = join(dir, `${page}${extension}`)
       if (existsSync(file)) found.add(file)
       const index = join(dir, page, `index${extension}`)
       if (existsSync(index)) found.add(index)
+      if (scopedToModule) {
+        const scoped = join(dir, `${rest.join('/')}${extension}`)
+        if (existsSync(scoped)) found.add(scoped)
+      }
     }
   }
   return [...found].sort()
