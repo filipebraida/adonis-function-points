@@ -140,6 +140,8 @@ export type HandlerBehavior = {
   opaqueOutputFields: Field[]
   /** stores a transformer on the path is for: their keys leave, not their columns */
   transformedStores: string[]
+  /** what the transaction delivers: derived fields, raw stores, values nobody could read */
+  delivered: { any: boolean; fields: string[]; opaqueFields: string[]; stores: string[] }
   /**
    * How each store was read: rows whole, `.select()` columns, or one aggregate
    * scalar; by its own chain (`direct`) or preloaded through another store (`via`).

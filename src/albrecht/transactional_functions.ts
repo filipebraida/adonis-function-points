@@ -243,8 +243,40 @@ function detsFor(
       add(field, `transformer:${field}${opaqueOutputs.has(field) ? ' (opaque)' : ''}`)
     }
 
+    /**
+     * Plan 0.7 §A′ — the delivery is the boundary. When the transaction hands
+     * something to a renderer or a response, THAT is what leaves: derived values
+     * and the leaves of literals a followed body returned count 1 each; a store
+     * leaves only if its rows were handed on, raw or through a query object; a
+     * store read to authorise or to decide contributes nothing to the output. A
+     * field that entered and is echoed back counts once, on entry (§7.3) — the
+     * classifier marks it as an echo. Without a delivery point the rule cannot
+     * apply, and every store read leaves, as before.
+     */
+    const delivered = behavior.delivered
+    if (delivered.any) {
+      // an echoed input never reaches here: the classifier marks it `echo` and it counts on entry (§7.3)
+      for (const field of delivered.fields) add(`render.${field}`, `render:${field}`)
+      for (const field of delivered.opaqueFields) add(`render.${field}`, `render:${field} (opaque)`)
+    }
+
+    // a relation preloaded on a delivered store leaves with it
+    const deliveredStores = new Set(delivered.stores)
+    for (let changed = true; changed;) {
+      changed = false
+      for (const [store, read] of Object.entries(behavior.outputReads)) {
+        if (deliveredStores.has(store) || read.direct) continue
+        if (!read.via.some((parent) => deliveredStores.has(parent))) continue
+        deliveredStores.add(store)
+        changed = true
+      }
+    }
+
     for (const store of touched) {
       const read = behavior.outputReads[store]
+
+      // read, not shown: an FTR, and nothing on the output
+      if (delivered.any && !deliveredStores.has(store) && !covered.has(store)) continue
 
       if (read?.aggregate) {
         add(

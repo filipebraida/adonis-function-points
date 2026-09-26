@@ -125,12 +125,66 @@ export function outputFieldsIn(
       .map((attribute) => attribute.name) ?? []
   )
 
+  const { leaves, opaque } = collectLeaves(returnedLiteralsOf(body), {
+    qualifier,
+    excluded,
+    followed,
+  })
+
+  return {
+    outputs: leaves,
+    opaqueOutputs: opaque,
+    resource: resource && stores.has(resource) ? resource : null,
+  }
+}
+
+/**
+ * The leaves of the object literal ANY body returns — a query object building a
+ * summary, a module function assembling a view model. Same walker as the
+ * transformer's, unqualified: the caller prefixes the path the value was
+ * delivered under. `null` when the body returns no literal.
+ */
+export function returnedLeavesOf(
+  body: Node,
+  followed: (call: CallExpression) => boolean
+): { leaves: string[]; opaque: string[] } | null {
+  const literals = returnedLiteralsOf(body)
+  if (literals.length === 0) return null
+  return collectLeaves(literals, { qualifier: '', excluded: new Set(), followed })
+}
+
+type LeafOptions = {
+  /** prefixed to every leaf, with a dot; empty for an unqualified walk */
+  qualifier: string
+  /** top-level names that are not DETs (the resource's key, its stamps) */
+  excluded: Set<string>
+  followed: (call: CallExpression) => boolean
+}
+
+/**
+ * The leaves of object literals, by the §7 rules:
+ *
+ *   { titulo: l.titulo }                 1 — `titulo`
+ *   { autor: AutorTransformer.transform } 0 here; the followed body contributes
+ *   { endereco: { rua, cidade } }        leaves individually
+ *   { tags: xs.map((t) => t.nome) }      1 — a repeating group of one attribute
+ *   { itens: xs.map((i) => ({ a, b })) } the leaves, once
+ *   ...this.pick(this.resource, [...])   the listed names
+ *   ...this.toObject()                   0 here; the followed body contributes
+ *   ...anythingElse                      1, opaque, reported
+ */
+export function collectLeaves(
+  literals: ObjectLiteralExpression[],
+  options: LeafOptions
+): { leaves: string[]; opaque: string[] } {
+  const { qualifier, excluded, followed } = options
   const outputs = new Set<string>()
   const opaque = new Set<string>()
+  const q = qualifier ? `${qualifier}.` : ''
 
   const leaf = (prefix: string, name: string) => {
     if (prefix === '' && excluded.has(name)) return
-    outputs.add(`${qualifier}.${prefix ? `${prefix}.${name}` : name}`)
+    outputs.add(`${q}${prefix ? `${prefix}.${name}` : name}`)
   }
 
   const walk = (literal: ObjectLiteralExpression, prefix: string) => {
@@ -210,18 +264,14 @@ export function outputFieldsIn(
      * One DET as a floor, and reported — the placeholder carries the expression
      * so the report can name what could not be read.
      */
-    const placeholder = `${qualifier}.${prefix ? `${prefix}.` : ''}<${value.getText().replace(/\s+/g, '')}>`
+    const placeholder = `${q}${prefix ? `${prefix}.` : ''}<${value.getText().replace(/\s+/g, '')}>`
     outputs.add(placeholder)
     opaque.add(placeholder)
   }
 
-  for (const literal of returnedLiteralsOf(body)) walk(literal, '')
+  for (const literal of literals) walk(literal, '')
 
-  return {
-    outputs: [...outputs],
-    opaqueOutputs: [...opaque],
-    resource: resource && stores.has(resource) ? resource : null,
-  }
+  return { leaves: [...outputs], opaque: [...opaque] }
 }
 
 /**
@@ -229,7 +279,7 @@ export function outputFieldsIn(
  * functions inside it, which belong to `.map()` callbacks and are read as
  * repeating groups where they occur.
  */
-function returnedLiteralsOf(body: Node): ObjectLiteralExpression[] {
+export function returnedLiteralsOf(body: Node): ObjectLiteralExpression[] {
   const literals: ObjectLiteralExpression[] = []
 
   for (const statement of body.getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
@@ -269,7 +319,7 @@ function pickedNamesOf(call: CallExpression): string[] | null {
 }
 
 /** `xs.map((x) => ({ a, b }))` -> the literal; null for a scalar map or anything else */
-function mappedLiteralOf(value: Expression): ObjectLiteralExpression | null {
+export function mappedLiteralOf(value: Expression): ObjectLiteralExpression | null {
   if (!Node.isCallExpression(value)) return null
 
   const callee = value.getExpression()
@@ -289,7 +339,7 @@ function mappedLiteralOf(value: Expression): ObjectLiteralExpression | null {
 }
 
 /** strips parentheses, `as`, `satisfies` and non-null assertions */
-function unwrap(node: Node | undefined | null): Expression | null {
+export function unwrap(node: Node | undefined | null): Expression | null {
   let current: Node | undefined | null = node
   while (
     current &&

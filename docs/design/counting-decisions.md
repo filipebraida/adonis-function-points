@@ -390,10 +390,34 @@ key and the stamps; the package departs from that letter for the key and now,
 consistently, for the stamps, and says so here. Not configurable: an option
 nobody can defend either way is not a business decision.
 
-> **Not yet.** A derived scalar prop passed straight to `inertia.render(...)`
-> (`totalHoras`, `canEdit`) is not read; it is the most heuristic line of the
-> original table and the least measured. Until it is, a transaction with no
-> transformer counts its stores' columns and nothing for the derived props.
+**The delivery is the boundary (0.7, plan §A′).** Everything above says what a
+store contributes when it leaves; this says _which_ stores leave, and what else
+does. The place a transaction's output crosses the boundary is its delivery —
+the props handed to `inertia.render` / `inertia.modal` / `view.render`, the
+payload of `response.json` / `.ok` / `.created` / `.send`, a literal the handler
+returns — and each value delivered is read:
+
+| delivered value                                                                                   | DET                                                    |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| a transformer the graph follows                                                                   | its keys (above)                                       |
+| the result of a followed call that **returns a literal** (a summary query, a view-model function) | the literal's leaves, once — `render:categorias.total` |
+| the result of a followed call that returns rows (a query object)                                  | the stores that body reads, by the rules above         |
+| a variable bound to a store, or a store access handed straight on                                 | that store's columns, by the rules above               |
+| `xs.map((x) => ({ a, b }))` built in the controller                                               | the leaves, once (§7)                                  |
+| a scalar, a property, an expression (`total`, `podeEditar`)                                       | **1**                                                  |
+| an input echoed back (the validated payload, `request.input(...)`)                                | 0 here — it counted on entry (§7.3)                    |
+| a store **read but delivered by nothing** (to authorise, to decide)                               | 0 on the output; still an FTR                          |
+| a value nobody can read (`response.send(gerarCsv(rows))`)                                         | 1, `(opaque)`, reported                                |
+
+Without a delivery point the rule cannot apply and every store read leaves, as
+before. Measured before it was written: on the three validated applications
+the rule moves −8, −2 and +9 FP — derived scalars add where the whole table did
+not reach the band, stores read only to authorise stop inflating where it did.
+It decides what the number is made of far more than what it is, and that is
+what `fp:explain` needs on an output: the DETs named are the ones the screen
+received. The measurement also changed the rule: no delivered collection was a
+variable bound to a store — they come out of query objects — so a followed
+call's **return** is what its value hands on.
 
 **Error and confirmation messages:** the IFPUG manual counts +1 DET; AFP does
 not. We follow AFP. The Ligeiro study showed this is the systematic −1 DET per

@@ -87,7 +87,9 @@ Predicted 1.5.0 total: **43 FP** (0) — and printed, once, before any code, to
 check the fixture parses with full coverage: 43, with `resumo` at 1 DET where
 this table first predicted 2. The prediction was wrong about the current rule
 set, not about the reference: a `select` on an aggregate chain is thrown away
-today, which is a defect this release fixes alongside the rule. That was the measurement's verdict on the
-three validated applications too (−8, −2, +9): this rule decides what the number
-is made of far more than what it is — and it is what makes `fp:explain`
-defensible for an output: the DETs named are the ones the screen received.
+today, which is a defect this release fixes alongside the rule.
+
+That "0" was the measurement's verdict on the three validated applications too
+(−8, −2, +9 FP): this rule decides what the number is made of far more than what
+it is — and it is what makes `fp:explain` defensible for an output: the DETs
+named are the ones the screen received.

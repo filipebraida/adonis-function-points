@@ -17,8 +17,10 @@ import { BUILTIN_CALL_RESOLVERS, isTechnicalWrite, resolveCall } from '../resolv
 import { isApplicationCode, isSeeder, toPosix } from '../paths.js'
 import type { EventBindings } from '../sources/event_bindings.js'
 import { isIterationCall, isNoise, isNoiseMember } from './noise.js'
-import { chainShapeOf, outputFieldsIn } from './output_fields.js'
+import { chainShapeOf, outputFieldsIn, returnedLeavesOf } from './output_fields.js'
 import type { StoreRead } from './output_fields.js'
+import { deliveriesIn } from './deliveries.js'
+import type { Delivery } from './deliveries.js'
 import type { CallResolver, ResolverContext } from '../resolvers/types.js'
 import type { HandlerRef, TraceStep, UnresolvedCall } from '../../types.js'
 
@@ -105,6 +107,14 @@ export type Behavior = {
       via: string[]
     }
   >
+  /**
+   * What the transaction DELIVERS — plan 0.7 §A′. `any` says a delivery point was
+   * found at all; without one the output falls back to the stores read. `fields`
+   * are derived values and the leaves of literals a followed body returned,
+   * `render:total`; `stores` are the ones whose rows were handed on, raw or through
+   * a query object; `opaqueFields` are values nobody could read, 1 DET each.
+   */
+  delivered: { any: boolean; fields: string[]; opaqueFields: string[]; stores: string[] }
   trace: TraceStep[]
   /** bodies reached, for `fp:diff` */
   scope: ScopeEntry[]
@@ -442,6 +452,10 @@ type BodyFacts = {
   transformed: string | null
   /** how the read chains of this body read each store */
   reads: StoreRead[]
+  /** the leaves of an object literal this body returns — what a delivered call hands on */
+  returnLeaves: { leaves: string[]; opaque: string[] } | null
+  /** what this body hands to a renderer or a response, and what its `return` hands back */
+  deliveries: import('./deliveries.js').BodyDeliveries
   followUps: { ref: HandlerRef; by: string; technical?: boolean }[]
   unresolved: UnresolvedCall[]
   bodyHash: string
@@ -609,8 +623,8 @@ export function createAnalyzer(
     const followUps: { ref: HandlerRef; by: string; technical?: boolean }[] = []
     const unresolved: UnresolvedCall[] = []
     const reads: StoreRead[] = []
-    /** calls a strategy claimed: a nested transformer's keys arrive through its body */
-    const followedCalls = new Set<CallExpression>()
+    /** calls a strategy claimed, and where they lead: a nested transformer's keys arrive through its body */
+    const followedCalls = new Map<CallExpression, HandlerRef[]>()
     const validator = validatorFieldsIn(body, file, app)
     const request = requestFieldsIn(body)
 
@@ -658,11 +672,16 @@ export function createAnalyzer(
             : chain.selected.length > 0
               ? 'select'
               : 'whole'
+          /**
+           * The select list survives an aggregate shape: `select('categoria').count()`
+           * with a GROUP BY leaves the grouped column as well as the count. Dropping
+           * it left a summary at 1 DET.
+           */
           const read = (store: string, how: StoreRead['shape'], via?: string) =>
             reads.push({
               store,
               shape: how,
-              columns: how === 'select' ? chain.selected : [],
+              columns: how === 'whole' ? [] : chain.selected,
               ...(via ? { via } : {}),
             })
 
@@ -717,7 +736,7 @@ export function createAnalyzer(
          */
         const technical = isTechnicalWrite(call, context, resolvers)
         for (const next of resolved.refs) followUps.push({ ref: next, by: resolved.by, technical })
-        followedCalls.add(call)
+        followedCalls.set(call, resolved.refs)
         continue
       }
 
@@ -735,7 +754,16 @@ export function createAnalyzer(
      * Read after the loop: whether a key holds a nested transformer is known only
      * once the strategies have said which calls they follow.
      */
-    const output = outputFieldsIn(body, owner, storesByName, (c) => followedCalls.has(c))
+    const followed = (c: CallExpression) => followedCalls.has(c)
+    const output = outputFieldsIn(body, owner, storesByName, followed)
+    const returnLeaves = output.outputs.length > 0 ? null : returnedLeavesOf(body, followed)
+    const deliveries = deliveriesIn({
+      body,
+      file,
+      symbols,
+      relations: relationsByStore,
+      followed: followedCalls,
+    })
 
     return {
       accesses,
@@ -749,6 +777,8 @@ export function createAnalyzer(
       opaqueOutputs: output.opaqueOutputs,
       transformed: output.resource,
       reads,
+      returnLeaves,
+      deliveries,
       bodyHash: hashOf(body),
     }
   }
@@ -865,6 +895,10 @@ export function createAnalyzer(
     const outputFields = new Set<string>()
     const opaqueOutputFields = new Set<string>()
     const transformedStores = new Set<string>()
+    const deliveredFields = new Set<string>()
+    const deliveredOpaque = new Set<string>()
+    const deliveredStores = new Set<string>()
+    let anyDelivery = false
     const outputReads = new Map<
       string,
       {
@@ -881,6 +915,67 @@ export function createAnalyzer(
     const visited = new Set<string>()
 
     let writes = false
+
+    /** what a followed body reads, itself and through what it follows — bounded like the walk */
+    const storesReadBy = (
+      ref: HandlerRef,
+      depth: number,
+      seen = new Set<string>()
+    ): Set<string> => {
+      const found = new Set<string>()
+      const key = `${ref.file}#${ref.member ?? ref.line ?? '*'}`
+      if (seen.has(key) || depth > maxDepth) return found
+      seen.add(key)
+      const facts = factsFor(ref)
+      if (!facts) return found
+      for (const access of facts.accesses) found.add(access.store)
+      for (const followUp of facts.followUps) {
+        for (const store of storesReadBy(followUp.ref, depth + 1, seen)) found.add(store)
+      }
+      return found
+    }
+
+    const deliver = (item: Delivery, depth: number) => {
+      switch (item.kind) {
+        case 'store':
+          deliveredStores.add(item.store)
+          return
+        case 'scalar':
+          deliveredFields.add(item.path || '<value>')
+          return
+        case 'echo':
+          return
+        case 'opaque':
+          deliveredOpaque.add(`${item.path ? `${item.path}.` : ''}<${item.expression}>`)
+          return
+        case 'call': {
+          let resolved = false
+          for (const ref of item.refs) {
+            const facts = factsFor(ref)
+            if (!facts) continue
+            // a transformer: its keys are the output already, through the body the graph follows
+            if (facts.outputs.length > 0 || facts.transformed) {
+              resolved = true
+              continue
+            }
+            if (facts.returnLeaves && facts.returnLeaves.leaves.length > 0) {
+              const prefix = item.path ? `${item.path}.` : ''
+              for (const leaf of facts.returnLeaves.leaves) deliveredFields.add(`${prefix}${leaf}`)
+              for (const leaf of facts.returnLeaves.opaque) deliveredOpaque.add(`${prefix}${leaf}`)
+              resolved = true
+              continue
+            }
+            const read = storesReadBy(ref, depth + 1)
+            if (read.size > 0) {
+              for (const store of read) deliveredStores.add(store)
+              resolved = true
+            }
+          }
+          if (!resolved)
+            deliveredOpaque.add(`${item.path ? `${item.path}.` : ''}<${item.expression}>`)
+        }
+      }
+    }
 
     const visit = (ref: HandlerRef, depth: number, technical = false) => {
       const key = `${ref.file}#${ref.member ?? ref.line ?? '*'}`
@@ -932,6 +1027,18 @@ export function createAnalyzer(
       for (const field of facts.outputs) outputFields.add(field)
       for (const field of facts.opaqueOutputs) opaqueOutputFields.add(field)
       if (facts.transformed) transformedStores.add(facts.transformed)
+      /**
+       * Deliveries, resolved here because a delivered CALL leads to a body only
+       * the graph knows: what that body returns is what the value hands on.
+       */
+      const items: Delivery[] = [
+        ...facts.deliveries.calls,
+        ...(depth === 0 ? facts.deliveries.returns : []),
+      ]
+      if (facts.deliveries.anyCall || (depth === 0 && facts.deliveries.anyReturn))
+        anyDelivery = true
+      for (const item of items) deliver(item, depth)
+
       for (const { store, shape, columns, via } of facts.reads) {
         const known = outputReads.get(store) ?? {
           whole: false,
@@ -980,6 +1087,12 @@ export function createAnalyzer(
       outputFields: [...outputFields].sort(),
       opaqueOutputFields: [...opaqueOutputFields].sort(),
       transformedStores: [...transformedStores].sort(),
+      delivered: {
+        any: anyDelivery,
+        fields: [...deliveredFields].sort(),
+        opaqueFields: [...deliveredOpaque].sort(),
+        stores: [...deliveredStores].sort(),
+      },
       outputReads: Object.fromEntries(
         [...outputReads.entries()]
           .sort(([a], [b]) => a.localeCompare(b))

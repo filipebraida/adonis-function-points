@@ -263,6 +263,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
   )
   warnings.push(...unreadableInputWarnings(input))
   warnings.push(...unreadableOutputWarnings(input))
+  warnings.push(...unreadableDeliveryWarnings(input))
   warnings.push(...lookAlikeWarnings(functions))
   warnings.push(...seededOnlyWarnings(functions, grouping.members, input.seededAnywhere))
 
@@ -273,6 +274,38 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     totals: totalsOf(functions),
     confidence: confidenceOf(input, warnings),
   }
+}
+
+/**
+ * Transactions that deliver something the analysis cannot read.
+ *
+ * A generated document (`response.send(gerarCsv(rows))`), a value built by a
+ * call nobody followed. Each counts 1 DET — a floor — and the transaction's
+ * output is understated by whatever the value carries. Named with the
+ * expression, because the fix is usually in the code: return a literal, or a
+ * transformer, and the fields become readable.
+ */
+function unreadableDeliveryWarnings(input: CountInput): string[] {
+  const blind = input.entryPoints
+    .map((entry) => ({ entry, behavior: input.behaviors.get(entry.id) }))
+    // an EI has no output DETs: what it delivers back does not enter its count
+    .filter(
+      ({ behavior }) => behavior && !behavior.writes && behavior.delivered.opaqueFields.length > 0
+    )
+
+  if (blind.length === 0) return []
+
+  return [
+    `${blind.length} transaction(s) deliver a value the analysis cannot read — a generated document, ` +
+      `a call nobody followed — counted as 1 DET each, a FLOOR. This UNDERSTATES the output:`,
+    ...blind
+      .slice(0, 10)
+      .map(
+        ({ entry, behavior }) =>
+          `  ${entry.trigger} ${entry.signature}: ${behavior!.delivered.opaqueFields.join(', ')}`
+      ),
+    ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
+  ]
 }
 
 /**

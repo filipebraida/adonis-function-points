@@ -151,6 +151,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
         provenance: { file: emit(app.root), by: 'transformer' },
       })),
       transformedStores: behavior.transformedStores,
+      delivered: behavior.delivered,
       outputReads: behavior.outputReads,
       trace: behavior.trace.map((step) => ({ ...step, file: emit(step.file) })),
       unresolved: behavior.unresolved.map((call) => ({ ...call, file: emit(call.file) })),
