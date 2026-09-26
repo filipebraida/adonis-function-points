@@ -1,7 +1,7 @@
 {
   "name": "@filipebraida/adonis-function-points",
   "description": "Automated function point counting and code metrics for AdonisJS applications.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "engines": {
     "node": ">=24.0.0"
   },

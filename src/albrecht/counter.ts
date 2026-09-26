@@ -49,13 +49,17 @@ export const RULESET = 'afp'
  * Three in 1.6.0: an output's DETs are what the transaction DELIVERS (the render
  * props, the response payload, what a command prints) read back to their origin;
  * a function of the same file and a `.map(fn)` by reference are followed, so
- * FTRs move; and ace commands are transactions, with flags as input.
+ * FTRs move; and ace commands are transactions, with flags as input. One in
+ * 1.7.0, wide: a write binds to what the variable IS — a destructured named
+ * interface, a followed method's return, a relation off a row, a loop over rows,
+ * the guard's user, a service the container made — and a write nobody can type is
+ * an unresolved call instead of silence.
  *
  * Without the bump, a baseline saved by the previous version compares cleanly
  * against this one and bills the tool's own improvement as work done. The guard
  * exists for exactly that, and only this constant arms it.
  */
-export const RULESET_VERSION = '1.6.0'
+export const RULESET_VERSION = '1.7.0'
 
 export type CountInput = {
   app: AppContext

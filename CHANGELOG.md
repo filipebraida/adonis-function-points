@@ -6,6 +6,76 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## 0.8.0
+
+**Rule set `afp@1.7.0`.** One rule, wide, found by a team reviewing a 0.6.0 count of
+their own application: six transactions that write were counted as EOs, with the
+coverage at 99.5% and three unresolved calls. The number was close and the count was
+wrong in nine places, and only the coverage line could have said so — it said 100%.
+Frozen in a fixture with a hand-written reference before the code, recounted on the
+three validated applications. A 0.7.0 baseline has to be recounted: the totals move −1,
+−8 and +2 FP; what moves is EO → EI (3 / 11 / 2 transactions), FTRs gained, and a
+coverage that now falls where the analysis does not know.
+
+### Fixed
+
+- **A write binds to what the variable IS, not to where it was born.** `document.save()`
+  was a write on `Document` only when the instance was born in the same body or arrived
+  as a parameter typed inline. The reviewed application's dominant shape — the
+  controller loads, the action alters — arrives it destructured from a **named**
+  interface (`handle({ document, name }: RenameDocumentInput)`), by `const { x } =
+input`, as a followed method's **declared return type** (`Promise<Session | null>`;
+  unannotated, its `return`s when every one is a store, one level of calls down), as a
+  conditional or a default whose branches are the same store (`id ? await X.find(id) :
+new X()`, `(await q.first()) ?? new X()`), as `auth.user` / `auth.getUserOrFail()` —
+  the model `config/auth.ts` names in its provider, read, never assumed — as a
+  **relation read off a loaded row** (`const pasta = documento.pasta`, which had been
+  billed to `Documento`), as a `for…of` or a callback parameter over rows or a relation,
+  as a `let x: Store` assigned later, as `Store[]` or `Store | null` parameters. Every
+  one is a reading of what the code declares; no type checker (the project resolves no
+  `#alias/…`, so `getType()` is `any`), and no guess. Counting-decisions §3.
+- **A write on a receiver nobody can type is an UNRESOLVED call**, reason "write on a
+  receiver whose type the analysis cannot read": `x.save()` / `x.delete()` with no
+  arguments, `x.merge(…).save()`, `x.related('…').create|sync|attach(…)`. It lowers
+  coverage and is listed by `fp:inventory`; the transaction stays what the readable
+  code says. A local a package built (`await PDFDocument.create()`, then `pdf.save()`)
+  is not a store and is not reported. This is the line between a count that errs and a
+  count that lies, and it did not exist.
+- **A service is what the container returns.** `const svc = await
+app.container.make(X)` binds `svc` to X as `new X()` already did, so `svc.method()` is
+  followed. On the reviewed application this shape carried the write of
+  `POST /gestao/atribuicao` and 31 more sites.
+- A method chain on store rows handed to a delivery (`rows.map(f).join('\n')`) delivers
+  the rows, not one field.
+
+### New
+
+- **What the page shows is what leaves**, for a store handed to the page raw — no
+  transformer, no `.select()`. `inertia.render('livros/index', …)` opens
+  `inertia/pages/livros/index.tsx` (or `app/<module>/ui/pages/…`, or any `pages/` directory
+  — exactly one match, or nothing is read) and `view.render('catalogo')` opens
+  `resources/views/catalogo.edge`; the columns the page reads off the rows are the DETs
+  (`page:Livro.titulo`), one child component deep, through tsconfig `paths`, subpath
+  imports and relative paths. Where it cannot read — a second level of components, a
+  spread, a function receiving the rows, a package's `<DataTable data={…} />`, two files
+  answering to one name, one prop carrying several stores, members that are not columns
+  — the store leaves whole and the count says why, by transaction. Measured on the three
+  applications: **0 FP moved** (sae: three pages read, 22 stores reported; the other two
+  hand every raw store through a transformer). Fixture `inertia_pages` (25 FP): the DETs
+  change, the points do not.
+
+### Documented
+
+- counting-decisions §3 gains "A write is attributed to what the variable IS", with the
+  eleven bindings as a table; the fixture `escritas_indiretas` (87 FP; `afp@1.6.0` said
+  57 with full coverage — five EIs sold as EOs, two ILFs mistaken for EIFs, one ILF lost)
+  carries one transaction per shape, plus the unreadable receiver and the package object.
+- counting-decisions §6 gains "What the page shows" — the reader, its reach, and the
+  measured zero.
+- The three boundary questions the review left open — technical logs, a mirror of another
+  system's table, a requirement's data — are declarations (`boundary.infrastructure`,
+  `boundary.externallyMaintained`), not rules; plan 0.8 §C records them.
+
 ## 0.7.0
 
 **Rule set `afp@1.6.0`.** Three rules move the number for unchanged code, every one
