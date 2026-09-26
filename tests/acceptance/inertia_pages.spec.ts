@@ -13,7 +13,7 @@ import { appFixturePath } from '../helpers.js'
  * code: every function keeps its points and changes what its DETs are made of.
  */
 const REFERENCE = {
-  total: 25,
+  total: 29,
   functions: {
     'Livro': { type: 'EIF', det: 9, refs: 1, fp: 5 },
     'GET /livros': { type: 'EO', det: 3, refs: 1, fp: 4 },
@@ -21,6 +21,7 @@ const REFERENCE = {
     'GET /livros/destaques': { type: 'EO', det: 9, refs: 1, fp: 4 },
     'GET /catalogo.xml': { type: 'EO', det: 2, refs: 1, fp: 4 },
     'GET /livros/ambiguo': { type: 'EO', det: 9, refs: 1, fp: 4 },
+    'GET /livros/ignorado': { type: 'EO', det: 9, refs: 1, fp: 4 },
   },
 } as const
 
@@ -103,6 +104,20 @@ test.group('pages: what the reader cannot read, it says', () => {
     const block = result.confidence.warnings.join('\n')
     assert.include(block, 'GET /livros/destaques')
     assert.include(block, '<Capa livro={…} />` is a second level of components')
+  })
+
+  /** the rows reach the page and nothing the reader can see uses them: whole, and said in words that do not contradict themselves */
+  test('a page that uses nothing of the rows is reported as such, in the open', async ({
+    assert,
+  }) => {
+    const { count: result } = await analyzed()
+    assert.equal(fn(result, 'GET /livros/ignorado').det, 9)
+    const block = result.confidence.warnings.join('\n')
+    assert.include(
+      block,
+      'GET /livros/ignorado: Livro leaves whole — handed to page "livros/ignorado", and nothing the reader can see uses Livro: every column counted, in the open'
+    )
+    assert.notInclude(block, 'never reads')
   })
 
   /** `livros/ambiguo.tsx` and `livros/ambiguo/index.tsx` both answer: nothing is picked */

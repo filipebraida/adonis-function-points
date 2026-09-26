@@ -21,8 +21,9 @@ Five transactions, every one delivering `Livro` rows raw:
 | `GET /livros/destaques`| `livros/destaques.tsx` → `<Vitrine livros />` → `<Capa livro />`: two levels                        | **unreadable**: every column, reported |
 | `GET /catalogo.xml`    | `view.render('catalogo')` → `resources/views/catalogo.edge`: `@each(livro in livros)` shows `titulo`, `isbn` | 2 columns             |
 | `GET /livros/ambiguo`  | two files answer to `livros/ambiguo` (`ambiguo.tsx` and `ambiguo/index.tsx`)                        | **unreadable**: every column, reported |
+| `GET /livros/ignorado` | `livros/ignorado.tsx` receives `livros` and nothing the reader can see uses it                       | every column, **in the open**, reported |
 
-## Reference: 25 unadjusted FP
+## Reference: 29 unadjusted FP
 
 | function              | type | FTR | DET | complexity | FP     | DET origin                                                        |
 | --------------------- | ---- | --- | --- | ---------- | ------ | ----------------------------------------------------------------- |
@@ -32,7 +33,8 @@ Five transactions, every one delivering `Livro` rows raw:
 | GET /livros/destaques | EO   | 1   | 9   | low        | 4      | `output:Livro.*` — the reader stopped at `Vitrine`; **reported**   |
 | GET /catalogo.xml     | EO   | 1   | 2   | low        | 4      | `page:Livro.titulo`, `.isbn` — from the Edge template              |
 | GET /livros/ambiguo   | EO   | 1   | 9   | low        | 4      | `output:Livro.*` — two pages answer to the name; **reported**      |
-| **total**             |      |     |     |            | **25** |                                                                   |
+| GET /livros/ignorado  | EO   | 1   | 9   | low        | 4      | `output:Livro.*` — the page uses nothing of it that the reader sees; whole, in the open, **reported** |
+| **total**             |      |     |     |            | **29** |                                                                   |
 
 ## The rules
 
@@ -57,7 +59,10 @@ Five transactions, every one delivering `Livro` rows raw:
    (`{...livro}`), `JSON.stringify(livro)`, a component from a package (`<Table
    data={livros} />`) or `Object.keys(livro)` make the store **unreadable on that page**:
    every column counts, and the transaction is reported with the reason. Overestimating
-   in the open, never a floor: a floor would undercount what the user sees.
+   in the open, never a floor: a floor would undercount what the user sees. A page that
+   receives the rows and uses nothing of them the reader can see is the same case, and the
+   report says so in those words — "nothing the reader can see uses it: every column counted,
+   in the open" — not "never reads", which a reviewing team read as a contradiction (0.10).
 4. **Edge by the same door.** `view.render('catalogo', props)` → `resources/views/catalogo.edge`:
    `{{ x.col }}` / `{{{ x.col }}}` are columns, `@each(x in xs)` binds a row of `xs`,
    `@if(x.col)` reads a column; `@include('partials/x')` and `@component('x')` are

@@ -33,6 +33,12 @@ export default class LivrosController {
     return response.send(await view.render('catalogo', { livros }))
   }
 
+  /** the page receives the rows and nothing the reader can see uses them — every column, in the open, reported */
+  async ignorado({ inertia }: HttpContext) {
+    const livros = await Livro.query().orderBy('titulo')
+    return inertia.render('livros/ignorado', { livros })
+  }
+
   /** the page nobody can find: two files answer to the name — every column, reported */
   async ambiguo({ inertia }: HttpContext) {
     const livros = await Livro.query().orderBy('ano')

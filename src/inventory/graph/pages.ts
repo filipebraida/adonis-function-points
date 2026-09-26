@@ -145,7 +145,7 @@ export function readPages(deliveries: RawDelivery[], env: PageEnvironment): Page
               .slice(0, 4)
               .map((m) => `\`${m}\``)
               .join(', ')} off ${store}, none of them a column of it`
-          : `page "${page}" never reads ${store}`
+          : `handed to page "${page}", and nothing the reader can see uses ${store}: every column counted, in the open`
       )
     }
   }

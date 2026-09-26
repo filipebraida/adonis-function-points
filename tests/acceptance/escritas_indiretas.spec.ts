@@ -226,6 +226,16 @@ test.group('indirect writes: what the analysis cannot read, it says', () => {
     assert.equal(result.confidence.unresolvedCalls, inventory.coverage.unresolvedCalls)
   })
 
+  /** a warning names the function the way the table and the config keys do: `:param`, never the route's own `:id` */
+  test('warnings name transactions by their identity, the same as the table and the override keys', async ({
+    assert,
+  }) => {
+    const { count: result } = await analyzed()
+    const block = result.confidence.warnings.join('\n')
+    assert.include(block, 'GET /documentos/:param/exportar: <pdf.save()>')
+    assert.notInclude(block, '/documentos/:id')
+  })
+
   /** pdf-lib's `PDFDocument#save()`: a package's object, not a store — reported on a real app, wrongly */
   test('a write-named method on a package object is not reported', async ({ assert }) => {
     const { inventory } = await analyzed()

@@ -331,7 +331,7 @@ function unreadableDeliveryWarnings(input: CountInput): string[] {
       .slice(0, 10)
       .map(
         ({ entry, behavior }) =>
-          `  ${entry.trigger} ${entry.signature}: ${behavior!.delivered.opaqueFields.join(', ')}`
+          `  ${entry.identity}: ${behavior!.delivered.opaqueFields.join(', ')}`
       ),
     ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
   ]
@@ -350,7 +350,7 @@ function unreadablePageWarnings(input: CountInput): string[] {
     const behavior = input.behaviors.get(entry.id)
     if (!behavior || behavior.writes) continue
     for (const [store, reason] of Object.entries(behavior.unreadablePages ?? {}))
-      lines.push(`  ${entry.trigger} ${entry.signature}: ${store} leaves whole — ${reason}`)
+      lines.push(`  ${entry.identity}: ${store} leaves whole — ${reason}`)
   }
   if (lines.length === 0) return []
   return [
@@ -546,7 +546,7 @@ function unreadableInputWarnings(input: CountInput): string[] {
       `(\`all()\`, \`body()\`, \`except()\`), so their input DETs could not be counted and ` +
       `each sits at the floor of its band. This UNDERSTATES the total — the fix is a ` +
       `validator, not a configuration:`,
-    ...blind.slice(0, 10).map(({ entry }) => `  ${entry.trigger} ${entry.signature}`),
+    ...blind.slice(0, 10).map(({ entry }) => `  ${entry.identity}`),
     ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
   ]
 }
@@ -574,8 +574,7 @@ function unreadableOutputWarnings(input: CountInput): string[] {
     ...blind
       .slice(0, 10)
       .map(
-        ({ entry, behavior }) =>
-          `  ${entry.trigger} ${entry.signature}: ${behavior!.opaqueOutputFields.join(', ')}`
+        ({ entry, behavior }) => `  ${entry.identity}: ${behavior!.opaqueOutputFields.join(', ')}`
       ),
     ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
   ]
