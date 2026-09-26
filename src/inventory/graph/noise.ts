@@ -128,6 +128,7 @@ const FRAMEWORK_SERVICES = new Set([
   'ui',
   'colors',
   'app',
+  'prompt',
 ])
 
 /** Is this call one that cannot reach a data store? */

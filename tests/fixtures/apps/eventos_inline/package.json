@@ -1,0 +1,12 @@
+{
+  "name": "eventos-inline",
+  "type": "module",
+  "dependencies": { "@adonisjs/core": "^7.5.0", "@adonisjs/lucid": "^22.4.2", "@adonisjs/queue": "^1.0.0" },
+  "imports": {
+    "#models/*": "./app/models/*.js",
+    "#controllers/*": "./app/controllers/*.js",
+    "#jobs/*": "./app/jobs/*.js",
+    "#events/*": "./app/events/*.js",
+    "#start/*": "./start/*.js"
+  }
+}

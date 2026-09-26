@@ -124,19 +124,20 @@ counted as EOs, and the coverage said 99.5%.
 
 The body's locals are typed by **what the code declares**, read in source order:
 
-| the local                                                 | is                                                                                                                                                                                                    |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `f(x: Store)`, `f(xs: Store[])`, `f(x: Store \| null)`    | the store                                                                                                                                                                                             |
-| `f(input: Named)`; later `const { x } = input`, `input.x` | the member's type in the interface, same file or imported                                                                                                                                             |
-| `f({ x }: Named)`                                         | the same, element by element, renames kept                                                                                                                                                            |
-| `const s = await this.svc.method(a)`                      | the followed body's **declared return type**; unannotated, its `return`s when every one is a store access, `new Store()` or a call that resolves to one — two stores, or one nobody can read: nothing |
-| `c ? A : B`, `A ?? B`, `A \|\| B`                         | the store when every non-null branch is the same one                                                                                                                                                  |
-| `auth.user`, `auth.getUserOrFail()`                       | the model `config/auth.ts` names in its provider — read, never assumed                                                                                                                                |
-| `const pasta = documento.pasta`                           | the declared relation's target, not the row's store (`pasta.save()` had been billed to `Documento`); a plain field is no store                                                                        |
-| `for (const x of rows)`, `for (const x of parent.rel)`    | a row of the rows' store, or of the relation's target                                                                                                                                                 |
-| `rows.map((x) => …)`, `forEach`, `filter`, `find`…        | the callback's parameter is a row; `rows.find(…)`, `rows.filter(…)[0]` are one row                                                                                                                    |
-| `let x: Store`, assigned later                            | the declared type                                                                                                                                                                                     |
-| `const svc = await app.container.make(X)`, `new X()`      | an instance of X — its methods are followed as a constructor-injected property's are                                                                                                                  |
+| the local                                                 | is                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `f(x: Store)`, `f(xs: Store[])`, `f(x: Store \| null)`    | the store                                                                                                                                                                                                                                                                                                                                                     |
+| `f(input: Named)`; later `const { x } = input`, `input.x` | the member's type in the interface, same file or imported                                                                                                                                                                                                                                                                                                     |
+| `f({ x }: Named)`                                         | the same, element by element, renames kept                                                                                                                                                                                                                                                                                                                    |
+| `const s = await this.svc.method(a)`                      | the followed body's **declared return type**; unannotated, its `return`s when every one is a store access, `new Store()` or a call that resolves to one — two stores, or one nobody can read: nothing                                                                                                                                                         |
+| `c ? A : B`, `A ?? B`, `A \|\| B`                         | the store when every non-null branch is the same one                                                                                                                                                                                                                                                                                                          |
+| `auth.user`, `auth.getUserOrFail()`                       | the model `config/auth.ts` names in its provider — read, never assumed                                                                                                                                                                                                                                                                                        |
+| `const pasta = documento.pasta`                           | the declared relation's target, not the row's store (`pasta.save()` had been billed to `Documento`); a plain field is no store                                                                                                                                                                                                                                |
+| `for (const x of rows)`, `for (const x of parent.rel)`    | a row of the rows' store, or of the relation's target                                                                                                                                                                                                                                                                                                         |
+| `rows.map((x) => …)`, `forEach`, `filter`, `find`…        | the callback's parameter is a row; `rows.find(…)`, `rows.filter(…)[0]` are one row                                                                                                                                                                                                                                                                            |
+| `let x: Store`, assigned later                            | the declared type                                                                                                                                                                                                                                                                                                                                             |
+| `const svc = await app.container.make(X)`, `new X()`      | an instance of X — its methods are followed as a constructor-injected property's are                                                                                                                                                                                                                                                                          |
+| `const items = await order.pendingItems().forUpdate()`    | a method the **model declares** is application code: its return annotation (`typeof Item`), or its returns when every one is `Item.query()…`, names the store; a builder chain after it hands the same rows on, an aggregate a number. Read from the innermost call outwards, so the model's method is seen before Lucid's API is assumed for the chain (0.9) |
 
 No type checker: the ts-morph project resolves no `#alias/…`, so `getType()` is
 `any` for almost every receiver, and the graph already resolves the call to its
@@ -785,6 +786,20 @@ decided — not before. The write such a job performs still makes its store
 maintained here (§6.5.4 asks who maintains the store, not which route), so an ILF
 pruned only by a scheduled job stays an ILF whatever the report says about the job.
 Fixture: `ace_commands`, one job per case (plan 0.7 §D).
+
+### A listener written inline is a listener; a string event is an event
+
+`emitter.on('order:closed', async function ({ orderId }) { … })` binds a **body**, not
+a class, to a **string**, not a class — and an application that binds every listener
+this way had none of them followed: the jobs they dispatch came out as "reached by no
+transaction" and their writes were nobody's FTR. Since 0.9 the inline function or
+arrow is a handler located by its line (as a route's inline closure already was),
+the string is a binding key, and `emitter.emit('order:closed', payload)` /
+`emitSerial` in a body reach those listeners — the same decision as
+`Event.dispatch()`: the effect belongs to the transaction that caused it. A name
+built at runtime binds nothing. `start/**` is scanned for bindings, since a preload
+lives there and no alias points at it. Fixture: `eventos_inline` (27 FP; the previous
+rule set said 13).
 
 ### An input that enumerates nothing is a floor, never a zero
 

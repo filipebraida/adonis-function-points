@@ -1,7 +1,10 @@
 import { Node, SyntaxKind } from 'ts-morph'
 import type { CallExpression } from 'ts-morph'
 
-import { resolveEventClass } from '../sources/event_bindings.js'
+import { eventKey, resolveEventClass } from '../sources/event_bindings.js'
+
+/** the emitter's ways of firing a string event */
+const EMITS = new Set(['emit', 'emitSerial'])
 import type { HandlerRef } from '../../types.js'
 import type { CallResolver, ResolverContext } from './types.js'
 
@@ -29,6 +32,22 @@ export const eventDispatchResolver: CallResolver = {
 
     const expression = call.getExpression()
     if (!expression.isKind(SyntaxKind.PropertyAccessExpression)) return []
+
+    /**
+     * `emitter.emit('order:closed', payload)`: a string event reaches the listeners bound
+     * to that name — the same decision as `Event.dispatch()`. A name built at runtime
+     * binds nothing.
+     */
+    if (EMITS.has(expression.getName())) {
+      const emitterNode = expression.getExpression()
+      const isEmitter = Node.isIdentifier(emitterNode)
+        ? emitterNode.getText() === 'emitter'
+        : Node.isPropertyAccessExpression(emitterNode) && emitterNode.getName() === 'emitter'
+      const name = call.getArguments()[0]
+      if (!isEmitter || !name || !Node.isStringLiteral(name)) return []
+      return ctx.eventBindings.get(eventKey(name.getLiteralValue())) ?? []
+    }
+
     if (expression.getName() !== 'dispatch') return []
 
     const receiver = expression.getExpression()

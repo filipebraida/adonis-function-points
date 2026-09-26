@@ -47,6 +47,8 @@ export function collectEventBindings(app: AppContext): EventBindings {
   })
 
   for (const root of app.scanRoots) project.addSourceFilesAtPaths(`${root}/**/*.ts`)
+  // `start/events.ts` at the root binds too, and `start/` is no alias root
+  project.addSourceFilesAtPaths(`${toPosix(app.root)}/start/**/*.ts`)
 
   const bindings: EventBindings = new Map()
 
@@ -59,13 +61,20 @@ export function collectEventBindings(app: AppContext): EventBindings {
       const [event, handlers] = call.getArguments()
       if (!event || !handlers) continue
 
-      const eventFile = resolveEventClass(event, file, app)
-      if (!eventFile) continue
+      /**
+       * `emitter.on('order:closed', …)`: a STRING event, keyed by its name, which
+       * `emitter.emit('order:closed', payload)` reaches. An application that binds every
+       * listener this way had none of them followed (plan 0.9 §C).
+       */
+      const key = Node.isStringLiteral(event)
+        ? eventKey(event.getLiteralValue())
+        : resolveEventClass(event, file, app)
+      if (!key) continue
 
       const refs = listenersOf(handlers, file, app)
       if (refs.length === 0) continue
 
-      bindings.set(eventFile, [...(bindings.get(eventFile) ?? []), ...refs])
+      bindings.set(key, [...(bindings.get(key) ?? []), ...refs])
     }
   }
 
@@ -105,6 +114,9 @@ export function resolveEventClass(
 }
 
 /** listener bodies named by the second argument of `emitter.on` */
+/** the binding key of a string event: `emitter.on('order:closed', …)` */
+export const eventKey = (name: string) => `event:${name}`
+
 function listenersOf(handlers: Node, from: SourceFile, app: SpecifierResolver): HandlerRef[] {
   const entries: Node[] = handlers.isKind(SyntaxKind.ArrayLiteralExpression)
     ? (handlers as ArrayLiteralExpression).getElements()
@@ -113,6 +125,15 @@ function listenersOf(handlers: Node, from: SourceFile, app: SpecifierResolver): 
   const refs: HandlerRef[] = []
 
   for (const entry of entries) {
+    /**
+     * `emitter.on(event, async function (payload) { … })`: the listener IS the body,
+     * located by its line — the way a route's inline closure already is a handler.
+     */
+    if (Node.isArrowFunction(entry) || Node.isFunctionExpression(entry)) {
+      refs.push({ file: toPosix(from.getFilePath()), line: entry.getStartLineNumber() })
+      continue
+    }
+
     /**
      * `[SomeListener, 'method']`: AdonisJS lets the binding name the method,
      * and taking `handle` on faith there would look for a body that is not
