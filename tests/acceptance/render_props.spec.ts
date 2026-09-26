@@ -16,18 +16,20 @@ import { appFixturePath } from '../helpers.js'
  * fixture asserts DETs and their origin.
  */
 const REFERENCE = {
-  total: 52,
+  total: 62,
   functions: {
     'Produto': { type: 'ILF', det: 5, refs: 1, fp: 7 },
     'Fornecedor': { type: 'EIF', det: 2, refs: 1, fp: 5 },
     'Usuario': { type: 'EIF', det: 2, refs: 1, fp: 5 },
     'GET /produtos': { type: 'EO', det: 10, refs: 2, fp: 5 },
     'GET /produtos/:param': { type: 'EO', det: 7, refs: 2, fp: 5 },
+    'GET /produtos/pagina': { type: 'EO', det: 9, refs: 2, fp: 5 },
     'GET /produtos/resumo': { type: 'EO', det: 2, refs: 1, fp: 4 },
     'GET /produtos/destaques': { type: 'EO', det: 8, refs: 2, fp: 5 },
     'GET /produtos/exportar': { type: 'EO', det: 5, refs: 1, fp: 4 },
     'GET /produtos/manifesto': { type: 'EO', det: 1, refs: 1, fp: 4 },
     'GET /produtos/:param/editar': { type: 'EO', det: 6, refs: 2, fp: 5 },
+    'GET /produtos/:param/relacionados': { type: 'EO', det: 10, refs: 2, fp: 5 },
     'POST /produtos': { type: 'EI', det: 4, refs: 1, fp: 3 },
   },
 } as const
@@ -128,11 +130,11 @@ test.group('delivery: what each DET is', () => {
     const result = await countFixture()
     const manifesto = fn(result, 'GET /produtos/manifesto')
 
-    assert.deepEqual(manifesto.rationale.detSources, ['render:<gerarManifesto()> (opaque)'])
+    assert.deepEqual(manifesto.rationale.detSources, ['render:<renderManifesto()> (opaque)'])
     assert.equal(manifesto.refs, 1, 'the count was read: an FTR, not delivered')
     const block = result.confidence.warnings.join('\n')
     assert.include(block, 'deliver a value the analysis cannot read')
-    assert.include(block, 'GET /produtos/manifesto: <gerarManifesto()>')
+    assert.include(block, 'GET /produtos/manifesto: <renderManifesto()>')
     assert.notInclude(block, 'GET /produtos/exportar', 'the CSV over products is readable')
   })
 
@@ -150,6 +152,28 @@ test.group('delivery: what each DET is', () => {
     assert.notInclude(destaques.rationale.detSources.join(' '), '(opaque)')
   })
 
+  /**
+   * `const { data, meta } = await q.handle()` → `{ produtos: data, pagina: meta.pagina }`:
+   * `data` is one key of what the call returns — the rows — and `meta.pagina` one
+   * value; `meta.porPagina` was returned and not delivered. A home page doing this
+   * had stayed at 1 DET.
+   */
+  test('a key destructured from a followed call delivers that key of its return, classified', async ({
+    assert,
+  }) => {
+    const pagina = fn(await countFixture(), 'GET /produtos/pagina')
+    const sources = pagina.rationale.detSources
+
+    assert.includeMembers(sources, [
+      'request:pagina',
+      'render:pagina',
+      'output:Produto.nome',
+      'output:Fornecedor.nome',
+    ])
+    assert.notInclude(sources.join(' '), 'porPagina', 'returned, not delivered')
+    assert.notInclude(sources.join(' '), '(opaque)')
+  })
+
   /** `inertia.modal` is `render` by another name; a mapped literal contributes its leaves once */
   test('a mapped literal built in the controller contributes its leaves, once', async ({
     assert,
@@ -163,6 +187,69 @@ test.group('delivery: what each DET is', () => {
       'render:fornecedores.nome',
     ])
     assert.notInclude(editar.rationale.detSources.join(' '), 'output:Fornecedor', 'not the table')
+  })
+})
+
+test.group('delivery: the third recount', () => {
+  /**
+   * A query object whose helpers are functions of its own file: `proximos()` reads
+   * Produto and Fornecedor (FTRs of this route), `paraCard` shapes a row and is
+   * mapped by reference. A news page had counted its related items as two whole
+   * tables because the local call was followed by nobody.
+   */
+  test('a local function is followed: its reads are FTRs, its literal is what a `.map(fn)` delivers', async ({
+    assert,
+  }) => {
+    const relacionados = fn(await countFixture(), 'GET /produtos/:param/relacionados')
+    const sources = relacionados.rationale.detSources
+
+    assert.equal(relacionados.refs, 2, 'Produto and Fornecedor, read inside proximos()')
+    assert.includeMembers(sources, [
+      'render:itens.nome',
+      'render:itens.preco',
+      'render:itens.fornecedor',
+    ])
+    assert.notInclude(sources.join(' '), 'output:', 'the literal, not the tables')
+    assert.notInclude(sources.join(' '), '(opaque)')
+  })
+
+  /** Lucid's meta is four values the page can show; the URLs and the constant first page are not attributes */
+  test('`paginator.getMeta()` delivers total, perPage, currentPage and lastPage', async ({
+    assert,
+  }) => {
+    const sources = fn(await countFixture(), 'GET /produtos/:param/relacionados').rationale
+      .detSources
+
+    assert.includeMembers(sources, [
+      'render:meta.total',
+      'render:meta.perPage',
+      'render:meta.currentPage',
+      'render:meta.lastPage',
+    ])
+    assert.notInclude(sources.join(' '), 'firstPage')
+    assert.notInclude(sources.join(' '), 'Url')
+  })
+
+  /** `{ [STATUS.A]: n, [STATUS.B]: m }` is a map: one repeating attribute, whatever the number of keys */
+  test('a literal with computed keys is one repeating attribute', async ({ assert }) => {
+    const sources = fn(await countFixture(), 'GET /produtos/:param/relacionados').rationale
+      .detSources
+
+    assert.include(sources, 'render:porCategoria.*')
+    assert.lengthOf(
+      sources.filter((s) => s.startsWith('render:porCategoria')),
+      1,
+      'not one per key'
+    )
+  })
+
+  /** `categoria?.trim() ?? null` is still the input: counted once, on entry */
+  test('an echo stays an echo through a default and a format call', async ({ assert }) => {
+    const sources = fn(await countFixture(), 'GET /produtos/:param/relacionados').rationale
+      .detSources
+
+    assert.include(sources, 'request:categoria')
+    assert.notInclude(sources.join(' '), 'filtros', 'echoed input is not counted twice')
   })
 })
 

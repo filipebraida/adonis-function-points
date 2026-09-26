@@ -3,6 +3,7 @@ import type { CallResolver } from './types.js'
 import { actionObjectResolver } from './action_object.js'
 import { eventDispatchResolver } from './event_dispatch.js'
 import { jobDispatchResolver } from './job_dispatch.js'
+import { localFunctionResolver } from './local_function.js'
 import { moduleFunctionResolver } from './module_function.js'
 import { propertyServiceResolver } from './property_service.js'
 import { sameClassMethodResolver } from './same_class_method.js'
@@ -26,6 +27,7 @@ export const BUILTIN_CALL_RESOLVERS: CallResolver[] = [
   transformerResolver, //     18  InviteTransformer.transform(invite)
   staticServiceResolver, //    20  await UserService.create(payload)
   propertyServiceResolver, //  30  await this.users.create(payload)
+  localFunctionResolver, //    45  await proximos(id) — declared in the same file
   moduleFunctionResolver, //   50  await createUser(payload)
 ]
 

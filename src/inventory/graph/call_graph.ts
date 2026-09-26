@@ -17,9 +17,9 @@ import { BUILTIN_CALL_RESOLVERS, isTechnicalWrite, resolveCall } from '../resolv
 import { isApplicationCode, isSeeder, toPosix } from '../paths.js'
 import type { EventBindings } from '../sources/event_bindings.js'
 import { isIterationCall, isNoise, isNoiseMember } from './noise.js'
-import { chainShapeOf, outputFieldsIn, returnedLeavesOf } from './output_fields.js'
+import { chainShapeOf, outputFieldsIn } from './output_fields.js'
 import type { StoreRead } from './output_fields.js'
-import { deliveriesIn } from './deliveries.js'
+import { PASSES_ROWS, deliveriesIn } from './deliveries.js'
 import type { Delivery } from './deliveries.js'
 import type { CallResolver, ResolverContext } from '../resolvers/types.js'
 import type { HandlerRef, TraceStep, UnresolvedCall } from '../../types.js'
@@ -452,8 +452,6 @@ type BodyFacts = {
   transformed: string | null
   /** how the read chains of this body read each store */
   reads: StoreRead[]
-  /** the leaves of an object literal this body returns — what a delivered call hands on */
-  returnLeaves: { leaves: string[]; opaque: string[] } | null
   /** what this body hands to a renderer or a response, and what its `return` hands back */
   deliveries: import('./deliveries.js').BodyDeliveries
   followUps: { ref: HandlerRef; by: string; technical?: boolean }[]
@@ -756,7 +754,6 @@ export function createAnalyzer(
      */
     const followed = (c: CallExpression) => followedCalls.has(c)
     const output = outputFieldsIn(body, owner, storesByName, followed)
-    const returnLeaves = output.outputs.length > 0 ? null : returnedLeavesOf(body, followed)
     const deliveries = deliveriesIn({
       body,
       file,
@@ -777,7 +774,6 @@ export function createAnalyzer(
       opaqueOutputs: output.opaqueOutputs,
       transformed: output.resource,
       reads,
-      returnLeaves,
       deliveries,
       bodyHash: hashOf(body),
     }
@@ -935,7 +931,14 @@ export function createAnalyzer(
       return found
     }
 
-    const deliver = (item: Delivery, depth: number) => {
+    /**
+     * A delivered call hands on what its body RETURNS — classified, so a returned
+     * `{ data: rows, meta }` delivers the rows' store and the meta's leaves, not
+     * one DET per key. `pick` keeps one key of it: `const { data } = …`,
+     * `resultado.linhas`. Bounded by depth like the walk, and by a seen set so a
+     * body returning itself cannot loop.
+     */
+    const deliver = (item: Delivery, depth: number, seen = new Set<string>()) => {
       switch (item.kind) {
         case 'store':
           deliveredStores.add(item.store)
@@ -949,8 +952,13 @@ export function createAnalyzer(
           deliveredOpaque.add(`${item.path ? `${item.path}.` : ''}<${item.expression}>`)
           return
         case 'call': {
+          if (depth > maxDepth + 2) return
           let resolved = false
           for (const ref of item.refs) {
+            // the same body may be delivered at two paths (`...paraLinha(x)` and `relacionadas: xs.map(paraLinha)`); a cycle is stopped by depth
+            const key = `${ref.file}#${ref.member ?? ref.line ?? '*'}#${item.pick ?? ''}#${item.path}`
+            if (seen.has(key)) continue
+            seen.add(key)
             const facts = factsFor(ref)
             if (!facts) continue
             // a transformer: its keys are the output already, through the body the graph follows
@@ -958,13 +966,46 @@ export function createAnalyzer(
               resolved = true
               continue
             }
-            if (facts.returnLeaves && facts.returnLeaves.leaves.length > 0) {
-              const prefix = item.path ? `${item.path}.` : ''
-              for (const leaf of facts.returnLeaves.leaves) deliveredFields.add(`${prefix}${leaf}`)
-              for (const leaf of facts.returnLeaves.opaque) deliveredOpaque.add(`${prefix}${leaf}`)
+            const returned = facts.deliveries.returns.filter(
+              (r) => !item.pick || r.path === item.pick || r.path.startsWith(`${item.pick}.`)
+            )
+            /**
+             * `egresso.curso` where the body returns the row itself (`return
+             * Egresso.query()…first()`, path ''): the pick lands INSIDE a returned
+             * value — one field of a store is one value; one key of a returned call
+             * is that call picked deeper.
+             */
+            if (item.pick && returned.length === 0) {
+              const above = facts.deliveries.returns.filter(
+                (r) => r.path === '' || item.pick!.startsWith(`${r.path}.`)
+              )
+              for (const r of above) {
+                const rest = r.path ? item.pick.slice(r.path.length + 1) : item.pick
+                if (r.kind === 'call')
+                  deliver({ ...r, path: item.path, pick: rest }, depth + 1, seen)
+                else if (r.kind === 'store' || r.kind === 'scalar')
+                  deliveredFields.add(item.path || '<value>')
+              }
+              if (above.length > 0) {
+                resolved = true
+                continue
+              }
+            }
+            /**
+             * A return the classifier could not read at all (`rows.map(…).join(…)`)
+             * says nothing about what leaves; what the body read, or what was handed
+             * into it, says more — so it does not count as resolved.
+             */
+            if (returned.length > 0 && returned.some((r) => r.kind !== 'opaque')) {
+              for (const r of returned) {
+                const rest = item.pick ? r.path.slice(item.pick.length).replace(/^\./, '') : r.path
+                const path = [item.path, rest].filter(Boolean).join('.')
+                deliver({ ...r, path } as Delivery, depth + 1, seen)
+              }
               resolved = true
               continue
             }
+            if (item.pick) continue
             const read = storesReadBy(ref, depth + 1)
             if (read.size > 0) {
               for (const store of read) deliveredStores.add(store)
@@ -973,12 +1014,21 @@ export function createAnalyzer(
           }
           if (resolved) return
           /**
+           * `const { confidenciais } = await this.contar()` where the body's return
+           * is unreadable: one KEY of it, named — one value, not an opaque floor.
+           * Only a key that carries rows on (`data`, `rows`) stays unreadable.
+           */
+          if (item.pick && !PASSES_ROWS.has(item.pick.split('.')[0])) {
+            deliveredFields.add(item.path || '<value>')
+            return
+          }
+          /**
            * The body returned no literal and read no store — a CSV builder, a
            * formatter over rows handed in. The document it built carries what it
            * received, so the rows' stores leave. Nothing handed in: opaque.
            */
           if (item.args.length > 0) {
-            for (const argument of item.args) deliver(argument, depth)
+            for (const argument of item.args) deliver(argument, depth, seen)
             return
           }
           deliveredOpaque.add(`${item.path ? `${item.path}.` : ''}<${item.expression}>`)
@@ -1162,6 +1212,13 @@ function findBody(file: SourceFile, ref: HandlerRef): Node | null {
     }
     const fn = file.getFunction(ref.member)
     if (fn) return fn
+    // `const paraLinha = (row) => …` at module level: a function by another declaration
+    const initializer = file.getVariableDeclaration(ref.member)?.getInitializer()
+    if (
+      initializer &&
+      (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))
+    )
+      return initializer
     return null
   }
 

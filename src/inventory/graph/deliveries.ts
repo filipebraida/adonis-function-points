@@ -1,5 +1,5 @@
 import { Node, SyntaxKind } from 'ts-morph'
-import type { CallExpression, Expression, SourceFile } from 'ts-morph'
+import type { CallExpression, Expression, Identifier, SourceFile, Type } from 'ts-morph'
 
 import { detectAccess, rootSymbolOf } from '../detectors/lucid.js'
 import type { RelationMap, StoreSymbols } from '../detectors/lucid.js'
@@ -31,7 +31,19 @@ export type Delivery =
    * `args` are the call's arguments, classified — a body that returns no literal
    * and reads no store (a CSV builder) delivers what was handed INTO it.
    */
-  | { kind: 'call'; refs: HandlerRef[]; path: string; expression: string; args: Delivery[] }
+  | {
+      kind: 'call'
+      refs: HandlerRef[]
+      path: string
+      expression: string
+      args: Delivery[]
+      /**
+       * One key of what the call returns — `const { data } = await q.handle()`,
+       * `relatorio.linhas` — rather than the whole result. Resolved against the
+       * body's classified return, keeping only that key.
+       */
+      pick?: string
+    }
   /** a scalar, a property, an expression: one DET */
   | { kind: 'scalar'; path: string }
   /** an input echoed back — the validated payload, a field read off the request: counts once, on entry */
@@ -46,6 +58,15 @@ const RENDER_METHODS = new Set(['render', 'modal'])
 const RESPONSE_METHODS = new Set(['json', 'ok', 'created', 'accepted', 'send'])
 /** `x.data`, `x.rows` on a paginated / wrapped result hand the collection on */
 const PASSES_THROUGH = new Set(['data', 'rows', 'all', 'toJSON', 'serialize'])
+/** keys of a result that carry its rows: picking one of these is not picking one value */
+export const PASSES_ROWS = new Set(['data', 'rows', 'items', 'results', 'list', 'linhas', 'itens'])
+/** properties of a result that are one value, not its rows */
+const SCALAR_PROPS = new Set(['length', 'size', 'total', 'count'])
+/**
+ * What Lucid's `paginator.getMeta()` says that a page can show. The URLs are
+ * navigation and `firstPage` a constant: neither is a user-recognisable attribute.
+ */
+const PAGINATOR_META = ['total', 'perPage', 'currentPage', 'lastPage']
 /** methods that return the same collection, or one of its rows: what leaves is the receiver */
 const SAME_COLLECTION = new Set([
   'slice',
@@ -65,6 +86,69 @@ const SAME_COLLECTION = new Set([
 ])
 /** reads of the request whose result echoes input already counted on entry */
 const ECHOES_INPUT = new Set(['validateUsing', 'input', 'only', 'all', 'body', 'qs', 'params'])
+/** Inertia's lazy props: `inertia.defer(() => q.handle())` — the callback's value is what leaves */
+const INERTIA_LAZY = new Set(['defer', 'lazy', 'optional', 'always', 'merge', 'scroll', 'once'])
+/** a yes/no: an authorisation check, a membership test */
+const BOOLEAN_METHODS = new Set([
+  'allows',
+  'denies',
+  'can',
+  'cannot',
+  'includes',
+  'has',
+  'startsWith',
+  'endsWith',
+  'test',
+])
+/** a value formatted: still one value */
+const FORMAT_METHODS = new Set([
+  'join',
+  'toString',
+  'toISO',
+  'toISODate',
+  'toISOTime',
+  'toISOString',
+  'toFormat',
+  'toRFC2822',
+  'toHTTP',
+  'toSQL',
+  'toLocaleString',
+  'toLocaleDateString',
+  'toFixed',
+  'toUnixInteger',
+  'toMillis',
+  'trim',
+  'toUpperCase',
+  'toLowerCase',
+  'padStart',
+  'padEnd',
+  'replace',
+  'slice',
+  'substring',
+])
+/** framework services whose calls hand back one value: a translation, a session key, a URL */
+const SCALAR_SERVICES = new Set([
+  'i18n',
+  'session',
+  'env',
+  'router',
+  'encryption',
+  'hash',
+  'config',
+  'app',
+])
+/** built-ins whose static calls are one value or a constant list: `Object.values(Enum)`, `JSON.stringify(x)` */
+const NATIVE_GLOBALS = new Set([
+  'Object',
+  'Array',
+  'JSON',
+  'Math',
+  'Number',
+  'String',
+  'Boolean',
+  'Date',
+  'Intl',
+])
 
 export type DeliveryContext = {
   body: Node
@@ -185,12 +269,19 @@ function classify(
 ): void {
   if (!value || depth > 6) return
 
+  // `return null`, `return undefined`: nothing leaves on that path
+  if (value.getKind() === SyntaxKind.NullKeyword) return
+  if (Node.isIdentifier(value) && value.getText() === 'undefined') return
+
   if (Node.isObjectLiteralExpression(value)) {
     for (const property of value.getProperties()) {
       if (Node.isShorthandPropertyAssignment(property)) {
         classify(property.getNameNode(), join(path, property.getName()), ctx, out, depth + 1)
       } else if (Node.isPropertyAssignment(property)) {
-        const name = property.getName().replace(/^['"]|['"]$/g, '')
+        // `{ [STATUS.A]: n, [STATUS.B]: m }`: a map — one repeating attribute, not one per key
+        const name = Node.isComputedPropertyName(property.getNameNode())
+          ? '*'
+          : property.getName().replace(/^['"]|['"]$/g, '')
         classify(unwrap(property.getInitializer()), join(path, name), ctx, out, depth + 1)
       } else if (Node.isSpreadAssignment(property)) {
         classify(unwrap(property.getExpression()), path, ctx, out, depth + 1)
@@ -233,9 +324,25 @@ function classify(
       out.push({ kind: 'store', store: ctx.symbols.get(name)!, path })
       return
     }
-    const initializer = initializerOf(name, ctx.body)
-    if (initializer) {
-      classify(initializer, path, ctx, out, depth + 1)
+    const bound = bindingOf(name, ctx.body)
+    if (bound) {
+      // `const { data } = await q.handle()`: one key of what the call returns
+      if (bound.pick && Node.isCallExpression(bound.initializer)) {
+        classifyCall(bound.initializer, path, ctx, out, depth + 1, bound.pick)
+        return
+      }
+      if (bound.pick && Node.isObjectLiteralExpression(bound.initializer)) {
+        const picked = bound.initializer.getProperty(bound.pick)
+        if (picked && Node.isPropertyAssignment(picked)) {
+          classify(unwrap(picked.getInitializer()), path, ctx, out, depth + 1)
+          return
+        }
+        if (picked && Node.isShorthandPropertyAssignment(picked)) {
+          classify(picked.getNameNode(), path, ctx, out, depth + 1)
+          return
+        }
+      }
+      classify(bound.initializer, path, ctx, out, depth + 1)
       return
     }
     if (isEchoBinding(name, ctx.body)) {
@@ -247,6 +354,46 @@ function classify(
   }
 
   if (Node.isCallExpression(value)) {
+    classifyCall(value, path, ctx, out, depth)
+    return
+  }
+
+  if (Node.isPropertyAccessExpression(value) || Node.isElementAccessExpression(value)) {
+    classifyAccess(value, path, ctx, out, depth)
+    return
+  }
+
+  if (Node.isAwaitExpression(value)) {
+    classify(unwrap(value.getExpression()), path, ctx, out, depth + 1)
+    return
+  }
+
+  // `q ?? null`, `page || 1`: the value with a default — the default says nothing; `a && b`: b
+  if (Node.isBinaryExpression(value)) {
+    const operator = value.getOperatorToken().getKind()
+    if (operator === SyntaxKind.QuestionQuestionToken || operator === SyntaxKind.BarBarToken) {
+      classify(unwrap(value.getLeft()), path, ctx, out, depth + 1)
+      return
+    }
+    if (operator === SyntaxKind.AmpersandAmpersandToken) {
+      classify(unwrap(value.getRight()), path, ctx, out, depth + 1)
+      return
+    }
+  }
+
+  // literals, template strings, arithmetic, comparisons, `new Date()`: one value leaves
+  out.push({ kind: 'scalar', path })
+}
+
+function classifyCall(
+  value: CallExpression,
+  path: string,
+  ctx: DeliveryContext,
+  out: Delivery[],
+  depth: number,
+  pick?: string
+): void {
+  {
     const callee = value.getExpression()
     const method = Node.isPropertyAccessExpression(callee) ? callee.getName() : ''
 
@@ -265,8 +412,25 @@ function classify(
       classify(mapped, path, ctx, out, depth + 1)
       return
     }
-    if (method === 'map') {
-      out.push({ kind: 'scalar', path })
+    if (method === 'map' && Node.isPropertyAccessExpression(callee)) {
+      classifyMapped(value, callee.getExpression(), path, ctx, out, depth)
+      return
+    }
+
+    // `paginator.all()`, `result.toJSON()`: the same value, unwrapped
+    if (
+      Node.isPropertyAccessExpression(callee) &&
+      PASSES_THROUGH.has(method) &&
+      value.getArguments().length === 0
+    ) {
+      classify(unwrap(callee.getExpression()), path, ctx, out, depth + 1)
+      return
+    }
+
+    // Lucid's pagination meta: four values the page can show, or the one picked
+    if (method === 'getMeta' && value.getArguments().length === 0) {
+      if (pick) out.push({ kind: 'scalar', path })
+      else for (const key of PAGINATOR_META) out.push({ kind: 'scalar', path: join(path, key) })
       return
     }
 
@@ -276,11 +440,33 @@ function classify(
       return
     }
 
+    // `inertia.defer(() => q.handle())`: the callback's value, delivered later
+    if (
+      Node.isPropertyAccessExpression(callee) &&
+      INERTIA_LAZY.has(method) &&
+      RENDERERS.has(lastSegmentOf(callee.getExpression()))
+    ) {
+      const callback = unwrap(value.getArguments()[0])
+      const body = callbackValueOf(callback)
+      if (body) classify(body, path, ctx, out, depth + 1)
+      else out.push({ kind: 'scalar', path })
+      return
+    }
+
     const args: Delivery[] = []
     for (const argument of value.getArguments())
       classify(unwrap(argument), path, ctx, args, depth + 1)
     /** only what carries rows matters for a fallback: a scalar argument is a parameter, not an output */
     const carried = args.filter((item) => item.kind === 'store' || item.kind === 'call')
+
+    // `env.get('APP_URL')`, `i18n.t('key')`: a framework service hands back one value — a strategy may have "followed" it into `#start/env`, where there is no body
+    if (Node.isPropertyAccessExpression(callee)) {
+      const root = chainRootOf(callee.getExpression())
+      if (root && SCALAR_SERVICES.has(root)) {
+        out.push({ kind: 'scalar', path })
+        return
+      }
+    }
 
     const refs = ctx.followed.get(value)
     if (refs && refs.length > 0) {
@@ -290,6 +476,7 @@ function classify(
         path,
         expression: value.getText().replace(/\s+/g, '').slice(0, 60),
         args: carried,
+        ...(pick ? { pick } : {}),
       })
       return
     }
@@ -302,8 +489,16 @@ function classify(
       return
     }
 
-    // `.length`-like scalars off a call, `Number(x)`, `String(x)`
-    if (Node.isIdentifier(callee) && /^(Number|String|Boolean|Math|Date)$/.test(callee.getText())) {
+    // `Number(x)`, `String(x)`, `Object.values(Enum)`, `JSON.stringify(x)`: one value, or a constant list
+    if (Node.isIdentifier(callee) && NATIVE_GLOBALS.has(callee.getText())) {
+      out.push({ kind: 'scalar', path })
+      return
+    }
+    if (
+      Node.isPropertyAccessExpression(callee) &&
+      Node.isIdentifier(callee.getExpression()) &&
+      NATIVE_GLOBALS.has(callee.getExpression().getText())
+    ) {
       out.push({ kind: 'scalar', path })
       return
     }
@@ -318,67 +513,349 @@ function classify(
       return
     }
 
-    out.push({ kind: 'opaque', path, expression: value.getText().replace(/\s+/g, '').slice(0, 60) })
-    return
-  }
-
-  if (Node.isPropertyAccessExpression(value) || Node.isElementAccessExpression(value)) {
-    const root = rootSymbolOf(value)
-    const property = Node.isPropertyAccessExpression(value) ? value.getName() : ''
-
-    // `resultado.data`, `paginado.rows`: the collection a followed call produced, handed on
-    if (root && PASSES_THROUGH.has(property)) {
-      const initializer = initializerOf(root, ctx.body)
-      if (initializer && Node.isCallExpression(initializer)) {
-        const refs = ctx.followed.get(initializer)
-        if (refs && refs.length > 0) {
-          out.push({
-            kind: 'call',
-            refs,
-            path,
-            expression: initializer.getText().replace(/\s+/g, '').slice(0, 60),
-            args: [],
-          })
-          return
-        }
-        const access = detectAccess(initializer, ctx.symbols, ctx.relations)
-        if (access) {
-          out.push({ kind: 'store', store: access.store, path })
+    /**
+     * `startDate?.toISOString()`, `categoria.trim()`: a call ON a value the body
+     * holds is that value formatted — an echo stays an echo, a store's field one
+     * field. Only when the root itself resolves to nothing else is the call read
+     * on its own.
+     */
+    if (Node.isPropertyAccessExpression(callee)) {
+      const root = chainRootOf(callee.getExpression())
+      if (root && ctx.symbols.has(root)) {
+        out.push({ kind: 'scalar', path })
+        return
+      }
+      if (root && root !== 'this') {
+        const rootNode = rootIdentifierOf(callee.getExpression())
+        const held: Delivery[] = []
+        if (rootNode) classify(rootNode, path, ctx, held, depth + 1)
+        if (held.length > 0 && held.every((item) => item.kind === 'echo')) {
+          out.push({ kind: 'echo', path })
           return
         }
       }
-      if (root && ctx.symbols.has(root)) {
-        out.push({ kind: 'store', store: ctx.symbols.get(root)!, path })
+    }
+
+    /**
+     * `rows.map(…).join('\n')` in a body whose parameter is `rows`: the whole input
+     * transformed, so the input says what leaves — the caller's arguments decide,
+     * and the body itself says nothing. `noticia.publicadaEm?.toISO()` on that
+     * parameter is one FIELD of it, and stays one value below.
+     */
+    if (Node.isPropertyAccessExpression(callee) && transformsParameter(callee, ctx.body)) {
+      out.push({
+        kind: 'opaque',
+        path,
+        expression: value.getText().replace(/\s+/g, '').slice(0, 60),
+      })
+      return
+    }
+
+    if (Node.isPropertyAccessExpression(callee)) {
+      /**
+       * `comunicado.enviadoEm!.toISODate()`, `(a ?? b).toRFC2822()`: a FIELD read off
+       * the chain, or an expression, then a method — one value. A chain rooted at
+       * `this` (`this.service.find()`) is a call into a service, and not this.
+       */
+      if (readsField(callee.getExpression())) {
+        out.push({ kind: 'scalar', path })
+        return
+      }
+      // `bouncer.with(P).allows('create')`, `x.toISO()`: a yes/no or a value formatted
+      if (BOOLEAN_METHODS.has(method) || FORMAT_METHODS.has(method)) {
+        out.push({ kind: 'scalar', path })
         return
       }
     }
 
-    // a field of a validated payload, or of the request
-    if (root && (isEchoBinding(root, ctx.body) || root === 'request' || root === 'params')) {
-      out.push({ kind: 'echo', path })
+    // a call whose declared return type is a primitive: one value, named by its key — not opaque
+    if (returnsPrimitive(value)) {
+      out.push({ kind: 'scalar', path })
       return
     }
 
-    out.push({ kind: 'scalar', path })
+    out.push({ kind: 'opaque', path, expression: value.getText().replace(/\s+/g, '').slice(0, 60) })
+  }
+}
+
+/**
+ * `xs.map(cb)` with no literal in the callback: what the callback RETURNS,
+ * once — a function passed by reference (`rows.map(paraLinha)`) is a call to
+ * that function over the rows; an expression body (`(m) => new T(m).toObject()`)
+ * is classified as if it were the value; anything else is one repeating attribute.
+ */
+function classifyMapped(
+  value: CallExpression,
+  receiver: Expression,
+  path: string,
+  ctx: DeliveryContext,
+  out: Delivery[],
+  depth: number
+): void {
+  const callback = unwrap(value.getArguments()[0])
+
+  // `rows.map(paraLinha)`: the strategies followed the function named — a call to it over the rows
+  const refs = ctx.followed.get(value)
+  if (callback && Node.isIdentifier(callback) && refs && refs.length > 0) {
+    const rows: Delivery[] = []
+    classify(unwrap(receiver), path, ctx, rows, depth + 1)
+    out.push({
+      kind: 'call',
+      refs,
+      path,
+      expression: value.getText().replace(/\s+/g, '').slice(0, 60),
+      args: rows.filter((item) => item.kind === 'store' || item.kind === 'call'),
+    })
     return
   }
 
-  if (Node.isAwaitExpression(value)) {
-    classify(unwrap(value.getExpression()), path, ctx, out, depth + 1)
+  const body = callbackValueOf(callback)
+  if (body) {
+    classify(body, path, ctx, out, depth + 1)
     return
   }
 
-  // literals, template strings, arithmetic, comparisons, `new Date()`: one value leaves
   out.push({ kind: 'scalar', path })
+}
+
+/** the value a callback hands back: an expression body, or the one `return` of a block */
+function callbackValueOf(callback: Expression | null): Expression | null {
+  if (!callback || !(Node.isArrowFunction(callback) || Node.isFunctionExpression(callback)))
+    return null
+  const body = callback.getBody()
+  if (!Node.isBlock(body)) return unwrap(body)
+  const returns = body.getStatements().filter(Node.isReturnStatement)
+  return returns.length === 1 ? unwrap(returns[0].getExpression()) : null
+}
+
+/**
+ * Does this chain read a property (not a method) or hold an expression before
+ * the method is applied? `comunicado.enviadoEm.toISO()` does; `rows.map(f).join()`
+ * does not; a chain rooted at `this` is a service, and does not.
+ */
+function readsField(node: Node): boolean {
+  let current: Node | undefined = node
+  for (let depth = 0; current && depth < 40; depth++) {
+    if (Node.isCallExpression(current)) {
+      const inner: Node = current.getExpression()
+      current = Node.isPropertyAccessExpression(inner) ? inner.getExpression() : inner
+      continue
+    }
+    if (Node.isAwaitExpression(current) || Node.isNonNullExpression(current)) {
+      current = current.getExpression()
+      continue
+    }
+    if (Node.isParenthesizedExpression(current)) {
+      const inner = unwrap(current.getExpression())
+      if (!inner) return false
+      if (Node.isBinaryExpression(inner) || Node.isConditionalExpression(inner)) return true
+      current = inner
+      continue
+    }
+    if (Node.isPropertyAccessExpression(current) || Node.isElementAccessExpression(current)) {
+      return chainRootOf(current) !== 'this'
+    }
+    return false
+  }
+  return false
+}
+
+/**
+ * Is this chain a method (or methods) applied to a plain parameter of the body,
+ * with no field read in between? `rows.map(f).join(s)` is; `noticia.capa?.toISO()`
+ * reads a field first and is not.
+ */
+function transformsParameter(
+  callee: import('ts-morph').PropertyAccessExpression,
+  body: Node
+): boolean {
+  let current: Node | undefined = callee.getExpression()
+  for (let depth = 0; current && depth < 40; depth++) {
+    if (Node.isCallExpression(current)) {
+      const inner: Node = current.getExpression()
+      // the method of that call, then its receiver
+      current = Node.isPropertyAccessExpression(inner) ? inner.getExpression() : inner
+      continue
+    }
+    if (
+      Node.isAwaitExpression(current) ||
+      Node.isParenthesizedExpression(current) ||
+      Node.isNonNullExpression(current)
+    ) {
+      current = current.getExpression()
+      continue
+    }
+    // a property read off the chain, not a method: one field of the input
+    if (Node.isPropertyAccessExpression(current) || Node.isElementAccessExpression(current))
+      return false
+    if (!Node.isIdentifier(current)) return false
+    const name = current.getText()
+    return (
+      Node.isParametered(body) &&
+      body
+        .getParameters()
+        .some((p) => Node.isIdentifier(p.getNameNode()) && p.getNameNode().getText() === name)
+    )
+  }
+  return false
+}
+
+/** the identifier node a chain is rooted at: `startDate?.toISOString` -> `startDate` */
+function rootIdentifierOf(node: Node): Identifier | null {
+  let current: Node | undefined = node
+  for (let depth = 0; current && depth < 40; depth++) {
+    if (
+      Node.isCallExpression(current) ||
+      Node.isPropertyAccessExpression(current) ||
+      Node.isElementAccessExpression(current) ||
+      Node.isAwaitExpression(current) ||
+      Node.isParenthesizedExpression(current) ||
+      Node.isNonNullExpression(current)
+    ) {
+      current = current.getExpression()
+      continue
+    }
+    return Node.isIdentifier(current) ? current : null
+  }
+  return null
+}
+
+/** the call's declared return type, `Promise<…>` unwrapped, is a boolean, string, number or a union of those */
+function returnsPrimitive(call: CallExpression): boolean {
+  try {
+    let type: Type = call.getReturnType()
+    if (type.getSymbol()?.getName() === 'Promise') type = type.getTypeArguments()[0] ?? type
+    const primitive = (t: Type) =>
+      t.isBoolean() ||
+      t.isBooleanLiteral() ||
+      t.isString() ||
+      t.isStringLiteral() ||
+      t.isNumber() ||
+      t.isNumberLiteral() ||
+      t.isEnumLiteral() ||
+      t.isNull() ||
+      t.isUndefined()
+    if (type.isUnion()) {
+      const members = type.getUnionTypes()
+      return (
+        members.length > 0 &&
+        members.every(primitive) &&
+        !members.every((t) => t.isNull() || t.isUndefined())
+      )
+    }
+    return primitive(type)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * `x.data`, `resultado.linhas`, `rows[0]`: a part of a value the body holds.
+ *
+ *   on a variable bound to a followed call    that key of what the call returns
+ *   on a store-bound variable                 the store (`rows[0]`, `.data`) or a field (scalar)
+ *   on the validated payload or the request   an echo of input — counts on entry
+ *   anything else                             one value
+ */
+function classifyAccess(
+  value: import('ts-morph').PropertyAccessExpression | import('ts-morph').ElementAccessExpression,
+  path: string,
+  ctx: DeliveryContext,
+  out: Delivery[],
+  depth: number
+): void {
+  const root = rootSymbolOf(value)
+  /**
+   * `x.nome`, `x['nome']`: the key named; `x[papel]`: a key the body computes — one
+   * value, unnamed (`*`); `rows[0]`: one row of the collection, the collection.
+   */
+  const property = Node.isPropertyAccessExpression(value)
+    ? value.getName()
+    : keyOfElementAccess(value)
+
+  if (root && ctx.symbols.has(root)) {
+    // `rows[0]`, `rows.data`: the rows; `produto.nome`: one field
+    if (!property || PASSES_THROUGH.has(property))
+      out.push({ kind: 'store', store: ctx.symbols.get(root)!, path })
+    else out.push({ kind: 'scalar', path })
+    return
+  }
+
+  if (root) {
+    const bound = bindingOf(root, ctx.body)
+    if (bound && Node.isCallExpression(bound.initializer)) {
+      if (SCALAR_PROPS.has(property)) {
+        out.push({ kind: 'scalar', path })
+        return
+      }
+      /**
+       * `resultado.linhas`: one key of what the call returns; `meta.pagina` on a
+       * destructured `meta`: the key under the key; `rows[0]`, `.data`: the whole.
+       */
+      const own = property && !PASSES_THROUGH.has(property) ? property : undefined
+      const pick = [bound.pick, own].filter(Boolean).join('.') || undefined
+      // `user.email` on a call nobody followed: whatever the call is, this is one field of it
+      if (own && !ctx.followed.has(bound.initializer)) {
+        out.push({ kind: 'scalar', path })
+        return
+      }
+      classifyCall(bound.initializer, path, ctx, out, depth + 1, pick)
+      return
+    }
+    if (bound && Node.isObjectLiteralExpression(bound.initializer) && property) {
+      const picked = bound.initializer.getProperty(property)
+      if (picked && Node.isPropertyAssignment(picked)) {
+        classify(unwrap(picked.getInitializer()), path, ctx, out, depth + 1)
+        return
+      }
+    }
+    if (isEchoBinding(root, ctx.body) || root === 'request' || root === 'params') {
+      out.push({ kind: 'echo', path })
+      return
+    }
+  }
+
+  out.push({ kind: 'scalar', path })
+}
+
+function keyOfElementAccess(value: import('ts-morph').ElementAccessExpression): string {
+  const argument = unwrap(value.getArgumentExpression())
+  if (!argument || Node.isNumericLiteral(argument)) return ''
+  if (Node.isStringLiteral(argument) || Node.isNoSubstitutionTemplateLiteral(argument))
+    return argument.getLiteralValue()
+  return '*'
 }
 
 const join = (prefix: string, name: string) => (prefix ? `${prefix}.${name}` : name)
 
-/** the initializer of a local `const x = …` declared in this body */
-function initializerOf(name: string, body: Node): Expression | null {
+/** `await x` binds x: the value, not the promise */
+function unwrapAwait(node: Node | undefined): Expression | null {
+  let current = unwrap(node)
+  while (current && Node.isAwaitExpression(current)) current = unwrap(current.getExpression())
+  return current
+}
+
+/**
+ * How a local name was bound in this body: `const x = …` gives the initializer;
+ * `const { x, y } = …` gives the initializer and the key picked out of it.
+ */
+function bindingOf(name: string, body: Node): { initializer: Expression; pick?: string } | null {
   for (const declaration of body.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
-    if (declaration.getName() !== name) continue
-    return unwrap(declaration.getInitializer())
+    const nameNode = declaration.getNameNode()
+    if (Node.isIdentifier(nameNode)) {
+      if (nameNode.getText() !== name) continue
+      const initializer = unwrapAwait(declaration.getInitializer())
+      return initializer ? { initializer } : null
+    }
+    if (Node.isObjectBindingPattern(nameNode)) {
+      const element = nameNode.getElements().find((e) => e.getName() === name)
+      if (!element) continue
+      const initializer = unwrapAwait(declaration.getInitializer())
+      if (!initializer) return null
+      // `{ data: rows }` renames: the key is the property name, the local is the alias
+      const pick = element.getPropertyNameNode()?.getText() ?? element.getName()
+      return { initializer, pick }
+    }
   }
   return null
 }

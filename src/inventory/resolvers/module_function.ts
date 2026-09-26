@@ -1,7 +1,7 @@
-import { SyntaxKind } from 'ts-morph'
 import type { CallExpression } from 'ts-morph'
 
 import type { HandlerRef } from '../../types.js'
+import { calledFunctionOf } from './local_function.js'
 import type { CallResolver, ResolverContext } from './types.js'
 
 /**
@@ -18,8 +18,9 @@ export const moduleFunctionResolver: CallResolver = {
   order: 50,
 
   resolve(call: CallExpression, ctx: ResolverContext): HandlerRef[] {
-    const expr = call.getExpression()
-    if (!expr.isKind(SyntaxKind.Identifier)) return []
+    // `createUser(payload)`, or `rows.map(paraLinha)`: the function named is the body
+    const expr = calledFunctionOf(call)
+    if (!expr) return []
 
     const local = expr.getText()
     const file = ctx.imports.get(local)

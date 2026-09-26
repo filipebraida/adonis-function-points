@@ -206,7 +206,10 @@ export function collectLeaves(
 
       if (!Node.isPropertyAssignment(property)) continue
 
-      const name = property.getName().replace(/^['"]|['"]$/g, '')
+      // `{ [STATUS.A]: n, [STATUS.B]: m }`: a map — one repeating attribute, not one per key
+      const name = Node.isComputedPropertyName(property.getNameNode())
+        ? '*'
+        : property.getName().replace(/^['"]|['"]$/g, '')
       const value = unwrap(property.getInitializer())
       if (!value) {
         leaf(prefix, name)

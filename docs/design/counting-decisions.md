@@ -425,6 +425,27 @@ what was handed into it); and a page whose fields live in `useVariant('x')` came
 out at 5 DET with 5 FTR (a variant is a method, and the resolver had followed only
 `toObject()`).
 
+The second and third recounts refined how a delivered value is **read back to
+its origin**, and each refinement is a row of the render_props fixture:
+
+| shape                                                                                            | reading                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `const { data, meta } = await q.handle()`; `resultado.linhas`; `meta.pagina`                     | one **key** of what the call returns, resolved against the body's return, classified — `data` hands on the rows, `meta.pagina` one value |
+| `X.transform(r).useVariant('forEgresso')`                                                        | the variant **replaces** `toObject()`: only its keys leave; following both had doubled a list page to 65 DET                             |
+| `function proximos()` / `const f = () =>` in the same file                                       | followed like an import (`local-function`): what it reads is an FTR, what it returns is delivered                                        |
+| `rows.map(paraLinha)` — a function by reference                                                  | a call to that function over the rows: its literal, once. A home page mapping this way had fallen to 1 DET                               |
+| `q ?? null`, `page \|\| 1`, `startDate?.toISOString()`                                           | the input, with a default or formatted: still the echo, counted on entry. Every listing page had counted its filters twice               |
+| `paginator.getMeta()`                                                                            | `total`, `perPage`, `currentPage`, `lastPage`: four values the page can show; the URLs are navigation, `firstPage` a constant            |
+| `{ [STATUS.A]: n, [STATUS.B]: m }`                                                               | a map: **one** repeating attribute (`porStatus.*`), as a `.map()` counts its leaves once (§7). A status board had counted 11             |
+| `user.email` on a call nobody followed; `contagem[papel]` on one that was                        | one field, named by its key — not an opaque floor; only a key that carries rows on (`data`, `rows`, `items`) stays unreadable            |
+| `bouncer.with(P).allows('create')`, `x.toISODate()`, `i18n.t()`, `env.get()`, `Object.values(E)` | a yes/no, a value formatted, a framework service's answer, a constant list: one value                                                    |
+| `inertia.defer(() => q.handle())`, `.scroll`, `.lazy`, `.optional`, `.merge`                     | the callback's value: what leaves, later                                                                                                 |
+| `rows.map(f).join('\n')` in a body whose parameter is `rows`                                     | the whole input transformed: says nothing on its own, so the caller's arguments decide (the CSV rule above)                              |
+
+What stays **opaque** after this, on the three applications, is what nobody can
+read statically: `Map.get()`, a `reduce` into an object, a package's health check,
+an external API's answer. It is reported by transaction, as a floor.
+
 **Error and confirmation messages:** the IFPUG manual counts +1 DET; AFP does
 not. We follow AFP. The Ligeiro study showed this is the systematic −1 DET per
 transaction divergence; it stays as `messageDet: 0 | 1` in the configuration,

@@ -4,10 +4,13 @@ import Fornecedor from '#models/fornecedor'
 import Produto from '#models/produto'
 import Usuario from '#models/usuario'
 import ListarProdutos from '#queries/listar_produtos'
+import ListarRelacionados from '#queries/listar_relacionados'
+import PaginarProdutos from '#queries/paginar_produtos'
 import ResumoPorCategoria from '#queries/resumo_por_categoria'
 import ProdutoTransformer from '#transformers/produto_transformer'
 import { criarProdutoValidator } from '#validators/produto'
-import { gerarCsv, gerarManifesto } from '#queries/csv'
+import { gerarCsv } from '#queries/csv'
+import { renderManifesto } from 'manifesto-kit'
 
 export default class ProdutosController {
   /**
@@ -27,6 +30,16 @@ export default class ProdutosController {
     })
   }
 
+  /**
+   * Destructured from a query object's literal return: `data` hands on the rows
+   * (Produto and the preloaded Fornecedor), `meta.pagina` one value. `meta.porPagina`
+   * is not delivered, and does not count.
+   */
+  async pagina({ request, inertia }: HttpContext) {
+    const { data, meta } = await new PaginarProdutos().handle(Number(request.input('pagina', 0)))
+    return inertia.render('produtos/pagina', { produtos: data, pagina: meta.pagina })
+  }
+
   /** `Usuario` is read to authorise and never delivered: an FTR, no output DET */
   async show({ params, auth, inertia, response }: HttpContext) {
     const usuario = await Usuario.findOrFail(auth.user!.id)
@@ -37,6 +50,26 @@ export default class ProdutosController {
     return inertia.render('produtos/show', {
       produto,
       podeEditar: usuario.papel === 'admin',
+    })
+  }
+
+  /**
+   * A query object whose helpers are LOCAL functions of its file, one of them
+   * mapped by reference; Lucid's pagination meta; a map keyed by an enum; and a
+   * filter echoed back through a default and a format call — counted on entry.
+   */
+  async relacionados({ params, request, inertia }: HttpContext) {
+    const categoria = request.input('categoria')
+    const { itens, meta, porCategoria } = await new ListarRelacionados().handle(
+      params.id,
+      categoria
+    )
+
+    return inertia.render('produtos/relacionados', {
+      itens,
+      meta,
+      porCategoria,
+      filtros: { categoria: categoria?.trim() ?? null },
     })
   }
 
@@ -71,12 +104,12 @@ export default class ProdutosController {
     return response.send(gerarCsv(produtos))
   }
 
-  /** a document built from nothing the analysis can see: 1 DET as a floor, reported */
+  /** a document from a package function nobody can follow, with nothing readable flowing in: 1 DET, reported */
   async manifesto({ response }: HttpContext) {
     const total = await Produto.query().count('* as total')
     if (Number(total[0].$extras.total) === 0) return response.notFound()
     response.header('content-type', 'text/plain')
-    return response.send(gerarManifesto())
+    return response.send(renderManifesto())
   }
 
   /** `inertia.modal` is `render` by another name; the mapped list contributes its leaves once */
