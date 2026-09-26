@@ -82,10 +82,12 @@ of it is EOs losing DETs they never showed and one data function that was four.
   decision. An EIF only a seeder writes is reported too: code data the team maintains
   is not counted, a mirror of another system's data is a legitimate EIF, and the code
   cannot tell which. Neither moves a number (counting-decisions §11).
-- **`diff.preset: 'sisp'`** prices change by the Roteiro de Métricas do SISP — inclusão
-  1,00, alteração 0,50, exclusão 0,30 — instead of AEP; `fp:diff` prints which preset
-  produced the billable total, and `factors` still overrides it field by field. Check the
-  three values against the revision of the guide the contract names.
+- **`diff.preset: 'sisp'`** prices change by the Roteiro de Métricas de Software do SISP
+  v3.0 (Portaria SGD/MGI nº 3656/2026), §7.3 — inclusão 1,00, alteração × FI 0,63 (the
+  contractor maintains its own work; 0,84 otherwise, via `factors`), exclusão 0,50 —
+  instead of AEP. `fp:diff` prints which preset produced the billable total. Read from
+  the guide's PDF: a first draft of this preset said 0,50 / 0,30 from memory, and v2.0
+  (2012) priced exclusion at 0,40 — a contract binds to a revision, so check yours.
 - **`ignoreCalls({ name, methods | matching })`** builds a "this reaches no data"
   strategy without the ceremony a real configuration had to carry — a helper to read
   the method name off a ts-morph node, a `resolve` that returns nothing, one comparison.

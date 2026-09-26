@@ -124,7 +124,8 @@ means and what it deliberately does not measure: [`docs/metrics.md`](docs/metric
 
 Additions, modifications and deletions between two saved counts, priced by the
 factors the contract names: AEP by default, or `diff: { preset: 'sisp' }` for the
-Roteiro de Métricas do SISP. A modification is split by **why** it changed —
+Roteiro de Métricas do SISP v3.0 (inclusão 1,00, alteração × FI 0,63, exclusão
+0,50; `factors: { changed: 0.84 }` when the contractor did not develop the function). A modification is split by **why** it changed —
 type, size, or implementation only — so a refactor is visible before it is
 billed at full value. The reasoning, and what the default leaves on the table:
 [counting-decisions §5](docs/design/counting-decisions.md#5-identity-of-a-function-across-versions-fpdiff).

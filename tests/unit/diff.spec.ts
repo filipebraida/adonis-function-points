@@ -190,11 +190,11 @@ test.group('diff: factors and billing', () => {
 
   /**
    * A Brazilian public contract names the Roteiro de Métricas do SISP, not AEP.
-   * The preset is what the contract binds to, so the result carries its name and
-   * `factors` still overrides it field by field — the guide's revision in force
-   * may differ from the transcription here.
+   * v3.0 §7.3: PF_MELHORIA = INCLUÍDO + FI × ALTERADO + 0,50 × EXCLUÍDO, FI 63%
+   * for a function the contractor maintains itself (84% otherwise, an override).
+   * The result carries the preset's name, because the total is quoted under it.
    */
-  test('the SISP preset prices inclusion, alteration and deletion at 1 / 0.5 / 0.3', async ({
+  test('the SISP preset prices inclusion, alteration and deletion at 1 / 0.63 / 0.5', async ({
     assert,
   }) => {
     const before = result([
@@ -212,11 +212,11 @@ test.group('diff: factors and billing', () => {
     assert.equal(aep.preset, 'aep')
     assert.equal(aep.billable, 10 * 1 + 10 * 1 + 10 * 0.4)
     assert.equal(sisp.preset, 'sisp')
-    assert.deepEqual(sisp.factors, { added: 1, changed: 0.5, removed: 0.3, unchanged: 0 })
-    assert.equal(sisp.billable, 10 * 1 + 10 * 0.5 + 10 * 0.3)
+    assert.deepEqual(sisp.factors, { added: 1, changed: 0.63, removed: 0.5, unchanged: 0 })
+    assert.equal(sisp.billable, 10 * 1 + 10 * 0.63 + 10 * 0.5)
 
-    const overridden = diffCounts(before, after, { preset: 'sisp', factors: { removed: 0.4 } })
-    assert.equal(overridden.factors.removed, 0.4, '`factors` still wins over the preset')
+    const other = diffCounts(before, after, { preset: 'sisp', factors: { changed: 0.84 } })
+    assert.equal(other.factors.changed, 0.84, 'FI 84%: a function the contractor did not develop')
   })
 
   test('the factors are overridable, for a contract preset', async ({ assert }) => {

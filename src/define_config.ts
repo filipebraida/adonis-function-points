@@ -134,10 +134,12 @@ export type FunctionPointsConfig = {
   diff?: {
     /**
      * Which published set of factors prices the change: `aep` (the default —
-     * added 1, changed 1, removed 0.4) or `sisp` (Roteiro de Métricas do SISP —
-     * inclusão 1,00, alteração 0,50, exclusão 0,30, what a Brazilian public
-     * contract usually names). Check the values against the revision of the
-     * guide the contract names, and override with `factors` if they differ.
+     * added 1, changed 1, removed 0.4) or `sisp` (Roteiro de Métricas do SISP
+     * v3.0 §7.3 — inclusão 1,00, alteração × FI 0,63, exclusão 0,50; what a
+     * Brazilian public contract usually names). The FI is 0,84 when the
+     * contractor did not develop or maintain the function: set it with
+     * `factors: { changed: 0.84 }`. A contract binds to a revision of the guide
+     * — v2.0 priced exclusion at 0,40 — so check yours and override if it differs.
      */
     preset?: FactorPreset
     factors?: Partial<ChangeFactors>

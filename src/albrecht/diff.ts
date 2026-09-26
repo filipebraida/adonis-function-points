@@ -62,19 +62,26 @@ export const AEP_FACTORS: ChangeFactors = {
 }
 
 /**
- * The Roteiro de Métricas de Software do SISP — what a Brazilian public contract
- * usually names instead of AEP: inclusão 1,00, alteração 0,50, exclusão 0,30.
+ * The Roteiro de Métricas de Software do SISP, v3.0 (Portaria SGD/MGI nº 3656,
+ * de 2026), §7.3 "Projeto de Melhoria" — what a Brazilian public contract names
+ * instead of AEP:
  *
- * Transcribed from the guide's published tables, and the number a contract binds
- * to is the revision of the guide IT names — so a project that bills under SISP
- * must check these three against that revision before the first invoice, and
- * override with `diff.factors` if they differ. The report prints which preset
- * priced the total for exactly that reason.
+ *   PF_MELHORIA = PF_INCLUÍDO + FI × PF_ALTERADO + 0,50 × PF_EXCLUÍDO + PF_CONVERSÃO
+ *
+ * where FI, the impact factor on an altered function, is 63% when the contractor
+ * developed or already maintains the function, and 84% when it did not (and must
+ * document it). This preset carries the 63% — a factory billing maintenance of
+ * its own work — and `diff.factors: { changed: 0.84 }` is the other case.
+ * PF_CONVERSÃO is data conversion, which this package does not count.
+ *
+ * Read from the guide's own PDF, not from memory: an earlier draft of this
+ * preset said 0,50 / 0,30, and v2.0 (2012) priced exclusion at 0,40. A contract
+ * binds to a revision, so the report prints which preset priced the total.
  */
 export const SISP_FACTORS: ChangeFactors = {
   added: 1,
-  changed: 0.5,
-  removed: 0.3,
+  changed: 0.63,
+  removed: 0.5,
   unchanged: 0,
 }
 
@@ -82,7 +89,11 @@ export type FactorPreset = 'aep' | 'sisp'
 
 export const FACTOR_PRESETS: Record<FactorPreset, { label: string; factors: ChangeFactors }> = {
   aep: { label: 'OMG Automated Enhancement Points 1.0, §6.5', factors: AEP_FACTORS },
-  sisp: { label: 'Roteiro de Métricas de Software do SISP', factors: SISP_FACTORS },
+  sisp: {
+    label:
+      'Roteiro de Métricas de Software do SISP v3.0 §7.3, FI 63% (own maintenance); 84% otherwise',
+    factors: SISP_FACTORS,
+  },
 }
 
 /**
