@@ -87,4 +87,25 @@ test.group('overrides: a declared fact replaces one the analysis cannot read', (
       'a declaration that did nothing has to say so'
     )
   })
+
+  /**
+   * `detFromSchema` and `opaqueReviewed` moved to `opaque`, keyed by origin, in
+   * 0.6.0. A configuration still carrying them believes something happened, so the
+   * count says they had no effect — a configuration the code does not honour is
+   * worse than none.
+   */
+  test('the keys that moved to `opaque` are reported, and do nothing here', async ({ assert }) => {
+    const plain = await withOverride({})
+    const { count } = await withOverride({
+      overrides: { Book: { opaqueReviewed: ['schema'], reason: REASON } },
+    })
+
+    assert.equal(count.totals.unadjusted, plain.count.totals.unadjusted)
+    assert.isTrue(
+      count.confidence.warnings.some(
+        (w) => w.includes('`opaqueReviewed`') && w.includes('moved to `opaque.')
+      )
+    )
+    assert.notInclude(renderCount(count), 'Declared by override')
+  })
 })

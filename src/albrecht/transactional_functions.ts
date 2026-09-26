@@ -6,6 +6,7 @@ import type { Complexity, CountedFunction, FunctionType } from '../types.js'
 import { complexityOf, pointsOf } from './tables.js'
 import type { ComplexityTable } from './tables.js'
 import type { StoreGrouping } from './data_functions.js'
+import { isOpaqueType } from './opaque.js'
 
 /**
  * Transactional functions: EI and EO.
@@ -236,17 +237,25 @@ function detsFor(
         ])
         const selected = behavior.selectedColumns[store]
 
+        /**
+         * A JSON column leaving the boundary is as unreadable here as on the data
+         * function: 1 DET, marked, so a declaration about the column (§8) reaches the
+         * transactions that show it and not only the store.
+         */
+        const opaqueOf = new Map(attributes.map((a) => [a.name, isOpaqueType(a.type)]))
+        const mark = (column: string) => (opaqueOf.get(column) ? ' (opaque)' : '')
+
         if (selected && selected.length > 0) {
           for (const column of selected) {
             if (excluded.has(column)) continue
-            add(`${store}.${column}`, `select:${store}.${column}`)
+            add(`${store}.${column}`, `select:${store}.${column}${mark(column)}`)
           }
           continue
         }
 
         for (const column of attributes) {
           if (excluded.has(column.name)) continue
-          add(`${store}.${column.name}`, `output:${store}.${column.name}`)
+          add(`${store}.${column.name}`, `output:${store}.${column.name}${mark(column.name)}`)
         }
       }
     }

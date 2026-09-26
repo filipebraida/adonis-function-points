@@ -36,15 +36,15 @@ test.group('opaque columns: the one blind spot the count used to hide', () => {
     const warnings = await warningsOf('opaque_columns')
     const advice = warnings.join('\n')
 
-    assert.include(advice, 'overrides.detFromSchema')
-    assert.include(advice, 'opaqueReviewed')
+    assert.include(advice, 'opaque.<origin>.schemas')
+    assert.include(advice, 'opaque.<origin>.reviewed')
     assert.include(advice, '§8')
   })
 
   /**
-   * Grouped by FUNCTION rather than listed flat, because a flat list could not say
-   * what had already been answered — and, computed before the overrides ran, it named
-   * functions whose floor `detFromSchema` had already replaced.
+   * Grouped by ORIGIN rather than listed flat: one line for a column however many
+   * transactions show it, and what has already been answered is counted rather than
+   * listed again.
    */
   test('how many transactions reach it, so the reader can judge', async ({ assert }) => {
     const warnings = await warningsOf('opaque_columns')

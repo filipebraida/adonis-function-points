@@ -10,6 +10,15 @@ import {
 } from '#validators/form'
 
 export default class FormsController {
+  /**
+   * Shows the forms, opaque columns included. A declaration about `Form.answers`
+   * has to reach this output as well as the data function — that is what keying
+   * it by origin rather than by function is for.
+   */
+  async index({ response }: HttpContext) {
+    return response.ok(await Form.all())
+  }
+
   async store({ request, response }: HttpContext) {
     const payload = await request.validateUsing(createFormValidator)
     const form = await Form.create(payload)

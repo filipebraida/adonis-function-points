@@ -462,14 +462,20 @@ versioned configuration, with a justification that is required by the type:
 
 ```ts
 export default defineConfig({
-  overrides: {
-    'POST /petitions': {
-      detFromSchema: 'childSupportSchema',
+  opaque: {
+    'Petition.components': {
+      schemas: 'childSupportSchema',
       reason: 'form driven by a JSON Schema; the fields are counted from the schema by §7',
     },
   },
 })
 ```
+
+The key is the **origin** of the opaque DET — a column (`Petition.components`,
+or `petitions.components` by table) or an open validator field
+(`savePetitionValidator.components`) — and the declaration applies to every
+function that carries it: the ILF, the transaction that submits the form, and
+each one that shows the column. See §9, "Declared by origin".
 
 **Name the schema, do not declare the number.** A declared `det: 42` freezes:
 someone adds a field, the count does not move, and `fp:diff` reports no change
@@ -638,7 +644,7 @@ migrations contain real persistence calls, and scanning them would turn a test
 write into a counted function.
 
 But `node ace make:seeder` puts seeders in `database/seeders`, which is where seed
-data — and therefore a form's schema — normally lives. So `overrides.detFromSchema`
+data — and therefore a form's schema — normally lives. So a declaration
 naming a schema declared in a seeder reported "not declared anywhere in the code"
 and left the count at the floor: the exact case the override exists for.
 
@@ -684,11 +690,44 @@ looked. The warning then fires forever, and a warning that cannot be answered is
 the team learns to scroll past. That costs more than the warning reports, and it is
 the same failure mode as a coverage gate that fails spuriously.
 
-**Decision.** `overrides.<fn>.opaqueReviewed` records the review, with the same
-mandatory `reason` every override carries. It moves no number; it is deliberately
+**Decision.** `opaque.<origin>.reviewed` records the review, with the same
+mandatory `reason` every declaration carries. It moves no number; it is deliberately
 NOT counted in the "Declared by override" share, because that line exists to show
 how much of the total came from a person and a review declares nothing; and the
 count of reviewed items is still printed, so the fact is recorded rather than erased.
+
+### Declared by origin, not by function
+
+The two declarations about an opaque DET — the schema that stands in for it,
+and the review that says 1 is right — were keyed by the **function** they were
+written on (`overrides.<fn>.detFromSchema`, `overrides.<fn>.opaqueReviewed`).
+Read from a real configuration, that produced the same mapping written twice
+(on the ILF and on the submitting transaction) and a `GET` that returned the
+same column still at 1 DET, because nobody had written a third one: **the same
+column worth two numbers in one count**.
+
+It also matched reviews by bare field name, because the function side spelled
+the column by model and the rationale by table. So reviewing `Message.schema`
+reviewed every `schema` column of every store — and silenced warnings nobody
+had answered.
+
+**Decision.** A declaration is about the **origin** of the placeholder, and the
+count applies it wherever that origin appears:
+
+```ts
+opaque: {
+  'Petition.components':               { schemas: PETITION_SCHEMAS, reason: '…' }, // a column
+  'savePetitionValidator.components':  { schemas: PETITION_SCHEMAS, reason: '…' }, // a validator field
+  'Message.schema':                    { reviewed: true, reason: '…' },
+}
+```
+
+A column may be keyed by model or by table. Output columns carry the
+`(opaque)` marker too, so the declaration reaches the transactions that show
+the column and not only the store. The match is exact: reviewing `A.schema`
+does not review `B.schema`. `overrides.<fn>.det` / `.refs` remain per function
+— a declared _number_ is about one function — and the two old keys are no
+longer read; a configuration still carrying them is told so.
 
 ### Maintenance is a question about a store, not about a request
 

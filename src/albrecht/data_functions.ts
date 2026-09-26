@@ -2,6 +2,7 @@ import type { CollectedDataStore } from '../inventory/sources/data_stores.js'
 import type { Complexity, CountedFunction, FunctionType } from '../types.js'
 import { complexityOf, pointsOf } from './tables.js'
 import type { ComplexityTable } from './tables.js'
+import { isOpaqueType } from './opaque.js'
 
 /**
  * Data functions: ILF and EIF.
@@ -187,13 +188,6 @@ export type DataFunctionOptions = {
   weights: Record<FunctionType, Record<Complexity, number>>
 }
 
-/**
- * A column whose shape says nothing about what it holds. Marked in the rationale
- * because `detFromSchema` replaces exactly this placeholder, and because a reader
- * deserves to know which of the DETs is a floor rather than a count.
- */
-const OPAQUE_TYPE = /^(object|any|unknown|Record<|Json|JSON)/
-
 export function countDataFunctions(
   stores: CollectedDataStore[],
   usage: Map<string, StoreUsage>,
@@ -246,7 +240,7 @@ export function countDataFunctions(
         det++
         detSources.push(
           `${member.columnSource}:${member.table ?? member.name}.${attribute.name}` +
-            (attribute.type && OPAQUE_TYPE.test(attribute.type) ? ' (opaque)' : '')
+            (isOpaqueType(attribute.type) ? ' (opaque)' : '')
         )
       }
     }

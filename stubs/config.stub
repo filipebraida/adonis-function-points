@@ -39,21 +39,29 @@ export default defineConfig({
   minCoverage: 0.85,
 
   /**
-   * Facts static analysis cannot read, declared with a required justification.
-   *
-   * The case this exists for: fields the user fills that live in a JSON column
-   * whose schema is stored in the database. See counting-decisions §8 — and use
-   * it sparingly, because `fp:count` reports what share of the total came from
-   * here.
+   * DETs static analysis cannot read — a JSON column, an open validator field —
+   * count 1 each, a floor, and `fp:count` names them. Answer them here by ORIGIN,
+   * with a required justification, and the answer reaches every function carrying
+   * the DET. See counting-decisions §8; use it sparingly, because `fp:count`
+   * reports what share of the total came from here.
    */
-  // overrides: {
-  //   // one schema, or several whose fields are unioned by leaf path
-  //   Form: { detFromSchema: ['intakeSchema', 'reviewSchema'], reason: 'one per template' },
+  // opaque: {
+  //   // the fields live in a JSON Schema declared in the code: name it (or several,
+  //   // unioned by leaf path), and the count keeps coming from the code
+  //   'Form.definition': { schemas: ['intakeSchema', 'reviewSchema'], reason: 'one per template' },
+  //   'createFormValidator.answers': { schemas: 'intakeSchema', reason: 'the same form, submitted' },
   //
   //   // 1 DET is a floor, and `fp:count` says so on every run. When 1 IS the right
-  //   // answer, record that someone checked — otherwise the warning becomes noise
-  //   // the team learns to scroll past. It moves no number.
-  //   Petition: { opaqueReviewed: ['schema', 'uiSchema'], reason: 'metadata; one field each' },
+  //   // answer, record that someone checked — it moves no number
+  //   'Petition.uiSchema': { reviewed: true, reason: 'metadata; one field' },
+  // },
+
+  /**
+   * A declared NUMBER for one function — the last resort, for a schema that lives
+   * only in the database. It freezes: prefer `opaque.<origin>.schemas`.
+   */
+  // overrides: {
+  //   'POST /petitions': { det: 42, reason: 'the form has 42 fields in the database' },
   // },
 
   /**

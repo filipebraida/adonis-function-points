@@ -467,12 +467,15 @@ Inherited from the AFP standard itself, not from this implementation:
 
   `fp:count` names every opaque column a transaction reaches, so the limitation
   is visible where you read the number rather than only in a design document.
-  The way out is to declare the number rather than let the tool guess it:
-  `overrides: { 'POST /petitions': { det: 42, reason: '…' } }`. The reason is
-  required by the type, `fp:explain` prints it beside the number, and `fp:count`
-  reports what share of the total was declared — because an override is right
-  where static analysis is blind and poison as a habit. See
-  counting-decisions §8.
+  The way out is to declare where the fields live rather than let the tool
+  guess: `opaque: { 'Petition.components': { schemas: 'petitionSchema', reason:
+'…' } }` names a JSON Schema in the code, and the declaration reaches every
+  function that carries the column — the ILF, the form submission, and each
+  screen that shows it. The reason is required by the type, `fp:explain` prints
+  it beside the number, and `fp:count` reports what share of the total was
+  declared — because a declaration is right where static analysis is blind and
+  poison as a habit. `overrides.<fn>.det` remains for a schema that lives only in
+  the database. See counting-decisions §8.
 
 - **Only HTTP routes are collected as entry points.** An ace command that
   imports a spreadsheet and a scheduled job are transactional functions under

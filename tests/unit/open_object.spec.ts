@@ -34,9 +34,8 @@ test.group('open input object: a floor, never a zero', () => {
     const { count } = await ei()
     const text = count.confidence.warnings.join('\n')
 
-    assert.include(text, 'input object(s) at 1 DET', 'this side of the boundary had no warning')
-    assert.include(text, 'POST /forms')
-    assert.include(text, 'createFormValidator.answers')
+    assert.include(text, 'cannot read', 'this side of the boundary had no warning')
+    assert.include(text, 'createFormValidator.answers — input object on POST /forms')
   })
 
   test('the opaque column on the same field is marked too', async ({ assert }) => {
@@ -48,23 +47,30 @@ test.group('open input object: a floor, never a zero', () => {
 })
 
 /**
- * The override replaces the opaque placeholder. It used to assume there was one
- * and that it was worth 1 — wrong twice: an open `vine.object` counted zero, so
- * the subtraction removed a field the analysis had read correctly.
+ * The declaration replaces the opaque placeholder — exactly the one it names, and
+ * on every function that carries it. It used to be keyed by function and assume
+ * a placeholder was there: an open `vine.object` counted zero, so the subtraction
+ * removed a field the analysis had read correctly.
  */
-test.group('detFromSchema: replace the placeholder, do not assume it', () => {
-  const override = {
-    overrides: { 'POST /forms': { detFromSchema: 'intakeSchema', reason: 'the form is data' } },
+test.group('opaque schemas: replace the placeholder where it is', () => {
+  const declared = {
+    opaque: {
+      'createFormValidator.answers': { schemas: 'intakeSchema', reason: 'the form is data' },
+    },
   }
 
-  test('the schema replaces exactly the opaque DET', async ({ assert }) => {
-    const { fn } = await ei(override)
+  test('the schema replaces exactly the opaque DET of the input field', async ({ assert }) => {
+    const { fn } = await ei(declared)
 
     // 3 read - 1 placeholder + 6 declared
     assert.equal(fn.det, 8)
     assert.equal(
       fn.rationale.overrides![0].by,
-      'config:overrides.POST /forms (from intakeSchema: 6 fields)'
+      'config:opaque.createFormValidator.answers (from intakeSchema: 6 fields)'
+    )
+    assert.include(
+      fn.rationale.detSources,
+      'validator:createFormValidator.answers → intakeSchema (6 fields)'
     )
   })
 
@@ -72,7 +78,7 @@ test.group('detFromSchema: replace the placeholder, do not assume it', () => {
    * `database/` is excluded from the application roots so a test factory's writes
    * never become counted functions. But `make:seeder` puts seeders there, which is
    * where a form's schema lives — and naming one reported "not declared anywhere
-   * in the code", which is the very case the override exists for.
+   * in the code", which is the very case the declaration exists for.
    */
   test('a schema declared in a seeder is found', async ({ assert }) => {
     const app = await discoverApp(ROOT)
@@ -85,43 +91,61 @@ test.group('detFromSchema: replace the placeholder, do not assume it', () => {
     assert.equal(schemas.get('intakeSchema')?.fields, 6)
   })
 
-  test('an opaque column is replaced the same way', async ({ assert }) => {
+  /**
+   * One declaration, every carrier. Keyed by function it had to be written once
+   * for the ILF and once for each transaction — and the transactions nobody wrote
+   * it for stayed at the floor, so the same column was worth two numbers.
+   */
+  test('a column declared once reaches the data function AND the outputs showing it', async ({
+    assert,
+  }) => {
     const { count } = await analyze(ROOT, {
-      overrides: { Form: { detFromSchema: 'intakeSchema', reason: 'the column is the form' } },
+      opaque: { 'Form.answers': { schemas: 'intakeSchema', reason: 'the column is the form' } },
     })
 
     const form = count.functions.find((f) => f.name === 'Form')!
+    const index = count.functions.find((f) => f.name === 'GET /forms')!
 
-    // 3 read (title, answers, snapshot) - 1 placeholder + 6 declared
+    // 3 read (title, answers, snapshot) - 1 placeholder + 6 declared, on both
     assert.equal(form.det, 8)
+    assert.equal(index.det, 8)
+    assert.include(index.rationale.detSources, 'output:Form.answers → intakeSchema (6 fields)')
+    assert.equal(index.rationale.overrides![0].reason, 'the column is the form')
+
+    // the input field is a different origin: the EI is untouched by this declaration
+    assert.equal(count.functions.find((f) => f.name === 'POST /forms')!.det, 3)
   })
 
   /**
-   * The subtraction used to happen regardless, so an override aimed at the wrong
-   * function quietly removed one of its DETs. Now the fields are added and the
-   * misdirection is reported: a declaration that does nothing is the failure this
-   * whole mechanism is meant to avoid.
+   * A declaration that matches nothing is the failure this whole mechanism is
+   * meant to avoid: it must say so, and it must change nothing.
    */
-  test('an override on a function with NO opaque DET adds, and warns', async ({ assert }) => {
+  test('a declaration matching no opaque DET warns and changes nothing', async ({ assert }) => {
     const before = await analyze(ROOT)
     const after = await analyze(ROOT, {
-      overrides: { 'POST /notes': { detFromSchema: 'intakeSchema', reason: 'wrong target' } },
+      opaque: { 'createNoteValidator.body': { schemas: 'intakeSchema', reason: 'wrong target' } },
     })
 
-    const plain = before.count.functions.find((f) => f.name === 'POST /notes')!
-
-    assert.isEmpty(
-      plain.rationale.detSources.filter((source) => source.endsWith('(opaque)')),
-      'the control: nothing here is a floor'
-    )
-    assert.equal(
-      after.count.functions.find((f) => f.name === 'POST /notes')!.det,
-      plain.det + 6,
-      'nothing was replaced, so nothing is subtracted'
-    )
+    assert.equal(after.count.totals.unadjusted, before.count.totals.unadjusted)
     assert.isTrue(
       after.count.confidence.warnings.some((w) =>
-        w.includes('no opaque DET for it to stand in for')
+        w.includes('"createNoteValidator.body" matches no DET the analysis found opaque')
+      )
+    )
+  })
+
+  /** the two keys that used to do this are not read any more, and a config carrying them is told */
+  test('the old per-function keys are reported as moved, not silently ignored', async ({
+    assert,
+  }) => {
+    const { count } = await analyze(ROOT, {
+      overrides: { 'POST /forms': { detFromSchema: 'intakeSchema', reason: 'old spelling' } },
+    })
+
+    assert.equal(count.functions.find((f) => f.name === 'POST /forms')!.det, 3, 'no effect')
+    assert.isTrue(
+      count.confidence.warnings.some(
+        (w) => w.includes('`detFromSchema`') && w.includes('moved to `opaque.')
       )
     )
   })
@@ -174,9 +198,9 @@ test.group('conditional groups: the union of the branches', () => {
  * justifying it in `reason` gives the same answer only while they land in the same
  * complexity band — reasoning the configuration should not have to carry.
  */
-test.group('detFromSchema: several schemas, unioned', () => {
-  const over = (detFromSchema: string | string[]) => ({
-    overrides: { 'POST /forms': { detFromSchema, reason: 'one schema per template' } },
+test.group('opaque schemas: several, unioned', () => {
+  const over = (schemas: string | string[]) => ({
+    opaque: { 'createFormValidator.answers': { schemas, reason: 'one schema per template' } },
   })
 
   test('the union is over leaf paths, not a sum of counts', async ({ assert }) => {
@@ -209,9 +233,11 @@ test.group('detFromSchema: several schemas, unioned', () => {
  * forever. A warning that cannot be answered is one the team learns to scroll past,
  * which costs more than the warning reports.
  */
-test.group('opaqueReviewed: answering a warning that is correct', () => {
+test.group('opaque reviewed: answering a warning that is correct', () => {
   const reviewed = {
-    overrides: { Form: { opaqueReviewed: ['answers'], reason: 'a copy of the form; one field' } },
+    opaque: {
+      'Form.answers': { reviewed: true as const, reason: 'a copy of the form; one field' },
+    },
   }
 
   test('the warning becomes a record instead of a nag', async ({ assert }) => {
@@ -219,15 +245,15 @@ test.group('opaqueReviewed: answering a warning that is correct', () => {
     const after = await analyze(ROOT, reviewed)
 
     assert.isTrue(
-      before.count.confidence.warnings.some((w) => w.includes('Form.answers')),
+      before.count.confidence.warnings.some((w) => w.includes('Form.answers (any)')),
       'unanswered, it is listed'
     )
     assert.isFalse(
-      after.count.confidence.warnings.some((w) => w.includes('Form.answers')),
+      after.count.confidence.warnings.some((w) => w.includes('Form.answers (any)')),
       'reviewed, it stops asking'
     )
     assert.isTrue(
-      after.count.confidence.warnings.some((w) => w.includes('1 reviewed already')),
+      after.count.confidence.warnings.some((w) => w.includes('already answered: 1 reviewed')),
       'the fact is recorded, not erased'
     )
   })
@@ -244,25 +270,37 @@ test.group('opaqueReviewed: answering a warning that is correct', () => {
   })
 
   /**
-   * `fp:count` prints what share of the total came from a person, and that line is
-   * why the whole mechanism is acceptable. An entry declaring no number read as
-   * "1 function, 7 FP, 35% declared by override", misrepresenting the one number
-   * that exists to keep this honest.
+   * Recorded, so `fp:explain` can print the reason a review was accepted — dropping
+   * the entry lost it entirely, which defeats requiring a reason. But it declares no
+   * number, so the "Declared by override" share must not count it: that line exists
+   * to show how much of the total came from a person.
    */
-  /**
-   * Recorded, so `fp:explain` can print the reason a review was accepted — dropping the
-   * entry lost it entirely, which defeats requiring a reason. But it declares no number,
-   * so the "Declared by override" share must not count it: that line exists to show how
-   * much of the total came from a person.
-   */
-  test('a review is recorded, and is not a declared number', async ({ assert }) => {
+  test('a review is recorded on every carrier, and is not a declared number', async ({
+    assert,
+  }) => {
     const { count } = await analyze(ROOT, reviewed)
     const form = count.functions.find((f) => f.name === 'Form')!
+    const index = count.functions.find((f) => f.name === 'GET /forms')!
 
     assert.lengthOf(form.rationale.overrides!, 1)
     assert.isEmpty(form.rationale.overrides![0].fields, 'no number was declared')
     assert.include(form.rationale.overrides![0].reason, 'a copy of the form')
+    assert.include(form.rationale.detSources, 'ast:forms.answers (opaque, reviewed)')
+    assert.include(index.rationale.detSources, 'output:Form.answers (opaque, reviewed)')
     assert.notInclude(renderCount(count), 'Declared by override')
+  })
+
+  /**
+   * The key is exact. Matched by bare name, reviewing `Form.answers` also reviewed
+   * `Form.snapshot`'s neighbour in another table — every `schema` column of every
+   * store — and silenced warnings nobody had answered.
+   */
+  test('reviewing one column reviews that column only', async ({ assert }) => {
+    const { count } = await analyze(ROOT, reviewed)
+    const form = count.functions.find((f) => f.name === 'Form')!
+
+    assert.include(form.rationale.detSources, 'ast:forms.snapshot (opaque)')
+    assert.isTrue(count.confidence.warnings.some((w) => w.includes('Form.snapshot (any)')))
   })
 })
 

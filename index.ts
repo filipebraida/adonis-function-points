@@ -1,6 +1,10 @@
 export { configure } from './configure.js'
 export { defineConfig } from './src/define_config.js'
-export type { FunctionPointsConfig, FunctionOverride } from './src/define_config.js'
+export type {
+  FunctionPointsConfig,
+  FunctionOverride,
+  OpaqueDeclaration,
+} from './src/define_config.js'
 export * from './src/types.js'
 
 /**

@@ -1,6 +1,7 @@
 import type { ComplexityTable } from './albrecht/tables.js'
 import type { ChangeFactors, ChangeReasonFactors } from './albrecht/diff.js'
 import type { TechnicalPattern } from './albrecht/technical_filter.js'
+import type { OpaqueDeclaration } from './albrecht/opaque.js'
 import type { CallResolver } from './inventory/resolvers/types.js'
 import type { Complexity, FunctionType } from './types.js'
 
@@ -155,22 +156,34 @@ export type FunctionPointsConfig = {
   minCoverage?: number
 
   /**
-   * Declared DET or RET/FTR for a function the analysis cannot read, keyed by
-   * the name it has in the count (`Invoice`, `POST /books`).
+   * What a person declares about a DET the analysis cannot read, keyed by its
+   * ORIGIN — counting-decisions §8:
    *
-   * The case this exists for is a schema-driven application: when the fields a
-   * user fills live in a JSON column whose schema is stored in the database,
-   * there is nothing for static analysis to read and the column counts as 1 DET
-   * (counting-decisions §8). The person who knows the form knows the number.
+   *   'Petition.components'              a JSON column (model or table name)
+   *   'savePetitionValidator.components' an open field of a validator
+   *
+   * A declaration applies to every function carrying that DET: the data
+   * function and each transaction that takes or shows the column. Keyed by
+   * function it had to be repeated, and still left the transactions nobody
+   * wrote it for at the floor — the same column worth two numbers in one count.
+   *
+   * `schemas` names the JSON Schema(s) in the code whose fields replace the
+   * floor; `reviewed` records that 1 is the right answer. Both require `reason`,
+   * and `fp:count` reports how much of the total came from a declaration so it
+   * cannot grow unnoticed.
+   */
+  opaque?: Record<string, OpaqueDeclaration>
+
+  /**
+   * A declared DET or RET for ONE function, keyed by the name it has in the
+   * count (`Invoice`, `POST /books`) — the last resort, for a fact that is not
+   * in the code at all (a schema that lives only in the database).
    *
    * `reason` is required, and that is the whole point. A declared number is
    * reproducible — it lives in a versioned file, so the same revision yields
    * the same count — and auditable, because `fp:explain` prints it with its
-   * justification. A number the tool guessed would be neither.
-   *
-   * Use sparingly. If overriding becomes a habit the count stops coming from
-   * the code, and the report says how much of the total came from here so that
-   * cannot grow unnoticed.
+   * justification. But it freezes: prefer `opaque.<origin>.schemas` whenever the
+   * fields are declared anywhere in the code.
    */
   overrides?: Record<string, FunctionOverride>
 }
@@ -178,50 +191,25 @@ export type FunctionPointsConfig = {
 export type FunctionOverride = {
   /** declared DET count, replacing what the analysis found */
   det?: number
-  /**
-   * Name of a JSON Schema declared in the application's code, whose fields are
-   * counted by the §7 leaf rules and replace the single DET the opaque column
-   * contributed.
-   *
-   * Prefer this to `det`. A declared number freezes: someone adds a field, the
-   * count does not move, and `fp:diff` reports no change for real functional
-   * growth — undercounting silently and progressively. Naming the schema keeps
-   * the number coming from the code; the only thing maintained by hand is the
-   * mapping, which changes when a form is born rather than when a field is.
-   *
-   * A name that matches no schema is a warning, never a silent fallback.
-   */
-  /**
-   * Name of a declared schema, or several whose fields are UNIONED.
-   *
-   * An ILF's DETs are the fields the user recognises in the file, and an
-   * application with one schema per template recognises the fields of all of them.
-   * Pointing at the largest and justifying it in `reason` gives the same answer
-   * only while they land in the same complexity band — which is a piece of
-   * reasoning the configuration should not have to carry.
-   *
-   * Unioned by leaf path, so a field two templates share counts once.
-   */
-  detFromSchema?: string | string[]
   /** declared RET (data function) or FTR (transaction) */
   refs?: number
   /**
-   * Opaque DETs someone has looked at and decided are correct at 1.
-   *
-   * `fp:count` reports every opaque column and open input object, because 1 DET is
-   * a floor rather than a measurement. But some of them ARE one field — a copy, a
-   * checksum, a bag of metadata — and there was no way to say so, so the warning
-   * fired on every run forever. A warning that cannot be answered is a warning the
-   * team learns to scroll past, which costs more than the one it reports.
-   *
-   * It silences nothing else: the count does not move, and `fp:count` still says
-   * how many were reviewed. Names are matched bare (`schema`) or qualified
-   * (`Petition.schema`).
+   * @deprecated Moved to `opaque.<Store.column | validator.field>.schemas` in
+   * 0.6.0 — a schema is a fact about the column, not about one function. No
+   * longer read here; `fp:count` warns when it is present.
+   */
+  detFromSchema?: string | string[]
+  /**
+   * @deprecated Moved to `opaque.<Store.column | validator.field>.reviewed` in
+   * 0.6.0, keyed exactly: matching by bare name meant reviewing `Message.schema`
+   * reviewed every `schema` column of every table. No longer read here.
    */
   opaqueReviewed?: string[]
   /** why — required, and printed by `fp:explain` beside the number */
   reason: string
 }
+
+export type { OpaqueDeclaration }
 
 export const DEFAULTS: FunctionPointsConfig = {
   boundary: {},

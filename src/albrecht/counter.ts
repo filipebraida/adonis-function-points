@@ -3,6 +3,8 @@ import type { CollectedDataStore } from '../inventory/sources/data_stores.js'
 import type { CollectedEntryPoint } from '../inventory/sources/routes_ast.js'
 import type { Behavior } from '../inventory/graph/call_graph.js'
 import type { DiscoveredSchema } from '../inventory/sources/json_schemas.js'
+import { applyOpaque, opaqueWarnings } from './opaque.js'
+import type { OpaqueDeclaration } from './opaque.js'
 import type { Complexity, CountResult, CountedFunction, FunctionType } from '../types.js'
 import { DEFAULT_TABLES, DEFAULT_WEIGHTS, complexityOf, pointsOf } from './tables.js'
 import type { FunctionOverride } from '../define_config.js'
@@ -71,7 +73,9 @@ export type CountOptions = {
   dataFunctions?: { grouping?: GroupingStrategy }
   /** @deprecated no longer read; `fp:count` warns when it is present */
   retStrategy?: 'constant' | 'composition'
-  /** declared DET/RET for what static analysis cannot read — see §8 */
+  /** what a person declared about a DET the analysis cannot read, by origin — §8 */
+  opaque?: Record<string, OpaqueDeclaration>
+  /** a declared DET or RET for one function — the last resort, see §8 */
   overrides?: Record<string, FunctionOverride>
   boundary?: {
     infrastructure?: string[]
@@ -213,44 +217,38 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
   })
 
   /**
-   * `opaqueReviewed` answers a warning that is CORRECT and therefore permanent.
+   * What the analysis could not read, answered by ORIGIN — counting-decisions §8.
    *
-   * 1 DET for an opaque column is a floor, and `fp:count` says so on every run. But
-   * some of those columns are one field — a copy, a checksum, a bag of metadata —
-   * and there was no way to record that someone had looked. A warning that cannot be
-   * answered is one the team learns to scroll past, which costs more than the warning
-   * reports. It silences nothing else: the count does not move, and how many were
-   * reviewed is still printed.
+   * A declaration is about a column or a validator field, and it applies to every
+   * function that carries the DET: the data function and each transaction that
+   * takes or shows it. Keyed by function it was declared twice and still missed
+   * the third place, so the same column was worth two numbers in one count.
    */
-  const reviewed = reviewedOpaque(options.overrides ?? {})
-
-  const functions = applyOverrides(
-    [...dataFunctions, ...transactionalFunctions],
-    options.overrides ?? {},
-    input.jsonSchemas ?? new Map(),
+  const opaque = applyOpaque([...dataFunctions, ...transactionalFunctions], {
+    declarations: options.opaque ?? {},
+    stores: countable,
+    schemas: input.jsonSchemas ?? new Map(),
     tables,
     weights,
-    warnings,
-    reviewed
-  )
+  })
+  warnings.push(...opaque.warnings)
 
-  /**
-   * Reported AFTER the overrides are applied, because the overrides are the answer
-   * to it.
-   *
-   * Computed first, the list kept naming functions whose floor had already been
-   * replaced by `detFromSchema` — telling the reader to go and map something that
-   * was mapped. It cost a real misreading: a report was taken as "two forms still
-   * unmapped" when both were declared, by whoever wrote this code.
-   */
-  const declared = new Set(
-    functions
-      .filter((fn) => fn.rationale.overrides?.some((o) => o.fields.includes('det')))
-      .map((fn) => fn.name)
+  const functions = applyOverrides(
+    opaque.functions,
+    options.overrides ?? {},
+    tables,
+    weights,
+    warnings
   )
 
   warnings.push(
-    ...opaqueWarnings(countable, input, { reviewed, declared, overrides: options.overrides ?? {} })
+    ...opaqueWarnings({
+      functions,
+      stores: countable,
+      entryPoints: input.entryPoints,
+      behaviors: input.behaviors,
+      answered: opaque.answered,
+    })
   )
   warnings.push(...unreadableInputWarnings(input))
   warnings.push(...unreadableOutputWarnings(input))
@@ -262,254 +260,6 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     totals: totalsOf(functions),
     confidence: confidenceOf(input, warnings),
   }
-}
-
-/**
- * Columns whose content static analysis cannot read — counting-decisions §8.
- *
- * A JSON column holding a form the user fills counts as 1 DET, because the
- * schema is runtime data. That is the documented trade, and until now it was
- * documented ONLY: the count said nothing, which is the one known blind spot
- * this package reported nowhere. It reports an unresolved call, a technical
- * table, an unresolved mixin and a handler-less route — and stayed silent here.
- *
- * Only columns on a store some transaction reaches are named. An untouched
- * `metadata` column changes no number, and warning about it would be the noise
- * that teaches people to stop reading the confidence block.
- */
-/**
- * Opaque DETs someone has declared reviewed, in both spellings a person might use.
- *
- * Qualified (`Petition.schema`) is unambiguous; bare (`schema`) is what someone reads
- * off the warning line.
- */
-function reviewedOpaque(overrides: Record<string, FunctionOverride>): Set<string> {
-  const reviewed = new Set<string>()
-
-  for (const [name, override] of Object.entries(overrides)) {
-    for (const entry of override.opaqueReviewed ?? []) {
-      reviewed.add(entry)
-      reviewed.add(`${name}.${entry}`)
-
-      /**
-       * The bare field too, because the two sides of this comparison spell things
-       * differently. `opaqueReviewed` is written against the FUNCTION (`Petition.schema`)
-       * while a rationale source carries the TABLE (`ast:petitions.schema`), and the
-       * qualified form cannot be recovered from either. The last segment is what they
-       * share, and without it a correctly written review matched the count and not the
-       * rationale — so `fp:explain` showed no review and the override warning still
-       * claimed five unanswered floors.
-       */
-      reviewed.add(entry.split('.').pop() ?? entry)
-    }
-  }
-
-  return reviewed
-}
-
-/**
- * The identity of an opaque DET inside a rationale source.
- *
- * `ast:petitions.schema (opaque)` is the store's TABLE name, and `opaqueReviewed` is
- * written against the FUNCTION name (`Petition.schema`), so the qualified form cannot
- * be recovered from the source alone — the bare field is what both sides share.
- */
-const opaqueNameOf = (source: string) =>
-  source.replace(/^[a-z-]+:/, '').replace(/ \(opaque.*\)$/, '')
-
-const shortOpaqueNameOf = (source: string) => opaqueNameOf(source).split('.').pop() ?? ''
-
-/** `fp:explain` should say which floors someone has already looked at */
-function markReviewed(sources: string[], reviewed: Set<string>): string[] {
-  return sources.map((source) => {
-    if (!source.endsWith('(opaque)')) return source
-    const isReviewed = reviewed.has(opaqueNameOf(source)) || reviewed.has(shortOpaqueNameOf(source))
-    return isReviewed ? source.replace('(opaque)', '(opaque, reviewed)') : source
-  })
-}
-
-/** a column whose shape says nothing about what it holds */
-const OPAQUE_TYPE = /^(object|any|unknown|Record<|Json|JSON)/
-
-type OpaqueState = {
-  reviewed: Set<string>
-  declared: Set<string>
-  overrides: Record<string, FunctionOverride>
-}
-
-/**
- * DETs the analysis cannot read: an opaque column, or an open input object.
- *
- * Both count 1, which is a FLOOR rather than a measurement, and counting-decisions §8
- * is the trade. Reporting it is the point — this was the one known blind spot the
- * package reported nowhere.
- *
- * Grouped by FUNCTION and stating what has already been answered, because a flat list
- * of columns could not say that. Computed before the overrides ran, it named functions
- * whose floor `detFromSchema` had already replaced, which reads as "go and map this"
- * about something already mapped. That misreading actually happened, to the author of
- * this code, reading someone else's report.
- *
- * Three states per function, and only the third is a request to do something:
- *
- *   replaced   a `detFromSchema` override stands in for one of them
- *   reviewed   someone looked and 1 is the right answer
- *   floor      still unanswered
- */
-function opaqueWarnings(
-  stores: CollectedDataStore[],
-  input: CountInput,
-  state: OpaqueState
-): string[] {
-  const reached = new Map<string, number>()
-  for (const entry of input.entryPoints) {
-    for (const store of input.behaviors.get(entry.id)?.touches ?? []) {
-      reached.set(store, (reached.get(store) ?? 0) + 1)
-    }
-  }
-
-  type Tally = {
-    kind: string
-    floor: string[]
-    reviewed: number
-    /** kept so an `opaqueReviewed` naming nothing can be told from one that matched */
-    reviewedNames: string[]
-    transactions: number
-  }
-  const byFunction = new Map<string, Tally>()
-
-  const tally = (name: string, kind: string, transactions: number) => {
-    const found = byFunction.get(name) ?? {
-      kind,
-      floor: [],
-      reviewed: 0,
-      reviewedNames: [],
-      transactions,
-    }
-    byFunction.set(name, found)
-    return found
-  }
-
-  for (const store of stores) {
-    if (!reached.get(store.name)) continue
-
-    for (const attribute of store.attributes) {
-      if (!attribute.type || !OPAQUE_TYPE.test(attribute.type)) continue
-
-      const entry = tally(store.name, 'column', reached.get(store.name) ?? 0)
-      if (
-        state.reviewed.has(`${store.name}.${attribute.name}`) ||
-        state.reviewed.has(attribute.name)
-      ) {
-        entry.reviewed += 1
-        entry.reviewedNames.push(attribute.name)
-      } else {
-        entry.floor.push(`${attribute.name} (${attribute.type})`)
-      }
-    }
-  }
-
-  for (const point of input.entryPoints) {
-    for (const field of input.behaviors.get(point.id)?.opaqueInputFields ?? []) {
-      const entry = tally(point.identity, 'input object', 1)
-      if (state.reviewed.has(field) || state.reviewed.has(`${point.identity}.${field}`)) {
-        entry.reviewed += 1
-        entry.reviewedNames.push(field)
-      } else {
-        entry.floor.push(field)
-      }
-    }
-  }
-
-  /**
-   * A review that matches nothing is a review that does nothing.
-   *
-   * `detFromSchema` already warns when it names a schema that is not declared, and
-   * `opaqueReviewed` did not — so `['messages.schema']` against a field actually named
-   * `createMessageValidator.messages.schema` reviewed nothing in silence while the
-   * warning kept firing, which reads as the tool ignoring the configuration.
-   */
-  const seen = new Set<string>()
-  for (const [name, entry] of byFunction) {
-    for (const field of [...entry.floor, ...entry.reviewedNames]) {
-      const bare = field.replace(/ \(.*\)$/, '')
-      seen.add(bare)
-      seen.add(`${name}.${bare}`)
-      seen.add(bare.split('.').pop() ?? bare)
-    }
-  }
-
-  const unmatched: string[] = []
-  for (const [name, override] of Object.entries(state.overrides)) {
-    for (const declaredName of override.opaqueReviewed ?? []) {
-      const spellings = [
-        declaredName,
-        `${name}.${declaredName}`,
-        declaredName.split('.').pop() ?? '',
-      ]
-      if (!spellings.some((spelling) => seen.has(spelling))) {
-        unmatched.push(`${name}.opaqueReviewed: ${declaredName}`)
-      }
-    }
-  }
-
-  const lines: string[] = []
-  let answered = 0
-
-  for (const [name, entry] of byFunction) {
-    /** a declared schema stands in for exactly one placeholder — §8, and the override warns when there are more */
-    const replaced = state.declared.has(name) && entry.floor.length > 0 ? 1 : 0
-    const remaining = entry.floor.slice(replaced)
-
-    if (remaining.length === 0) {
-      answered += 1
-      continue
-    }
-
-    const answeredHere = [
-      ...(replaced > 0 ? [`${replaced} replaced by override`] : []),
-      ...(entry.reviewed > 0 ? [`${entry.reviewed} reviewed`] : []),
-    ]
-
-    /**
-     * How many transactions reach the store, so the reader can judge whether the
-     * floor is worth answering. A blob nothing touches changes no number.
-     */
-    const reach = entry.kind === 'column' ? `, reached by ${entry.transactions} transaction(s)` : ''
-
-    lines.push(
-      `  ${name} — ${remaining.length} ${entry.kind}(s) at 1 DET${reach}` +
-        (answeredHere.length > 0 ? ` (${answeredHere.join(', ')} already)` : '') +
-        /** a column is qualified by its store; an input field already names its validator */
-        `: ${remaining.map((f) => (entry.kind === 'column' ? `${name}.${f}` : f)).join(', ')}`
-    )
-  }
-
-  const settled =
-    answered === 0
-      ? []
-      : [`  (${answered} more function(s) whose opaque DETs are all accounted for)`]
-
-  const unmatchedLines =
-    unmatched.length === 0
-      ? []
-      : [
-          `${unmatched.length} \`opaqueReviewed\` entr(ies) match no opaque DET, so they review ` +
-            `nothing. The name is the one the count prints:`,
-          ...unmatched.map((u) => `  ${u}`),
-        ]
-
-  if (lines.length === 0) return [...unmatchedLines, ...settled]
-
-  return [
-    `${lines.length} function(s) with a DET the analysis cannot read, counted as 1 each — a FLOOR, ` +
-      `not a measurement. Where the fields are declared in the source, name that schema with ` +
-      `\`overrides.detFromSchema\`; where 1 is the right answer, record it with ` +
-      `\`overrides.<fn>.opaqueReviewed\` — counting-decisions §8:`,
-    ...lines,
-    ...settled,
-    ...unmatchedLines,
-  ]
 }
 
 /**
@@ -584,27 +334,42 @@ function unreadableOutputWarnings(input: CountInput): string[] {
 }
 
 /**
- * Replaces what the analysis found with what a person declared.
+ * Replaces what the analysis found with a NUMBER a person declared — DET or RET
+ * of one function.
  *
- * Only for facts static analysis cannot reach — a JSON column whose schema
- * lives in the database, per counting-decisions §8. The declared number is
- * reproducible because it comes from a versioned file, and auditable because it
- * travels with its justification into the rationale, which `fp:explain` prints.
- *
- * An override naming no function is a warning, never silence: a typo in the key
- * would otherwise mean the declaration did nothing and nobody was told.
+ * Only for facts static analysis cannot reach, and only when naming the origin
+ * (`opaque`) is not possible: a declared number is reproducible because it comes
+ * from a versioned file, and auditable because it travels with its justification
+ * into the rationale, which `fp:explain` prints — but it freezes the moment the
+ * form grows. An override naming no function is a warning, never silence.
  */
 function applyOverrides(
   functions: CountedFunction[],
   overrides: Record<string, FunctionOverride>,
-  schemas: Map<string, DiscoveredSchema>,
   tables: Record<FunctionType, ComplexityTable>,
   weights: Record<FunctionType, Record<Complexity, number>>,
-  warnings: string[],
-  reviewed: Set<string>
+  warnings: string[]
 ): CountedFunction[] {
   const keys = Object.keys(overrides)
   if (keys.length === 0) return functions
+
+  /**
+   * A configuration the code does not honour is worse than none. The two keys
+   * that used to live here moved to `opaque`, by origin, in 0.6.0 — and a config
+   * still carrying them believes something happened.
+   */
+  for (const [name, override] of Object.entries(overrides)) {
+    const moved = [
+      ...(override.detFromSchema ? ['detFromSchema'] : []),
+      ...(override.opaqueReviewed ? ['opaqueReviewed'] : []),
+    ]
+    if (moved.length === 0) continue
+    warnings.push(
+      `override "${name}" uses \`${moved.join('\` and \`')}\`, which moved to ` +
+        `\`opaque.<Store.column | validator.field>\` in 0.6.0 and is no longer read here: ` +
+        `it had no effect. Declare the origin, and it applies to every function carrying it.`
+    )
+  }
 
   const used = new Set<string>()
 
@@ -615,115 +380,13 @@ function applyOverrides(
     used.add(fn.name)
 
     const fields: ('det' | 'refs')[] = []
-    if (override.det !== undefined || override.detFromSchema) fields.push('det')
+    if (override.det !== undefined) fields.push('det')
     if (override.refs !== undefined) fields.push('refs')
+    if (fields.length === 0) return fn
 
-    let det = override.det ?? fn.det
-    let by = `config:overrides.${fn.name}`
-
-    /**
-     * Read from the schema rather than declared as a number.
-     *
-     * A frozen number goes stale the moment someone adds a field: the count
-     * would not move and `fp:diff` would report no change for real functional
-     * growth. Naming the schema keeps the number coming from the code, and the
-     * only thing maintained by hand is the mapping — which changes when a form
-     * is born, not when a field is.
-     */
-    if (override.detFromSchema) {
-      /**
-       * One name or several, unioned by leaf path.
-       *
-       * An ILF's DETs are the fields the user recognises in the file, and an
-       * application with one schema per template recognises all of them. A field
-       * two templates share is one DET, so the union is over paths rather than a
-       * sum of counts.
-       */
-      const named = [override.detFromSchema].flat()
-      const resolved = named.map((name) => schemas.get(name)).filter((s) => s !== undefined)
-      const missing = named.filter((name) => !schemas.has(name))
-
-      const union = new Set(resolved.flatMap((s) => s.leaves))
-      const schema =
-        resolved.length === 0
-          ? undefined
-          : {
-              /** only what resolved: naming a schema that contributed nothing would mislead */
-              name: resolved.map((s) => s.name).join(' + '),
-              fields: union.size,
-              leaves: [...union],
-            }
-
-      for (const name of missing) {
-        warnings.push(
-          `override for "${fn.name}" names schema "${name}", which is not declared ` +
-            `anywhere in the code: it contributed nothing. A renamed or moved schema breaks ` +
-            `the mapping, and this says so rather than counting on silently.`
-        )
-      }
-
-      if (schema) {
-        /**
-         * Replaces the opaque placeholder — the one the rationale marks — rather
-         * than assuming there is one and that it is worth 1.
-         *
-         * That assumption was wrong twice over. An open `vine.object` counted
-         * ZERO, not 1, so subtracting 1 removed a field the analysis had read
-         * correctly: 86 DETs where 87 was right. And a function with no opaque
-         * DET at all was silently charged the subtraction too.
-         */
-        const placeholders = fn.rationale.detSources.filter((source) => source.endsWith('(opaque)'))
-
-        det = Math.max(fn.det - Math.min(placeholders.length, 1), 0) + schema.fields
-        by = `config:overrides.${fn.name} (from ${schema.name}: ${schema.fields} fields)`
-
-        if (placeholders.length === 0) {
-          warnings.push(
-            `override for "${fn.name}" names schema "${schema.name}", but this function has no ` +
-              `opaque DET for it to stand in for: the ${schema.fields} fields were ADDED to the ` +
-              `${fn.det} already counted. Check the override is on the right function.`
-          )
-        } else {
-          /**
-           * Only the placeholders nobody has answered are worth reporting.
-           *
-           * The message used to count every opaque DET of the function and say "names
-           * one schema" whatever it was given. With four of five columns in
-           * `opaqueReviewed` and a LIST of two schemas, it still fired, still said
-           * "one schema", and still counted the four already answered — a warning
-           * wrong on all three counts, about a configuration that was complete.
-           */
-          const unanswered = placeholders.filter(
-            (source) =>
-              !reviewed.has(opaqueNameOf(source)) && !reviewed.has(shortOpaqueNameOf(source))
-          )
-
-          if (unanswered.length > 1) {
-            warnings.push(
-              `override for "${fn.name}" names ${named.length === 1 ? 'one schema' : `${named.length} schemas`} ` +
-                `and the function has ${unanswered.length} unanswered opaque DETs ` +
-                `(${unanswered.join(', ')}). One was replaced; the others still count 1 each — ` +
-                `declare them or record them with \`opaqueReviewed\`.`
-            )
-          }
-        }
-      }
-    }
-
+    const det = override.det ?? fn.det
     const refs = override.refs ?? fn.refs
     const complexity = complexityOf(fn.type, refs, det, tables)
-
-    /**
-     * A review is recorded with NO fields, and the reporter's "declared by override"
-     * share counts only entries that declared one.
-     *
-     * Dropping it entirely lost the `reason`, so an `opaqueReviewed`-only decision
-     * appeared nowhere — not in `fp:explain`, not anywhere — which defeats the point
-     * of requiring a reason. Counting it in the share was the opposite error: it read
-     * as "1 function, 7 FP, 35% of the total declared by override" when no number had
-     * been declared at all.
-     */
-    const marked = markReviewed(fn.rationale.detSources, reviewed)
 
     return {
       ...fn,
@@ -733,8 +396,10 @@ function applyOverrides(
       points: pointsOf(fn.type, complexity, weights),
       rationale: {
         ...fn.rationale,
-        detSources: marked,
-        overrides: [...(fn.rationale.overrides ?? []), { by, reason: override.reason, fields }],
+        overrides: [
+          ...(fn.rationale.overrides ?? []),
+          { by: `config:overrides.${fn.name}`, reason: override.reason, fields },
+        ],
       },
     }
   })
