@@ -5,6 +5,52 @@ Revised after surveying 6 production AdonisJS applications
 earlier version looked for artefacts by folder convention and would have
 counted zero in two of the six apps.
 
+## Why
+
+Software factories bill by function point, and the count is manual, slow, and
+varies from counter to counter. Commercial automated counters exist for
+enterprise legacy, but **no modern framework has one** — not Laravel, not Rails,
+not AdonisJS. What those ecosystems do have (`rails stats`, `laravel-stats`,
+`adonisjs-stats`) counts classes and lines, which is a different thing.
+
+This package implements the OMG **Automated Function Points** specification,
+which defines how to automate IFPUG CPM by replacing the subjective judgements
+with deterministic rules.
+
+## Principles
+
+**Traceability.** Every counted function says where it came from: file, line,
+rule applied, origin of each DET and each FTR, and the path walked through the
+call graph. The ruleset is versioned and printed in every report — two counts
+are only comparable if the rules did not change in between.
+
+**Say "I don't know" rather than be wrong in silence.** A call the tracer cannot
+follow enters the coverage metric. If coverage falls below the configured
+threshold, the analysis **fails** instead of emitting a number that looks right.
+This is not a preference; AFP §6.5.3 requires it:
+
+> "If the transaction execution depends on code that is unknown or unavailable
+> to the automated tool, the code end point shall be cataloged and listed in the
+> generated report in order to detect and quantify the missing patterns and
+> libraries."
+
+**Shape must not change the count.** The same logical application written in
+different ways — flat MVC or module-per-domain, fat controller or action object,
+generated artefacts or none — must produce an identical number. That is the
+project's golden invariant, and it is a test
+(`tests/acceptance/golden_invariant.spec.ts`) that was written before the first
+collector.
+
+**Extensibility as a requirement.** AdonisJS imposes no code organisation — fat
+controller, action object, static service, injected service, module function,
+job. Tracing strategies are registrable, so a project with its own convention
+registers it (see [Custom code pattern](#custom-code-pattern)).
+
+**Function points are not the only number on the dashboard.** If function points
+pay, the team optimises function points: more models, more endpoints, less
+reuse. Coupling, instability and density come free from the same inventory, and
+are the counterweight.
+
 ## The thesis
 
 **The transaction → data function graph is the backbone of the count.

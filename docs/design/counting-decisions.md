@@ -268,6 +268,37 @@ rename` marker for a deleted function with an identical implementation scope,
 > complexity). A modification is billed at 1 today, and the report says that
 > overestimates.
 
+### How change is priced today
+
+AEP §6.5 gives explicit anchors for added (1) and deleted (0.4). For a **modified**
+function it grades the factor from 0.25 to 1.75 through Effort Complexity
+variation, which needs cyclomatic complexity this package does not measure — so it
+defaults to 1, which overestimates, and every diff says so with the amount at
+stake.
+
+What the default leaves on the table is a distinction the tool already measures:
+
+```
+changed      87 functions   378 FP  × 1
+  type              4 functions    23 FP
+  size             38 functions   204 FP
+  implementation   45 functions   151 FP
+```
+
+`implementation` means same type, same DET, same FTR, different body — a refactor.
+On a real pair of releases that was 151 of 378 FP billed as change. Pricing it at
+full functional value is not defensible, and pricing it at a number this package
+invented would be worse, so the number comes from the contract:
+
+```ts
+export default defineConfig({
+  diff: {
+    preset: 'sisp', // Roteiro de Métricas do SISP: 1,00 / 0,50 / 0,30 — the default is `aep`
+    reasonFactors: { implementation: 0.25 },
+  },
+})
+```
+
 ### What the inventory therefore carries
 
 - `EntryPoint.identity`: the key above, computed at collection time
