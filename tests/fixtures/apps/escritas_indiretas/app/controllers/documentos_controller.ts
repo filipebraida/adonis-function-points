@@ -133,6 +133,17 @@ export default class DocumentosController {
     return inertia.render('documentos/carimbado', { documento })
   }
 
+  /** the rows come from a method OF THE MODEL, then a query-builder chain, then a `for…of` */
+  async assinar({ params, response }: HttpContext) {
+    const documento = await Documento.findOrFail(params.id)
+    const pendentes = await documento.pendentes().forUpdate()
+    for (const assinatura of pendentes) {
+      assinatura.assinadoEm = new Date().toISOString()
+      await assinatura.save()
+    }
+    return response.noContent()
+  }
+
   /** a package's object with a method called `save` — pdf-lib's — is not a store, and not reported */
   async exportar({ params, response }: HttpContext) {
     const documento = await Documento.findOrFail(params.id)

@@ -14,5 +14,6 @@ router.post('/pastas/:id/marcar', [DocumentosController, 'marcar']).as('pastas.m
 router.post('/perfil', [DocumentosController, 'perfil']).as('perfil')
 router.post('/documentos/:id/pasta', [DocumentosController, 'renomearPasta']).as('documentos.pasta')
 router.post('/documentos/:id/duplicar', [DocumentosController, 'duplicar']).as('documentos.duplicar')
+router.post('/documentos/:id/assinar', [DocumentosController, 'assinar']).as('documentos.assinar')
 router.get('/documentos/:id/exportar', [DocumentosController, 'exportar']).as('documentos.exportar')
 router.post('/documentos/:id/carimbar', [DocumentosController, 'carimbar']).as('documentos.carimbar')

@@ -16,6 +16,7 @@ the end, and it is the team's report reproduced.
 | `Usuario`     | `nome`                                                   | read to assign; written as `auth.getUserOrFail()` — the guard's user (`config/auth.ts`): **ILF** |
 | `Historico`   | `documentoId`, `usuarioId`, `quando`                     | written only by a service the CONTAINER resolves: **ILF**                   |
 | `Notificacao` | `documentoId`, `mensagem`                                | written only by a service in a local (`new Notificador()`): ILF — already seen today |
+| `Assinatura`  | `documentoId`, `assinadoEm`                              | written row by row after a query a METHOD OF THE MODEL returns: **ILF**   |
 
 Seven transactions, one shape each:
 
@@ -29,6 +30,7 @@ Seven transactions, one shape each:
 | `POST /documentos/:id/notificar`| `const svc = new Notificador(); svc.enviar(documento)` — the control: already followed today   |
 | `POST /documentos/:id/carimbar` | `alvo.save()` where `alvo` comes from a helper returning a `Map#get` — **nobody can type it**    |
 | `GET /documentos/:id/exportar`  | `pdf.save()` on pdf-lib's `PDFDocument` — a package's object, **not a store, not reported**    |
+| `POST /documentos/:id/assinar`  | `await documento.pendentes().forUpdate()` — a method the model declares, a query chain, a `for…of` |
 
 Six more, found by the first recount — the writes the new rule REPORTED as unreadable
 on the three applications, one shape each:
@@ -42,7 +44,7 @@ on the three applications, one shape each:
 | `POST /documentos/:id/pasta`    | `const pasta = documento.pasta` — a `belongsTo` read off a loaded row                          |
 | `POST /documentos/:id/duplicar` | `const copia = await this.copia(original)` — a helper with NO annotation whose every `return` is `Documento.create(…)` |
 
-## Reference: 87 unadjusted FP
+## Reference: 97 unadjusted FP
 
 | function                         | type | FTR/RET | DET | complexity | FP     | DET origin                                                    |
 | -------------------------------- | ---- | ------- | --- | ---------- | ------ | ------------------------------------------------------------- |
@@ -52,6 +54,7 @@ on the three applications, one shape each:
 | Usuario                          | ILF  | 1       | 1   | low        | 7      | written as the authenticated user                             |
 | Historico                        | ILF  | 1       | 3   | low        | 7      | reached at last: the container's service writes it            |
 | Notificacao                      | ILF  | 1       | 2   | low        | 7      |                                                               |
+| Assinatura                       | ILF  | 1       | 2   | low        | 7      | reached: the model's own query method                          |
 | PATCH /documentos/:id            | EI   | 1       | 2   | low        | 3      | `:id`, `nome`                                                 |
 | DELETE /documentos/:id           | EI   | 1       | 2   | low        | 3      | `:id`, `motivo`                                               |
 | POST /documentos/:id/arquivar    | EI   | 2       | 1   | low        | 3      | `:id`; FTR Documento (loaded) + Sessao (read and written)      |
@@ -66,7 +69,8 @@ on the three applications, one shape each:
 | POST /documentos/:id/pasta       | EI   | 2       | 2   | low        | 3      | `:id`, `nome`; FTR Documento (read) + Pasta (written)         |
 | POST /documentos/:id/duplicar    | EI   | 1       | 1   | low        | 3      | `:id`; FTR Documento                                          |
 | GET /documentos/:id/exportar     | EO   | 1       | 2   | low        | 4      | `:id` + the PDF `response.send(bytes)` delivers — bytes pdf-lib built, **1 opaque DET**, reported as an unreadable delivery (§6); `pdf.save()` is **not** an unresolved write |
-| **total**                        |      |         |     |            | **87** |                                                               |
+| POST /documentos/:id/assinar     | EI   | 2       | 1   | low        | 3      | `:id`; FTR Documento + Assinatura — the model's method's returns name it |
+| **total**                        |      |         |     |            | **97** |                                                               |
 
 And `confidence.unresolvedCalls` is **1**, not 0: `alvo.save()` on a receiver whose
 type the analysis cannot read. `carimbar` stays an EO because nothing readable was
@@ -115,6 +119,13 @@ written — but the count SAYS it does not know, which it did not before.
    - a followed body with **no return annotation** whose every `return` is a store
      access or `new Store()` of the same store names it — the same reading as the
      annotation, one step earlier. Two stores, or a return nobody can read: nothing.
+3c. **A method the model declares** (`order.pendingItems(…)`) is application code: its
+   return annotation (`ModelQueryBuilderContract<typeof Item>`, `typeof X` names the
+   store), or its returns when every one is `Store.query()…`, names the store; a
+   query-builder chain after it (`.forUpdate()`, `.where(…)`) hands the same rows on, an
+   aggregate (`.count()`) does not. The declared method is read before Lucid's API is
+   assumed for the call. Found by a reviewing team as the one writing transaction still
+   EO after 0.8.0 — reported as an unreadable write, which is how they found it (plan 0.9 §B).
 4. **A service is what the container returns.** `const svc = await
    app.container.make(X)`, with `X` an application class that is not a store,
    binds `svc` to X's file exactly as a constructor-injected property is bound:

@@ -16,7 +16,7 @@ import { appFixturePath } from '../helpers.js'
  * EIs sold as EOs, two ILFs mistaken for EIFs, one ILF gone, zero unresolved.
  */
 const REFERENCE = {
-  total: 87,
+  total: 97,
   unresolved: 1,
   functions: {
     'Documento': { type: 'ILF', det: 5, refs: 1, fp: 7 },
@@ -25,6 +25,7 @@ const REFERENCE = {
     'Usuario': { type: 'ILF', det: 1, refs: 1, fp: 7 },
     'Historico': { type: 'ILF', det: 3, refs: 1, fp: 7 },
     'Notificacao': { type: 'ILF', det: 2, refs: 1, fp: 7 },
+    'Assinatura': { type: 'ILF', det: 2, refs: 1, fp: 7 },
     'PATCH /documentos/:param': { type: 'EI', det: 2, refs: 1, fp: 3 },
     'DELETE /documentos/:param': { type: 'EI', det: 2, refs: 1, fp: 3 },
     'POST /documentos/:param/arquivar': { type: 'EI', det: 1, refs: 2, fp: 3 },
@@ -39,6 +40,7 @@ const REFERENCE = {
     'POST /documentos/:param/pasta': { type: 'EI', det: 2, refs: 2, fp: 3 },
     'POST /documentos/:param/duplicar': { type: 'EI', det: 1, refs: 1, fp: 3 },
     'GET /documentos/:param/exportar': { type: 'EO', det: 2, refs: 1, fp: 4 },
+    'POST /documentos/:param/assinar': { type: 'EI', det: 1, refs: 2, fp: 3 },
   },
 } as const
 
@@ -162,6 +164,18 @@ test.group('indirect writes: the shapes the first recount named', () => {
       'EI',
       'every return is Documento.create(…)'
     )
+  })
+})
+
+test.group('indirect writes: a method the model declares', () => {
+  /** `documento.pendentes().forUpdate()`: the model's method returns `Assinatura.query()…`; the chain hands the rows on */
+  test('a query a model method returns, through a builder chain, binds the loop variable', async ({
+    assert,
+  }) => {
+    const { count: result } = await analyzed()
+    const assinar = fn(result, 'POST /documentos/:param/assinar')
+    assert.equal(assinar.type, 'EI')
+    assert.includeMembers(assinar.rationale.refSources, ['reaches:Assinatura', 'reaches:Documento'])
   })
 })
 

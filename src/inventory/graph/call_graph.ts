@@ -739,6 +739,41 @@ export function createAnalyzer(
       return found.size === 1 ? [...found][0] : null
     }
 
+    /**
+     * `order.pendingItems({ client })`: a method declared on the model class, returning
+     * `Item.query()…`. The model file is application code, and the method's annotation
+     * (`typeof Item` names the store) or its returns say what it hands back (plan 0.9 §B).
+     */
+    const modelMethodStore = (
+      callee: import('ts-morph').PropertyAccessExpression,
+      scope: StoreSymbols
+    ): string | null => {
+      const root = rootSymbolOf(callee.getExpression())
+      const store = root ? scope.get(root) : undefined
+      if (!store) return null
+      const declared = storesByName.get(store)
+      const modelFile = declared ? sourceFile(declared.provenance.file) : null
+      const method = modelFile
+        ?.getClasses()
+        .flatMap((c) => c.getMethods())
+        .find((m) => m.getName() === callee.getName())
+      if (!method) return null
+      const annotation = method.getReturnTypeNode()?.getText()
+      if (annotation) {
+        const named = annotation.match(/typeof\s+([A-Za-z_]\w*)/)?.[1]
+        return storeNamedBy(named ?? annotation, storesByName)
+      }
+      const found = new Set<string>()
+      for (const statement of method.getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
+        const value = statement.getExpression()
+        if (!value) return null
+        const returnedRoot = rootSymbolOf(unwrapAwait(value))
+        if (returnedRoot && storesByName.has(returnedRoot)) found.add(returnedRoot)
+        else return null
+      }
+      return found.size === 1 ? [...found][0] : null
+    }
+
     const isAuthUser = (node: Node): boolean => {
       if (!authUserStore) return false
       const chain = Node.isCallExpression(node) ? node.getExpression() : node
@@ -785,12 +820,29 @@ export function createAnalyzer(
       if (Node.isPropertyAccessExpression(node))
         return storeOfExpression(node, symbols, relationsByStore)
       if (Node.isCallExpression(node)) {
+        const callee = node.getExpression()
+        if (Node.isPropertyAccessExpression(callee)) {
+          /**
+           * `q.forUpdate()`, `q.where(…)`: a query-builder chain hands the same rows on —
+           * read from the innermost call outwards, so a model's method at the root of
+           * the chain is seen before Lucid's API is assumed for the whole chain. An
+           * aggregate (`.count()`) hands back a number.
+           */
+          const receiver = unwrapAwait(callee.getExpression())
+          if (Node.isCallExpression(receiver)) {
+            if (AGGREGATES.has(callee.getName())) return null
+            const inner = storeOfValue(receiver, depth + 1)
+            if (inner) return inner
+          }
+          // `order.pendingItems(…)`: a method the MODEL declares — its body says what it returns
+          const fromModel = modelMethodStore(callee, symbols)
+          if (fromModel) return fromModel
+        }
         const access = detectAccess(node, symbols, relationsByStore)
         if (access)
           return access.method === 'related' && access.viaRelation
             ? access.viaRelation
             : access.store
-        const callee = node.getExpression()
         if (Node.isPropertyAccessExpression(callee) && ONE_OF_ROWS.has(callee.getName()))
           return storeOfValue(callee.getExpression(), depth + 1)
         return returnedStoreOf(node)
@@ -823,7 +875,12 @@ export function createAnalyzer(
         const nameNode = node.getNameNode()
         if (!initializer) return
         if (Node.isIdentifier(nameNode)) {
-          if (symbols.has(nameNode.getText())) return
+          /**
+           * Re-read even when the parameter pass already bound the name by the chain's
+           * root: `const items = await order.pendingItems().forUpdate()` is rooted at
+           * `order` and holds `Item` rows — what the model's method returns wins over
+           * where the chain started.
+           */
           const store = storeOfValue(initializer)
           if (store) symbols.set(nameNode.getText(), store)
         }
@@ -833,7 +890,8 @@ export function createAnalyzer(
         const declared = node.getInitializer()
         if (!Node.isVariableDeclarationList(declared)) return
         const nameNode = declared.getDeclarations()[0]?.getNameNode()
-        if (!nameNode || !Node.isIdentifier(nameNode) || symbols.has(nameNode.getText())) return
+        if (!nameNode || !Node.isIdentifier(nameNode)) return
+        // re-read even when bound by the chain's root earlier: the rows iterated may be another store's
         const store = storeOfValue(node.getExpression())
         if (store) symbols.set(nameNode.getText(), store)
         return
@@ -845,7 +903,7 @@ export function createAnalyzer(
         if (!callback || !(Node.isArrowFunction(callback) || Node.isFunctionExpression(callback)))
           return
         const parameter = callback.getParameters()[0]?.getNameNode()
-        if (!parameter || !Node.isIdentifier(parameter) || symbols.has(parameter.getText())) return
+        if (!parameter || !Node.isIdentifier(parameter)) return
         const store = storeOfValue(callee.getExpression())
         if (store) symbols.set(parameter.getText(), store)
       }
@@ -1846,6 +1904,8 @@ const ONE_OF_ROWS = new Set([
   'first',
   'last',
 ])
+/** query-builder terminals that hand back one number or one yes/no, never rows */
+const AGGREGATES = new Set(['count', 'sum', 'avg', 'min', 'max', 'exists', 'pojo', 'pluck'])
 /** array methods whose callback receives one row of the receiver */
 const ITERATES_ROWS = new Set([
   'map',
