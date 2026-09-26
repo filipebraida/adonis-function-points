@@ -8,7 +8,13 @@ import {
   diffCounts,
 } from '../albrecht/diff.js'
 import { measureConformance, measureStructure } from '../metrics/structure.js'
-import { renderCount, renderDiff, renderExplain, renderMetrics } from '../reporters/table.js'
+import {
+  renderCount,
+  renderDiff,
+  renderExplain,
+  renderMetrics,
+  describeSite,
+} from '../reporters/table.js'
 import { loadConfig } from './load_config.js'
 import type { CountResult } from '../types.js'
 
@@ -89,6 +95,7 @@ export async function runInventory(options: Common & { out?: string }): Promise<
       `entry points:  ${coverage.entryPointsTotal}`,
       `coverage:      ${(coverage.ratio * 100).toFixed(1)}% ` +
         `(${coverage.unresolvedCalls} unresolved calls)`,
+      ...inventory.unresolved.map((site) => `  ${describeSite(site)}`),
     ].join('\n'),
   }
 }

@@ -11,7 +11,7 @@ import { relativeTo } from './inventory/paths.js'
 import { describeSource } from './inventory/source.js'
 import type { CountOptions } from './albrecht/counter.js'
 import type { CallResolver } from './inventory/resolvers/types.js'
-import type { CountResult, Inventory } from './types.js'
+import type { CountResult, Inventory, UnresolvedSite } from './types.js'
 
 /**
  * The whole pipeline, in one place.
@@ -90,10 +90,29 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
     (behavior) => behavior.unresolved.length === 0
   ).length
 
-  const unresolvedCalls =
-    storeProblems.length +
-    routeProblems.length +
-    [...behaviors.values()].reduce((total, behavior) => total + behavior.unresolved.length, 0)
+  /**
+   * One site, however many transactions reach it: a body five routes walk is one gap
+   * to close, not five. The count shows the same number — a reviewing team found 10
+   * in one report and 13 in the other and could act on neither.
+   */
+  const sites = new Map<string, UnresolvedSite>()
+  for (const problem of [...storeProblems, ...routeProblems])
+    sites.set(`${problem.file}:${problem.line}:${problem.expression}`, {
+      ...problem,
+      transactions: 0,
+    })
+  for (const behavior of behaviors.values()) {
+    for (const call of behavior.unresolved) {
+      const key = `${call.file}:${call.line}:${call.expression}`
+      const site = sites.get(key)
+      if (site) site.transactions++
+      else sites.set(key, { ...call, transactions: 1 })
+    }
+  }
+  const unresolvedSites = [...sites.values()].sort(
+    (a, b) => a.file.localeCompare(b.file) || a.line - b.line
+  )
+  const unresolvedCalls = unresolvedSites.length
 
   /**
    * Every path that LEAVES is relative to the application root.
@@ -177,6 +196,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
       unresolvedCalls,
       ratio: entryPoints.length === 0 ? 1 : resolved / entryPoints.length,
     },
+    unresolved: unresolvedSites.map((site) => ({ ...site, file: emit(site.file) })),
   }
 
   const minimum = options.minCoverage ?? 0
@@ -192,6 +212,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
       behaviors,
       jsonSchemas,
       jobs: collectJobs(app),
+      unresolved: inventory.unresolved,
       writtenAnywhere: analyzer.writtenAnywhere(),
       addressedAnywhere: analyzer.addressedAnywhere(),
       seededAnywhere: analyzer.seededAnywhere(),

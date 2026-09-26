@@ -1,4 +1,10 @@
-import type { CountResult, CountedFunction, DiffEntry, Inventory } from '../types.js'
+import type {
+  CountResult,
+  CountedFunction,
+  DiffEntry,
+  Inventory,
+  UnresolvedSite,
+} from '../types.js'
 import { FACTOR_PRESETS } from '../albrecht/diff.js'
 import type { FunctionPointDiff } from '../albrecht/diff.js'
 import type { Conformance, StructureMetrics } from '../metrics/structure.js'
@@ -75,7 +81,15 @@ export function renderCount(result: CountResult): string {
   if (unresolvedCalls > 0 || entryPointsWithoutHandler > 0 || warnings.length > 0) {
     lines.push('')
     lines.push('Confidence:')
-    if (unresolvedCalls > 0) lines.push(`  ${unresolvedCalls} unresolved calls`)
+    if (unresolvedCalls > 0) {
+      lines.push(
+        `  ${unresolvedCalls} unresolved call(s) — one line per site, whatever the number of transactions reaching it:`
+      )
+      const sites = result.confidence.unresolved ?? []
+      for (const site of sites.slice(0, 25)) lines.push(`    ${describeSite(site)}`)
+      if (sites.length > 25)
+        lines.push(`    … and ${sites.length - 25} more — fp:inventory lists them all`)
+    }
     if (entryPointsWithoutHandler > 0) {
       lines.push(`  ${entryPointsWithoutHandler} entry points without a handler`)
     }
@@ -83,6 +97,14 @@ export function renderCount(result: CountResult): string {
   }
 
   return lines.join('\n')
+}
+
+/** one unresolved site, the way both reports print it: where, what, why, how many transactions */
+export function describeSite(site: UnresolvedSite): string {
+  return (
+    `${site.file}:${site.line}  ${site.expression} — ${site.reason}` +
+    (site.transactions > 1 ? ` (${site.transactions} transactions)` : '')
+  )
 }
 
 /** `fp:explain`: a function's provenance, which is what supports a dispute */

@@ -7,7 +7,13 @@ import type { CollectedJob } from '../inventory/sources/jobs.js'
 import { relativeTo, toPosix } from '../inventory/paths.js'
 import { applyOpaque, opaqueWarnings } from './opaque.js'
 import type { OpaqueDeclaration } from './opaque.js'
-import type { Complexity, CountResult, CountedFunction, FunctionType } from '../types.js'
+import type {
+  Complexity,
+  CountResult,
+  CountedFunction,
+  FunctionType,
+  UnresolvedSite,
+} from '../types.js'
 import { DEFAULT_TABLES, DEFAULT_WEIGHTS, complexityOf, pointsOf } from './tables.js'
 import type { FunctionOverride } from '../define_config.js'
 import type { ComplexityTable } from './tables.js'
@@ -71,6 +77,12 @@ export type CountInput = {
   jsonSchemas?: Map<string, DiscoveredSchema>
   /** the queue jobs and who dispatches each — a job no transaction reaches is reported (plan 0.7 §D) */
   jobs?: CollectedJob[]
+  /**
+   * The unresolved call sites as the inventory lists them — one per site, route and
+   * store problems included. Given, the count shows the same number and the same list;
+   * absent, it lists the sites the behaviors show, one each.
+   */
+  unresolved?: UnresolvedSite[]
   /**
    * Stores written anywhere in the application's code, reachable from an entry
    * point or not — AFP §6.5.4 asks who MAINTAINS the store, and a job or a
@@ -713,8 +725,10 @@ function totalsOf(functions: CountedFunction[]): CountResult['totals'] {
  * reader must see that without having to go looking.
  */
 function confidenceOf(input: CountInput, warnings: string[]): CountResult['confidence'] {
-  let unresolvedCalls = 0
   let withoutHandler = 0
+  const sites = new Map<string, UnresolvedSite>()
+  for (const site of input.unresolved ?? [])
+    sites.set(`${site.file}:${site.line}:${site.expression}`, { ...site })
 
   for (const entry of input.entryPoints) {
     const behavior = input.behaviors.get(entry.id)
@@ -722,8 +736,23 @@ function confidenceOf(input: CountInput, warnings: string[]): CountResult['confi
       withoutHandler++
       continue
     }
-    unresolvedCalls += behavior.unresolved.length
+    // without the inventory's list: the sites the behaviors show, one each, however many routes reach them
+    if (input.unresolved) continue
+    for (const call of behavior.unresolved) {
+      const key = `${call.file}:${call.line}:${call.expression}`
+      const site = sites.get(key)
+      if (site) site.transactions++
+      else sites.set(key, { ...call, transactions: 1 })
+    }
   }
 
-  return { unresolvedCalls, entryPointsWithoutHandler: withoutHandler, warnings }
+  const unresolved = [...sites.values()].sort(
+    (a, b) => a.file.localeCompare(b.file) || a.line - b.line
+  )
+  return {
+    unresolvedCalls: unresolved.length,
+    entryPointsWithoutHandler: withoutHandler,
+    warnings,
+    unresolved,
+  }
 }

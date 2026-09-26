@@ -108,6 +108,16 @@ test.group('runners: an empty inventory is never a number', () => {
     assert.isTrue(result.errors!.some((line) => line.includes('not a count of zero')))
   })
 
+  test('both reports print the unresolved sites, where and why', async ({ assert }) => {
+    const inventory = await runInventory({ root: appFixturePath('escritas_indiretas') })
+    const count = await runCount({ root: appFixturePath('escritas_indiretas') })
+    for (const output of [inventory.output, count.output]) {
+      assert.match(output, /documentos_controller\.ts:\d+ {2}alvo\.save — write on a receiver/)
+    }
+    assert.include(inventory.output, '(1 unresolved calls)')
+    assert.include(count.output, '1 unresolved call(s)')
+  })
+
   test('the same holds for the inventory', async ({ assert }) => {
     const result = await runInventory({ root: fixturePath('monorepo') })
     assert.isNotEmpty(result.errors)

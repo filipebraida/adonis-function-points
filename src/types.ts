@@ -201,6 +201,12 @@ export type UnresolvedCall = {
   reason: string
 }
 
+/** an unresolved call as the reports list it: one site, however many transactions reach it */
+export type UnresolvedSite = UnresolvedCall & {
+  /** transactions whose walk reached this call; 0 for a route or store problem */
+  transactions: number
+}
+
 export type Inventory = {
   /** format version, for diffs across releases */
   version: 1
@@ -214,10 +220,16 @@ export type Inventory = {
   coverage: {
     entryPointsTotal: number
     entryPointsResolved: number
+    /** distinct call sites nobody could follow, route and store problems included — the number the count shows too */
     unresolvedCalls: number
     /** fraction of entry points whose handler was traced to completion */
     ratio: number
   }
+  /**
+   * The unresolved calls, listed: what `fp:inventory` prints and what a person acts
+   * on. One entry per site — a body five routes reach is one gap, not five.
+   */
+  unresolved: UnresolvedSite[]
 }
 
 // ---------------------------------------------------------------------------
@@ -291,9 +303,12 @@ export type CountResult = {
   }
   /** flags when the count does not deserve confidence */
   confidence: {
+    /** distinct call sites nobody could follow — the same number the inventory shows */
     unresolvedCalls: number
     entryPointsWithoutHandler: number
     warnings: string[]
+    /** the sites themselves, so the report can list them; absent on a count built by hand */
+    unresolved?: UnresolvedSite[]
   }
 }
 
