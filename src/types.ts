@@ -158,6 +158,8 @@ export type HandlerBehavior = {
   pageReads?: Record<string, string[]>
   /** stores a page could not be read for, and why: they leave whole */
   unreadablePages?: Record<string, string>
+  /** calls into a package met on the way: outside the boundary, noted, never a gap (plan 0.11 §A) */
+  packageCalls?: { file: string; line: number; expression: string; specifier: string }[]
   /**
    * How each store was read: rows whole, `.select()` columns, or one aggregate
    * scalar; by its own chain (`direct`) or preloaded through another store (`via`).

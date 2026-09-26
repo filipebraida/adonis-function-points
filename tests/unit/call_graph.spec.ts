@@ -256,15 +256,20 @@ test.group('graph: same-class method and package boundary', () => {
    * transformer there is no application-side body it calls back into.
    *
    * Dropping it silently would be the worst possible defect: the resolver
-   * produces the reference, `findBody` fails and nobody knows. It has to become
-   * an unresolved entry with the right reason.
+   * produces the reference, `findBody` fails and nobody knows. Until 0.11 it was
+   * an unresolved call; it is a call INTO a package — outside the boundary, what
+   * the mail package does is not the application's data — so it is a NOTE naming
+   * the package (plan 0.11 §A). Still not silence.
    */
-  test('a method inherited from a package is reported, not silenced', async ({ assert }) => {
+  test('a method inherited from a package is noted as a call into the package, not silenced', async ({
+    assert,
+  }) => {
     const behavior = await analyze('same_class_method')
-    const unresolved = behavior.unresolved.find((u) => u.expression.includes('sendLater'))
+    const packaged = behavior.packageCalls.find((c) => c.expression.includes('sendLater'))
 
-    assert.exists(unresolved, 'a body that was not found got dropped in silence')
-    assert.match(unresolved!.reason, /body not found/i)
+    assert.exists(packaged, 'a body that was not found got dropped in silence')
+    assert.match(packaged!.specifier, /^@adonisjs\/mail/)
+    assert.isUndefined(behavior.unresolved.find((u) => u.expression.includes('sendLater')))
   })
 })
 

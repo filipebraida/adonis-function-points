@@ -1,0 +1,19 @@
+{
+  "name": "fronteira-pacote",
+  "type": "module",
+  "dependencies": {
+    "@adonisjs/core": "^7.5.0",
+    "@adonisjs/lucid": "^22.4.2",
+    "@acme/anexos": "^1.0.0",
+    "@acme/permissoes": "^1.0.0",
+    "@acme/conteudo": "^1.0.0"
+  },
+  "imports": {
+    "#models/*": "./app/models/*.js",
+    "#controllers/*": "./app/controllers/*.js",
+    "#services/*": "./app/services/*.js",
+    "#transformers/*": "./app/transformers/*.js",
+    "#collections/*": "./app/collections/*.js",
+    "#start/*": "./start/*.js"
+  }
+}

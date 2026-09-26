@@ -17,7 +17,7 @@ import { BUILTIN_CALL_RESOLVERS, isTechnicalWrite, resolveCall } from '../resolv
 import { isApplicationCode, isSeeder, toPosix } from '../paths.js'
 import type { EventBindings } from '../sources/event_bindings.js'
 import { isIterationCall, isNoise, isNoiseMember } from './noise.js'
-import { chainShapeOf, outputFieldsIn } from './output_fields.js'
+import { chainShapeOf, outputFieldsIn, transformerResourceOf } from './output_fields.js'
 import type { StoreRead } from './output_fields.js'
 import { PASSES_ROWS, deliveriesIn } from './deliveries.js'
 import { readPages } from './pages.js'
@@ -127,6 +127,12 @@ export type Behavior = {
    */
   pageReads: Record<string, string[]>
   unreadablePages: Record<string, string>
+  /**
+   * Calls into a PACKAGE the walk met on the way — an injected package type, a
+   * package-typed column, a package factory's product, a member inherited from a
+   * package base. Outside the boundary (§4): noted, never a gap (plan 0.11 §A).
+   */
+  packageCalls: PackageCall[]
   trace: TraceStep[]
   /** bodies reached, for `fp:diff` */
   scope: ScopeEntry[]
@@ -451,6 +457,8 @@ type BodyFacts = {
   accesses: { store: string; write: boolean; technical?: boolean }[]
   /** validators used in this body */
   validators: string[]
+  /** calls whose target resolves to a package: outside the boundary, noted */
+  packageCalls: PackageCall[]
   /** the command's flags and arguments, when the body belongs to an ace command */
   commandFields: string[]
   /** validator fields that enumerate nothing: an open `vine.object` */
@@ -1016,6 +1024,7 @@ export function createAnalyzer(
     const accesses: { store: string; write: boolean; technical?: boolean }[] = []
     const followUps: { ref: HandlerRef; by: string; technical?: boolean }[] = []
     const unresolved: UnresolvedCall[] = []
+    const packageCalls: PackageCall[] = []
     const reads: StoreRead[] = []
     /** calls a strategy claimed, and where they lead: a nested transformer's keys arrive through its body */
     const followedCalls = new Map<CallExpression, HandlerRef[]>()
@@ -1143,6 +1152,13 @@ export function createAnalyzer(
        * counted as EOs under a coverage of 99.5%, because a write on an unknown
        * local was dropped without a word. It lowers coverage and is named.
        */
+      /**
+       * A call INTO a package — `this.authz.can()` on an injected package type,
+       * `row.avatar.getVariant()` on a package-typed column, `catalogue.load()` on a
+       * package factory's product — is outside the boundary: what a package does with
+       * its own tables is technical (§4), what it hands back is a value. Not a gap
+       * the walk failed at; noted (plan 0.11 §A).
+       */
       if (
         isUnreadableWrite(call, symbols, imports, packageImports, body) &&
         !isNoise(call, owner)
@@ -1157,6 +1173,17 @@ export function createAnalyzer(
       }
 
       if (isWorthReporting(call, symbols, imports) && !isNoise(call, owner)) {
+        // the same gate as an unresolved call: what is noise stays silent, what is a package is a note
+        const specifier = packageTargetOf(call, owner, file, symbols, app, storesByName, sourceFile)
+        if (specifier) {
+          packageCalls.push({
+            file: ref.file,
+            line: call.getStartLineNumber(),
+            expression: call.getExpression().getText().replace(/\s+/g, ''),
+            specifier,
+          })
+          continue
+        }
         unresolved.push({
           file: ref.file,
           line: call.getStartLineNumber(),
@@ -1185,6 +1212,7 @@ export function createAnalyzer(
       followUps,
       unresolved,
       validators: validator.fields,
+      packageCalls,
       commandFields,
       opaqueValidators: validator.opaque,
       requestFields: request.fields,
@@ -1305,6 +1333,7 @@ export function createAnalyzer(
     const writtenStores = new Set<string>()
     const inputFields = new Set<string>()
     const commandFields = new Set<string>()
+    const packageCalls: PackageCall[] = []
     const opaqueInputFields = new Set<string>()
     const requestFields = new Set<string>()
     let opaqueRequest = false
@@ -1478,6 +1507,22 @@ export function createAnalyzer(
          * loses a path and nobody knows.
          */
         if (!isNoiseMember(ref.file, ref.member)) {
+          /**
+           * `catalogue.load()` where `catalogue` is `defineCollection(…)` from a package,
+           * or a class extending a package base without the member: the body is the
+           * package's. Outside the boundary — noted, not a gap (plan 0.11 §A).
+           */
+          const source = sourceFile(ref.file)
+          const fromPackage = source ? packageMemberOriginOf(source, ref.member, app) : null
+          if (fromPackage) {
+            packageCalls.push({
+              file: ref.file,
+              line: ref.line ?? 0,
+              expression: `${pathOf(ref.file)}.${ref.member ?? 'handle'}`,
+              specifier: fromPackage,
+            })
+            return
+          }
           unresolved.push({
             file: ref.file,
             line: ref.line ?? 0,
@@ -1507,6 +1552,7 @@ export function createAnalyzer(
       unresolved.push(...facts.unresolved)
       for (const field of facts.validators) inputFields.add(field)
       for (const field of facts.commandFields) commandFields.add(field)
+      for (const packaged of facts.packageCalls) packageCalls.push(packaged)
       for (const field of facts.opaqueValidators) opaqueInputFields.add(field)
       for (const field of facts.requestFields) requestFields.add(field)
       if (facts.opaqueRequest) opaqueRequest = true
@@ -1585,6 +1631,7 @@ export function createAnalyzer(
       writtenStores: [...writtenStores].sort(),
       inputFields: [...inputFields].sort(),
       commandFields: [...commandFields].sort(),
+      packageCalls,
       opaqueInputFields: [...opaqueInputFields].sort(),
       requestFields: [...requestFields].sort(),
       opaqueRequest,
@@ -1915,6 +1962,147 @@ function dependencyTypeOf(node: ParameterDeclaration | PropertyDeclaration): str
 }
 
 /** type identifier -> application file where it is declared */
+/** a call whose target resolves to a package: where, what, which package */
+export type PackageCall = { file: string; line: number; expression: string; specifier: string }
+
+/** the specifier a type name is imported from in `file`, when the application does not resolve it */
+function packageSpecifierOfType(
+  typeName: string,
+  file: SourceFile,
+  app: AppContext
+): string | null {
+  const bare = typeName.replace(/<.*/, '').replace(/\|.*$/, '').replace(/\[\]$/, '').trim()
+  for (const declaration of file.getImportDeclarations()) {
+    const specifier = declaration.getModuleSpecifierValue()
+    const names = [
+      declaration.getDefaultImport()?.getText(),
+      ...declaration.getNamedImports().map((n) => n.getAliasNode()?.getText() ?? n.getName()),
+    ]
+    if (!names.includes(bare)) continue
+    return app.resolveSpecifier(specifier) ? null : specifier
+  }
+  return null
+}
+
+/** the declared type of `this.<property>` on the owner class: a constructor parameter or a property */
+function declaredTypeOfProperty(
+  owner: ClassDeclaration | undefined,
+  property: string
+): string | undefined {
+  if (!owner) return undefined
+  const parameter = owner
+    .getConstructors()[0]
+    ?.getParameters()
+    .find((p) => p.getName() === property)
+  if (parameter) return dependencyTypeOf(parameter)
+  const declared = owner.getProperties().find((p) => p.getName() === property)
+  return declared ? dependencyTypeOf(declared) : undefined
+}
+
+/**
+ * Does this call go INTO a package? Structurally, never by name:
+ *
+ *   this.authz.can(…)              `authz` injected as a type imported from a package
+ *   this.resource.avatar.getVariant  a column of the store whose declared type is a package's
+ *   attachmentManager.create(…)    the receiver itself imported from a package
+ *
+ * The specifier comes back so the note can say which package.
+ */
+function packageTargetOf(
+  call: CallExpression,
+  owner: ClassDeclaration | undefined,
+  file: SourceFile,
+  symbols: StoreSymbols,
+  app: AppContext,
+  stores: Map<string, CollectedDataStore>,
+  sourceFile: (path: string) => SourceFile | null
+): string | null {
+  const callee = call.getExpression()
+  if (!Node.isPropertyAccessExpression(callee)) return null
+  const receiver = unwrapAwait(callee.getExpression())
+
+  // `this.authz.can()`: the injected property's declared type
+  if (
+    Node.isPropertyAccessExpression(receiver) &&
+    Node.isThisExpression(receiver.getExpression())
+  ) {
+    const declared = declaredTypeOfProperty(owner, receiver.getName())
+    if (declared) return packageSpecifierOfType(declared, file, app)
+    // `this.resource.x()` in a transformer: the resource is a store, `x` may be a package-typed column below
+  }
+
+  // `row.avatar.getVariant()`: a column of a store, typed by a package
+  if (Node.isPropertyAccessExpression(receiver)) {
+    const holder = receiver.getExpression()
+    const holderText = holder.getText()
+    const store =
+      symbols.get(rootSymbolOf(holder) ?? '') ??
+      (holderText === 'this.resource' && owner ? transformerResourceOf(owner) : null)
+    const declared = store ? stores.get(store) : undefined
+    const modelFile = declared ? sourceFile(declared.provenance.file) : null
+    if (declared && modelFile) {
+      // the property as the MODEL declares it — a package decorator (`@attachment()`) is no `@column`, and the type is still there
+      const property = modelFile
+        .getClasses()
+        .flatMap((c) => c.getProperties())
+        .find((p) => p.getName() === receiver.getName())
+      const type =
+        property?.getTypeNode()?.getText() ??
+        declared.attributes.find((a) => a.name === receiver.getName())?.type
+      if (type) return packageSpecifierOfType(type, modelFile, app)
+    }
+  }
+
+  // `attachmentManager.createFromFile(…)`: the receiver is itself imported from a package
+  if (Node.isIdentifier(receiver)) return packageSpecifierOfType(receiver.getText(), file, app)
+
+  return null
+}
+
+/**
+ * A member the resolved file does not declare, because it is a package's: the
+ * exported symbol is a const built by a package factory, or a class extending a
+ * package base. Returns the package's specifier.
+ */
+function packageMemberOriginOf(
+  file: SourceFile,
+  member: string | undefined,
+  app: AppContext
+): string | null {
+  const rootOf = (node: Node): string | null => {
+    let current: Node = node
+    for (let depth = 0; depth < 20; depth++) {
+      if (Node.isCallExpression(current) || Node.isPropertyAccessExpression(current)) {
+        current = current.getExpression()
+        continue
+      }
+      return Node.isIdentifier(current) ? current.getText() : null
+    }
+    return null
+  }
+  // the EXPORTED product first — a schema const beside it is not what the caller holds
+  const defaultExported = file.getExportAssignments().map((e) => e.getExpression().getText())
+  const declarations = file.getVariableDeclarations()
+  const exported = declarations.filter(
+    (d) => d.getVariableStatement()?.isExported() || defaultExported.includes(d.getName())
+  )
+  for (const declaration of exported.length > 0 ? exported : declarations) {
+    const initializer = declaration.getInitializer()
+    if (!initializer || !Node.isCallExpression(initializer)) continue
+    const root = rootOf(initializer)
+    const specifier = root ? packageSpecifierOfType(root, file, app) : null
+    if (specifier) return specifier
+  }
+  for (const cls of file.getClasses()) {
+    if (member && cls.getMethod(member)) return null
+    const parent = cls.getExtends()?.getExpression()
+    const root = parent ? rootOf(parent) : null
+    const specifier = root ? packageSpecifierOfType(root, file, app) : null
+    if (specifier) return specifier
+  }
+  return null
+}
+
 function resolveTypeToFile(typeName: string, file: SourceFile, app: AppContext): string | null {
   const bare = typeName.replace(/<.*/, '').trim()
 

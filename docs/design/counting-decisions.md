@@ -179,6 +179,24 @@ DETs. So it is **noted** in the inventory (`User: base or mixin from @adonisjs/a
 (withAuthFinder) — technical…`), listed by `fp:inventory`, and kept out of coverage. A base
 of the **application** that was not found stays an unresolved call: that one is a gap.
 
+### A call into a package is outside the boundary (0.11)
+
+The third member of the same family: `this.authz.can()` on a property injected as a
+package's class, `row.avatar.getVariant()` on a column whose declared type is a package's,
+`catalogue.load()` on a package factory's product, `mailer.sendLater()` inherited from a
+package base. None is code the analysis should follow, so none is a gap it failed to
+follow — "unresolved call" means "code of the application that may read or write data and
+the walk could not follow". What a package does with its own tables is technical (above);
+what it hands back is a value, read as one by the output classifier. Read structurally,
+never by package name: the injected property's declared type, the model property's
+declared type, the exported const's factory, the class's base — each resolving to a
+specifier the application does not. Noted per site in `inventory.notes`, with the
+transactions that reach it, and kept out of coverage — which from here measures what of
+the **application** the walk could not follow. A receiver typed by the application
+(an interface with no implementation found) is not a package and stays a gap. The
+risk accepted: a package writing an application table on its own, without a model of the
+application in between — not seen; a declaration covers it if it appears.
+
 ### Columns: the generated schema already settles it
 
 `database/schema.ts` is generated from the migrations, so it reflects the

@@ -63,6 +63,47 @@ export class CoverageTooLowError extends Error {
   }
 }
 
+/**
+ * One note per call site into a package, naming the transactions that reach it —
+ * outside the boundary (§4): what a package does with its own tables is technical,
+ * what it hands back is a value. Never in coverage (plan 0.11 §A).
+ */
+function packageCallNotes(
+  entryPoints: { id: string; identity: string }[],
+  behaviors: Map<
+    string,
+    { packageCalls: { file: string; line: number; expression: string; specifier: string }[] }
+  >,
+  emit: (value: string) => string
+): string[] {
+  const sites = new Map<
+    string,
+    { specifier: string; expression: string; where: string; reached: string[] }
+  >()
+  for (const entry of entryPoints) {
+    const behavior = behaviors.get(entry.id)
+    for (const call of behavior?.packageCalls ?? []) {
+      const key = `${call.file}:${call.line}:${call.expression}`
+      const site = sites.get(key) ?? {
+        specifier: call.specifier,
+        expression: call.expression,
+        where: call.line > 0 ? `${emit(call.file)}:${call.line}` : emit(call.file),
+        reached: [],
+      }
+      if (!site.reached.includes(entry.identity)) site.reached.push(entry.identity)
+      sites.set(key, site)
+    }
+  }
+  return [...sites.values()]
+    .sort((a, b) => a.where.localeCompare(b.where))
+    .map(
+      (site) =>
+        `${site.reached.join(', ')}: call into ${site.specifier} (${site.expression}) — outside the boundary; ` +
+        `what a package does with its own tables is technical (§4), what it hands back is a value` +
+        ` [${site.where}]`
+    )
+}
+
 export async function analyze(root: string, options: AnalysisOptions = {}): Promise<Analysis> {
   const app = await discoverApp(root)
   const { stores, unresolved: storeProblems, notes: storeNotes } = await collectDataStores(app)
@@ -185,6 +226,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
       transformedStores: behavior.transformedStores,
       delivered: behavior.delivered,
       pageReads: behavior.pageReads,
+      packageCalls: behavior.packageCalls.map((c) => ({ ...c, file: emit(c.file) })),
       unreadablePages: behavior.unreadablePages,
       outputReads: behavior.outputReads,
       trace: behavior.trace.map((step) => ({ ...step, file: emit(step.file) })),
@@ -197,7 +239,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
       ratio: entryPoints.length === 0 ? 1 : resolved / entryPoints.length,
     },
     unresolved: unresolvedSites.map((site) => ({ ...site, file: emit(site.file) })),
-    notes: storeNotes,
+    notes: [...storeNotes, ...packageCallNotes(entryPoints, behaviors, emit)],
   }
 
   const minimum = options.minCoverage ?? 0
