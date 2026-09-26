@@ -62,13 +62,15 @@ export const RULESET = 'afp'
  * an unresolved call instead of silence. Two in 1.8.0: a method the model
  * declares names the store its caller writes, and a listener written inline on a
  * string event is followed like a listener class. One in 1.9.0: the value of a
- * transaction callback is what its returns name.
+ * transaction callback is what its returns name. One in 1.10.0: the raw query
+ * builder — `db.from('t')`, `trx.table('t')`, `db.rawQuery(sql)` — is an access to
+ * the store whose table is `t`.
  *
  * Without the bump, a baseline saved by the previous version compares cleanly
  * against this one and bills the tool's own improvement as work done. The guard
  * exists for exactly that, and only this constant arms it.
  */
-export const RULESET_VERSION = '1.9.0'
+export const RULESET_VERSION = '1.10.0'
 
 export type CountInput = {
   app: AppContext

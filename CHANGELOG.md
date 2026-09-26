@@ -6,6 +6,51 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## 0.12.0
+
+Rule set **`afp@1.10.0`** — numbers move. A count saved under `afp@1.9.0` is refused by
+`fp:diff`; recount the baseline.
+
+### Changed — `afp@1.10.0`
+
+- **The raw query builder is a data access.** `db.from('t')…`, `trx.table('t').insert(…)`,
+  `db.rawQuery('select … from t …')` read or write the store whose table is `t`, by the mapping
+  that always existed (`static table`, or the name Lucid derives). The output rules of §6 apply
+  unchanged: named columns in `.select(…)` (qualified and aliased names belong to their table's
+  store), an aggregate or a `db.raw(…)` in the select is one derived value, no select is every
+  column; `update/insert/delete/increment/decrement` are writes. A join adds its store as FTR; the
+  pivot of a declared `@manyToMany` is the relation and reaches both stores. Literal SQL — a
+  string, a template, a `const` holding one — is read for its tables (the statement's, and every
+  other after `from`/`join`, `with` names left out) and its select list. A builder kept in a local
+  is read where it runs. Fixture `query_builder_cru` (0 FP under `afp@1.9.0`, 38 FP now).
+- **What it cannot read, it says**, one unresolved call per site: a table no model declares, a
+  table named by an expression or a subquery, SQL whose table sits where a template has an
+  expression. A statement that names no table (`select pg_advisory_xact_lock(?)`) is no access.
+  `ignoreCalls` covers these sites like any other call, so a package's table the team knows is
+  data-free is declared once.
+- **A raw query does not address a table for grouping** (§10): rewriting a parent's detail rows
+  by the parent's key is not evidence the user handles them apart from it.
+
+### Fixed
+
+- **Nothing falls out in silence.** A route with a handler that reaches no store is listed in the
+  warnings ("reach no data store the analysis sees, and are not counted", counting-decisions §1),
+  and an entry point without a handler is named on the coverage line. A route whose handler still
+  passes through a builder chain the analysis declined to read is marked ⚑. A reviewed
+  application's management area had fallen out this way for three releases at 99.5% coverage.
+
+On the three validated applications:
+
+| application | `afp@1.9.0` | `afp@1.10.0` | unresolved calls |
+| ----------- | ----------- | ------------ | ---------------- |
+| A           | 919         | 921          | 0 → 5            |
+| B           | 758         | 793          | 0 → 11           |
+| C           | 796         | 797          | 1 → 1            |
+
+The +35 on B is seven functions of its management area. The new unresolved calls are tables no
+model declares — a package's authorisation pivot, an auditing package's table — and subqueries: the
+gaps the coverage line exists to name, each one declarable.
+
 ## 0.11.0
 
 Rule set unchanged (`afp@1.9.0`); no number moves. What changes is what the **coverage**
