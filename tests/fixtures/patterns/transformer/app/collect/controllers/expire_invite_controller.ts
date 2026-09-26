@@ -10,6 +10,12 @@ export default class ExpireInviteController {
     return response.json(InviteTransformer.transform(invite))
   }
 
+  /** the variant is where this page's fields are */
+  public async resumo({ request, response }: HttpContext) {
+    const invite = await Invite.findByOrFail('uuid', request.param('uuid'))
+    return response.json(InviteTransformer.transform(invite).useVariant('forResumo'))
+  }
+
   /** The control: a `transform` that belongs to the application, not a package. */
   public async format({ request }: HttpContext) {
     const formatter = new LocalFormatter()

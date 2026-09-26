@@ -1,4 +1,4 @@
-import { Node } from 'ts-morph'
+import { Node, SyntaxKind } from 'ts-morph'
 import type { CallExpression } from 'ts-morph'
 
 import type { HandlerRef } from '../../types.js'
@@ -17,6 +17,8 @@ const TRANSFORMER_METHODS = new Set([
 
 /** what the application-side body is called */
 const APPLICATION_BODY = 'toObject'
+/** the variant named in these is a method of the transformer, and part of what leaves */
+const VARIANT_METHODS = new Set(['useVariant', 'withVariant'])
 
 /**
  * "Transformer" pattern: the package supplies the API, the application
@@ -71,6 +73,20 @@ export const transformerResolver: CallResolver = {
     if (!declared || !declared.getClasses().some(isTransformerClass)) return []
 
     const owner = declared.getClasses().find((cls) => cls.getMethod(APPLICATION_BODY))
-    return owner ? [{ file, member: APPLICATION_BODY }] : []
+    if (!owner) return []
+
+    /**
+     * `X.transform(p).useVariant('forEgresso')`: the variant is a METHOD of the
+     * transformer, named after it, and it is where a page's fields often are —
+     * `toObject()` carries the short form. The chain is visited call by call, so
+     * the `useVariant` call resolves the variant's body and the `transform` call
+     * resolves `toObject`; both are followed, and the graph dedupes.
+     */
+    const refs: HandlerRef[] = [{ file, member: APPLICATION_BODY }]
+    if (VARIANT_METHODS.has(expression.getName())) {
+      const variant = call.getArguments()[0]?.asKind(SyntaxKind.StringLiteral)?.getLiteralValue()
+      if (variant && owner.getMethod(variant)) refs.push({ file, member: variant })
+    }
+    return refs
   },
 }

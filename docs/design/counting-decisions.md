@@ -417,7 +417,13 @@ It decides what the number is made of far more than what it is, and that is
 what `fp:explain` needs on an output: the DETs named are the ones the screen
 received. The measurement also changed the rule: no delivered collection was a
 variable bound to a store — they come out of query objects — so a followed
-call's **return** is what its value hands on.
+call's **return** is what its value hands on. And the first recount changed it
+again, three times: a home page assembling `[destaque, ...rows].slice(0, 4)` had
+fallen to 1 DET (an array is its collection); a questionnaire report built by
+`montarCsv(linhas, perguntas)` sat at 2 DET with 6 FTR (a document is made of
+what was handed into it); and a page whose fields live in `useVariant('x')` came
+out at 5 DET with 5 FTR (a variant is a method, and the resolver had followed only
+`toObject()`).
 
 **Error and confirmation messages:** the IFPUG manual counts +1 DET; AFP does
 not. We follow AFP. The Ligeiro study showed this is the systematic −1 DET per

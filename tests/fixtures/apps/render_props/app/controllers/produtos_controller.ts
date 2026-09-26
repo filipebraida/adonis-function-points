@@ -7,7 +7,7 @@ import ListarProdutos from '#queries/listar_produtos'
 import ResumoPorCategoria from '#queries/resumo_por_categoria'
 import ProdutoTransformer from '#transformers/produto_transformer'
 import { criarProdutoValidator } from '#validators/produto'
-import { gerarCsv } from '#queries/csv'
+import { gerarCsv, gerarManifesto } from '#queries/csv'
 
 export default class ProdutosController {
   /**
@@ -46,11 +46,37 @@ export default class ProdutosController {
     return inertia.render('produtos/resumo', resumo)
   }
 
-  /** a document the analysis cannot read: 1 DET as a floor, reported */
+  /**
+   * An array assembled from the collection — a highlight first, then the rest,
+   * cut to four — is still the collection: its store leaves. `total` is derived.
+   */
+  async destaques({ inertia }: HttpContext) {
+    const produtos = await new ListarProdutos().handle(null)
+    const destaque = produtos.find((p) => p.estoque === 0)
+
+    return inertia.render('produtos/destaques', {
+      itens: [...(destaque ? [destaque] : []), ...produtos].slice(0, 4),
+      total: produtos.length,
+    })
+  }
+
+  /**
+   * A document built FROM the rows handed to the builder: the CSV carries the
+   * products, so `Produto` leaves — through the argument, since the builder
+   * returns a string and reads nothing itself.
+   */
   async exportar({ response }: HttpContext) {
     const produtos = await Produto.query().orderBy('nome')
     response.header('content-type', 'text/csv')
     return response.send(gerarCsv(produtos))
+  }
+
+  /** a document built from nothing the analysis can see: 1 DET as a floor, reported */
+  async manifesto({ response }: HttpContext) {
+    const total = await Produto.query().count('* as total')
+    if (Number(total[0].$extras.total) === 0) return response.notFound()
+    response.header('content-type', 'text/plain')
+    return response.send(gerarManifesto())
   }
 
   /** `inertia.modal` is `render` by another name; the mapped list contributes its leaves once */

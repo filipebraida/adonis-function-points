@@ -16,7 +16,7 @@ import { appFixturePath } from '../helpers.js'
  * fixture asserts DETs and their origin.
  */
 const REFERENCE = {
-  total: 43,
+  total: 52,
   functions: {
     'Produto': { type: 'ILF', det: 5, refs: 1, fp: 7 },
     'Fornecedor': { type: 'EIF', det: 2, refs: 1, fp: 5 },
@@ -24,7 +24,9 @@ const REFERENCE = {
     'GET /produtos': { type: 'EO', det: 10, refs: 2, fp: 5 },
     'GET /produtos/:param': { type: 'EO', det: 7, refs: 2, fp: 5 },
     'GET /produtos/resumo': { type: 'EO', det: 2, refs: 1, fp: 4 },
-    'GET /produtos/exportar': { type: 'EO', det: 1, refs: 1, fp: 4 },
+    'GET /produtos/destaques': { type: 'EO', det: 8, refs: 2, fp: 5 },
+    'GET /produtos/exportar': { type: 'EO', det: 5, refs: 1, fp: 4 },
+    'GET /produtos/manifesto': { type: 'EO', det: 1, refs: 1, fp: 4 },
     'GET /produtos/:param/editar': { type: 'EO', det: 6, refs: 2, fp: 5 },
     'POST /produtos': { type: 'EI', det: 4, refs: 1, fp: 3 },
   },
@@ -107,15 +109,45 @@ test.group('delivery: what each DET is', () => {
     ])
   })
 
-  /** a generated document: one DET as a floor, and the report names the transaction */
+  /**
+   * A document is made of what was handed into it: the CSV builder returns a
+   * string and reads nothing, but it received the products. Found on a real
+   * questionnaire report at 2 DET with 6 FTR.
+   */
+  test('a document built from rows delivers the rows: the stores flowing into the call leave', async ({
+    assert,
+  }) => {
+    const exportar = fn(await countFixture(), 'GET /produtos/exportar')
+
+    assert.lengthOf(exportar.rationale.detSources, 5)
+    assert.isTrue(exportar.rationale.detSources.every((s) => s.startsWith('output:Produto.')))
+  })
+
+  /** with nothing readable flowing in, a document is one DET as a floor, and the report names it */
   test('a delivered value nobody can read is one DET, opaque, and reported', async ({ assert }) => {
     const result = await countFixture()
-    const exportar = fn(result, 'GET /produtos/exportar')
+    const manifesto = fn(result, 'GET /produtos/manifesto')
 
-    assert.deepEqual(exportar.rationale.detSources, ['render:<gerarCsv(produtos)> (opaque)'])
+    assert.deepEqual(manifesto.rationale.detSources, ['render:<gerarManifesto()> (opaque)'])
+    assert.equal(manifesto.refs, 1, 'the count was read: an FTR, not delivered')
     const block = result.confidence.warnings.join('\n')
     assert.include(block, 'deliver a value the analysis cannot read')
-    assert.include(block, 'GET /produtos/exportar: <gerarCsv(produtos)>')
+    assert.include(block, 'GET /produtos/manifesto: <gerarManifesto()>')
+    assert.notInclude(block, 'GET /produtos/exportar', 'the CSV over products is readable')
+  })
+
+  /** a home page assembling `[destaque, ...rows].slice(0, 4)` had fallen to 1 DET */
+  test('an array assembled from a collection is still the collection', async ({ assert }) => {
+    const destaques = fn(await countFixture(), 'GET /produtos/destaques')
+
+    assert.include(destaques.rationale.detSources, 'render:total')
+    assert.include(destaques.rationale.detSources, 'output:Produto.nome')
+    assert.include(
+      destaques.rationale.detSources,
+      'output:Fornecedor.nome',
+      'preloaded by the query object'
+    )
+    assert.notInclude(destaques.rationale.detSources.join(' '), '(opaque)')
   })
 
   /** `inertia.modal` is `render` by another name; a mapped literal contributes its leaves once */

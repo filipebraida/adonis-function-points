@@ -26,8 +26,12 @@ import type { HandlerRef } from '../../types.js'
 export type Delivery =
   /** a variable bound to a store: its columns leave */
   | { kind: 'store'; store: string; path: string }
-  /** the result of a call a strategy followed: what that body returns leaves */
-  | { kind: 'call'; refs: HandlerRef[]; path: string; expression: string }
+  /**
+   * The result of a call a strategy followed: what that body returns leaves.
+   * `args` are the call's arguments, classified — a body that returns no literal
+   * and reads no store (a CSV builder) delivers what was handed INTO it.
+   */
+  | { kind: 'call'; refs: HandlerRef[]; path: string; expression: string; args: Delivery[] }
   /** a scalar, a property, an expression: one DET */
   | { kind: 'scalar'; path: string }
   /** an input echoed back — the validated payload, a field read off the request: counts once, on entry */
@@ -42,6 +46,23 @@ const RENDER_METHODS = new Set(['render', 'modal'])
 const RESPONSE_METHODS = new Set(['json', 'ok', 'created', 'accepted', 'send'])
 /** `x.data`, `x.rows` on a paginated / wrapped result hand the collection on */
 const PASSES_THROUGH = new Set(['data', 'rows', 'all', 'toJSON', 'serialize'])
+/** methods that return the same collection, or one of its rows: what leaves is the receiver */
+const SAME_COLLECTION = new Set([
+  'slice',
+  'filter',
+  'sort',
+  'sortBy',
+  'toSorted',
+  'reverse',
+  'toReversed',
+  'concat',
+  'flat',
+  'find',
+  'findLast',
+  'at',
+  'first',
+  'last',
+])
 /** reads of the request whose result echoes input already counted on entry */
 const ECHOES_INPUT = new Set(['validateUsing', 'input', 'only', 'all', 'body', 'qs', 'params'])
 
@@ -186,6 +207,26 @@ function classify(
     return
   }
 
+  // `[...(destaque ? [destaque] : []), ...data]`: every element leaves
+  if (Node.isArrayLiteralExpression(value)) {
+    for (const element of value.getElements()) {
+      classify(
+        unwrap(Node.isSpreadElement(element) ? element.getExpression() : element),
+        path,
+        ctx,
+        out,
+        depth + 1
+      )
+    }
+    return
+  }
+
+  // `rows[0]`: one row of the collection — the collection's store
+  if (Node.isElementAccessExpression(value)) {
+    classify(unwrap(value.getExpression()), path, ctx, out, depth + 1)
+    return
+  }
+
   if (Node.isIdentifier(value)) {
     const name = value.getText()
     if (ctx.symbols.has(name)) {
@@ -229,6 +270,18 @@ function classify(
       return
     }
 
+    // `rows.slice(0, 4)`, `rows.find(…)`: the same collection, or one of its rows
+    if (Node.isPropertyAccessExpression(callee) && SAME_COLLECTION.has(method)) {
+      classify(unwrap(callee.getExpression()), path, ctx, out, depth + 1)
+      return
+    }
+
+    const args: Delivery[] = []
+    for (const argument of value.getArguments())
+      classify(unwrap(argument), path, ctx, args, depth + 1)
+    /** only what carries rows matters for a fallback: a scalar argument is a parameter, not an output */
+    const carried = args.filter((item) => item.kind === 'store' || item.kind === 'call')
+
     const refs = ctx.followed.get(value)
     if (refs && refs.length > 0) {
       out.push({
@@ -236,6 +289,7 @@ function classify(
         refs,
         path,
         expression: value.getText().replace(/\s+/g, '').slice(0, 60),
+        args: carried,
       })
       return
     }
@@ -251,6 +305,16 @@ function classify(
     // `.length`-like scalars off a call, `Number(x)`, `String(x)`
     if (Node.isIdentifier(callee) && /^(Number|String|Boolean|Math|Date)$/.test(callee.getText())) {
       out.push({ kind: 'scalar', path })
+      return
+    }
+
+    /**
+     * A call nobody followed, over rows: a package's CSV builder, a formatter. The
+     * document it builds carries what was handed into it, so the rows' stores leave.
+     * With nothing flowing in there is nothing to say: one DET, opaque, reported.
+     */
+    if (carried.length > 0) {
+      out.push(...carried)
       return
     }
 
@@ -273,6 +337,7 @@ function classify(
             refs,
             path,
             expression: initializer.getText().replace(/\s+/g, '').slice(0, 60),
+            args: [],
           })
           return
         }

@@ -97,4 +97,28 @@ test.group('resolver: transformer', () => {
     ])
     assert.isEmpty(behavior.opaqueOutputFields)
   })
+
+  /**
+   * `useVariant('forResumo')` names a METHOD of the transformer, and a page's
+   * fields often live there rather than in `toObject()`. Following only
+   * `toObject` left a questionnaire page at 5 DET with 5 FTR.
+   */
+  test('a variant named in `useVariant` is followed, and its keys leave too', async ({
+    assert,
+  }) => {
+    const root = fixturePath('patterns', 'transformer')
+    const app = await discoverApp(root)
+    const { stores } = await collectDataStores(app)
+
+    const behavior = analyzeHandler(app, stores, {
+      file: path.join(root, 'app/collect/controllers/expire_invite_controller.ts'),
+      member: 'resumo',
+    })
+
+    assert.includeMembers(behavior.outputFields, [
+      'InviteTransformer.resumo',
+      'InviteTransformer.uuid',
+    ])
+    assert.isTrue(behavior.trace.some((step) => step.member === 'forResumo'))
+  })
 })

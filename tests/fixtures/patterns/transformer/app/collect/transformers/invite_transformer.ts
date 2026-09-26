@@ -14,4 +14,9 @@ export default class InviteTransformer extends BaseTransformer<Invite> {
 
     return { uuid: this.resource.uuid, expiresAt: this.resource.expiresAt }
   }
+
+  /** a VARIANT: `useVariant('forResumo')` names this method, and its keys leave too */
+  forResumo() {
+    return { uuid: this.resource.uuid, resumo: `${this.resource.uuid} (${this.resource.expiresAt})` }
+  }
 }

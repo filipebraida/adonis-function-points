@@ -971,8 +971,17 @@ export function createAnalyzer(
               resolved = true
             }
           }
-          if (!resolved)
-            deliveredOpaque.add(`${item.path ? `${item.path}.` : ''}<${item.expression}>`)
+          if (resolved) return
+          /**
+           * The body returned no literal and read no store — a CSV builder, a
+           * formatter over rows handed in. The document it built carries what it
+           * received, so the rows' stores leave. Nothing handed in: opaque.
+           */
+          if (item.args.length > 0) {
+            for (const argument of item.args) deliver(argument, depth)
+            return
+          }
+          deliveredOpaque.add(`${item.path ? `${item.path}.` : ''}<${item.expression}>`)
         }
       }
     }
