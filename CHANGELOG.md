@@ -6,6 +6,46 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## 0.10.0
+
+**Rule set `afp@1.9.0`.** One rule and two report fixes, from a team's third review of their
+own count — the one they accepted as a baseline. The rule moves no point on the three
+validated applications and no point on its fixture: it moves a gap from the wrong line to
+the right one. A 0.9.0 baseline still has to be recounted, because the rule set says so.
+
+### Fixed
+
+- **A warning names a transaction the way the table and the config keys do.** Four warnings
+  printed the route's own pattern (`GET /orders/:id`) where the table, `fp:explain` and the
+  keys of `overrides` / `boundary.ignoreEntryPoints` use the identity (`GET /orders/:param`,
+  §5). Copying from a warning into the configuration required a translation nobody was told
+  about. All of them print the identity now.
+- **"leaves whole — page never reads X" contradicted itself.** The rule was right — a store
+  handed to a page that uses nothing of it the reader can see leaves whole, in the open, never
+  as a floor — and the sentence was not. It says now: "handed to page "x", and nothing the
+  reader can see uses X: every column counted, in the open".
+
+### Counting
+
+- **The value of a transaction callback is what it returns.** `const { row } = await
+db.transaction(async (trx) => { … return { row: created } })`, then `row.save()`: the write
+  was an unreadable receiver. The callback is a body — its own locals are bound first, in
+  source order — and every `return` names the store the value holds, whole or under one key
+  of a returned literal; `Model.transaction` and `trx.transaction` are the same shape. A
+  returned number binds nothing; a raw-query row nobody can type stays reported. On the three
+  applications the value of a transaction callback is used 17 times. The 0.8 rule "a value a
+  package built is not a store" narrows to a call with no function argument: `db` is a
+  package import, and `db.transaction(cb)` hands back the application's value.
+
+### Documented
+
+- counting-decisions §3 gains the transaction-callback row of the bindings table.
+- Fixtures: `transacao_valor` (18 FP — the same before and after; one unresolved call moves
+  from `row.save` to the raw-query row that deserves it); `inertia_pages` grows a page that
+  uses nothing of its rows (29 FP).
+- Measured and set aside: a model's instance method that writes — one in 52 models on the
+  three applications, not a rule.
+
 ## 0.9.0
 
 **Rule set `afp@1.8.0`.** Two rules from a team's second review of their own count, one

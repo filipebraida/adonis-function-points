@@ -61,13 +61,14 @@ export const RULESET = 'afp'
  * the guard's user, a service the container made — and a write nobody can type is
  * an unresolved call instead of silence. Two in 1.8.0: a method the model
  * declares names the store its caller writes, and a listener written inline on a
- * string event is followed like a listener class.
+ * string event is followed like a listener class. One in 1.9.0: the value of a
+ * transaction callback is what its returns name.
  *
  * Without the bump, a baseline saved by the previous version compares cleanly
  * against this one and bills the tool's own improvement as work done. The guard
  * exists for exactly that, and only this constant arms it.
  */
-export const RULESET_VERSION = '1.8.0'
+export const RULESET_VERSION = '1.9.0'
 
 export type CountInput = {
   app: AppContext
