@@ -3,6 +3,8 @@ import type { CollectedDataStore } from '../inventory/sources/data_stores.js'
 import type { CollectedEntryPoint } from '../inventory/sources/routes_ast.js'
 import type { Behavior } from '../inventory/graph/call_graph.js'
 import type { DiscoveredSchema } from '../inventory/sources/json_schemas.js'
+import type { CollectedJob } from '../inventory/sources/jobs.js'
+import { relativeTo, toPosix } from '../inventory/paths.js'
 import { applyOpaque, opaqueWarnings } from './opaque.js'
 import type { OpaqueDeclaration } from './opaque.js'
 import type { Complexity, CountResult, CountedFunction, FunctionType } from '../types.js'
@@ -59,6 +61,8 @@ export type CountInput = {
   behaviors: Map<string, Behavior>
   /** JSON Schema literals found in the code, for `detFromSchema` — §8 */
   jsonSchemas?: Map<string, DiscoveredSchema>
+  /** the queue jobs and who dispatches each — a job no transaction reaches is reported (plan 0.7 §D) */
+  jobs?: CollectedJob[]
   /**
    * Stores written anywhere in the application's code, reachable from an entry
    * point or not — AFP §6.5.4 asks who MAINTAINS the store, and a job or a
@@ -265,6 +269,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
   warnings.push(...unreadableOutputWarnings(input))
   warnings.push(...unreadableDeliveryWarnings(input))
   warnings.push(...commandWarnings(entryPoints, transactionalFunctions))
+  warnings.push(...undispatchedJobWarnings(input))
   warnings.push(...lookAlikeWarnings(functions))
   warnings.push(...seededOnlyWarnings(functions, grouping.members, input.seededAnywhere))
 
@@ -306,6 +311,39 @@ function unreadableDeliveryWarnings(input: CountInput): string[] {
           `  ${entry.trigger} ${entry.signature}: ${behavior!.delivered.opaqueFields.join(', ')}`
       ),
     ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
+  ]
+}
+
+/**
+ * Jobs no transaction reaches — plan 0.7 §D.
+ *
+ * A job dispatched by a handler is part of that handler's transaction (§9). One
+ * that nothing reachable dispatches is either a scheduled process — an elementary
+ * process nobody is counting — or dead code, and the code cannot say which. It is
+ * reported, never counted: inventing an elementary process is the error this
+ * package exists to avoid.
+ */
+function undispatchedJobWarnings(input: CountInput): string[] {
+  if (!input.jobs?.length) return []
+  const reached = new Set<string>()
+  for (const behavior of input.behaviors.values())
+    for (const step of behavior.trace) reached.add(toPosix(step.file))
+
+  const orphans = input.jobs.filter((job) => !reached.has(job.file))
+  if (orphans.length === 0) return []
+
+  const where = (file: string) => relativeTo(input.app.root, file)
+  return [
+    `${orphans.length} job(s) reached by no transaction — a scheduled process nobody counts, or dead code. ` +
+      `Reported, not counted: a scheduler is an entry point of its own once one is read (counting-decisions §9):`,
+    ...orphans.map(({ name, file, dispatchedFrom, scheduledFrom }) => {
+      const at = `  ${name} (${where(file)}): `
+      if (scheduledFrom.length > 0)
+        return `${at}scheduled from ${scheduledFrom.map(where).join(', ')}, outside every transaction`
+      if (dispatchedFrom.length > 0)
+        return `${at}dispatched from ${dispatchedFrom.map(where).join(', ')}, which no transaction reaches`
+      return `${at}dispatched by nothing in the application — dead code, or a scheduler this analysis does not read`
+    }),
   ]
 }
 

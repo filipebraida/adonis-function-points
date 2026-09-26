@@ -133,3 +133,40 @@ test.group('ace commands: the report and the way out', () => {
     assert.equal(fn(result, 'Noticia').type, 'ILF', 'still maintained by the importer')
   })
 })
+
+test.group('jobs nobody dispatches: reported, not counted (plan §D)', () => {
+  /** a job the import command dispatches is part of that EI — nothing to say about it */
+  test('a job a transaction reaches is not reported', async ({ assert }) => {
+    const { count: result } = await analyzed()
+    assert.notInclude(result.confidence.warnings.join('\n'), 'IndexarNoticiaJob')
+  })
+
+  /** the code cannot tell a scheduled process from dead code; the report says which it saw */
+  test('a scheduled job and an orphan job are named, each with what was seen', async ({
+    assert,
+  }) => {
+    const { count: result } = await analyzed()
+    const block = result.confidence.warnings.join('\n')
+
+    assert.include(block, '2 job(s) reached by no transaction')
+    assert.include(
+      block,
+      'PodarNoticiasJob (app/jobs/podar_noticias_job.ts): scheduled from start/scheduler.ts, outside every transaction'
+    )
+    assert.include(
+      block,
+      'EnviarBoletimJob (app/jobs/enviar_boletim_job.ts): dispatched by nothing in the application'
+    )
+  })
+
+  /** inventing an elementary process is the error this package exists to avoid */
+  test('neither job becomes a function; the store the scheduled one writes is still maintained here', async ({
+    assert,
+  }) => {
+    const { count: result } = await analyzed()
+
+    assert.isUndefined(result.functions.find((f) => /PodarNoticias|EnviarBoletim/.test(f.name)))
+    assert.equal(result.totals.unadjusted, REFERENCE.total)
+    assert.equal(fn(result, 'Noticia').type, 'ILF')
+  })
+})

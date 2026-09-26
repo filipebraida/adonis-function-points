@@ -4,7 +4,13 @@ import type { CallExpression } from 'ts-morph'
 import type { HandlerRef } from '../../types.js'
 import type { CallResolver, ResolverContext } from './types.js'
 
-const DISPATCH_METHODS = new Set(['dispatch', 'dispatchMany', 'dispatchLater', 'enqueue', 'later'])
+export const DISPATCH_METHODS = new Set([
+  'dispatch',
+  'dispatchMany',
+  'dispatchLater',
+  'enqueue',
+  'later',
+])
 
 /**
  * The method that actually runs the job, by queue package.
@@ -24,7 +30,7 @@ const DISPATCH_METHODS = new Set(['dispatch', 'dispatchMany', 'dispatchLater', '
  * Ordered: a class declaring more than one is answering the dispatcher with the
  * first, and `handle` is the most common.
  */
-const EXECUTION_METHODS = ['handle', 'execute', 'process', 'run', 'perform'] as const
+export const EXECUTION_METHODS = ['handle', 'execute', 'process', 'run', 'perform'] as const
 
 /**
  * "Job" pattern: the write happens asynchronously.

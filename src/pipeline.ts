@@ -2,6 +2,7 @@ import { discoverApp } from './inventory/app_context.js'
 import { collectDataStores } from './inventory/sources/data_stores.js'
 import { collectEntryPoints } from './inventory/sources/routes_ast.js'
 import { collectCommands } from './inventory/sources/commands.js'
+import { collectJobs } from './inventory/sources/jobs.js'
 import { collectEventBindings } from './inventory/sources/event_bindings.js'
 import { collectJsonSchemas } from './inventory/sources/json_schemas.js'
 import { createAnalyzer } from './inventory/graph/call_graph.js'
@@ -188,6 +189,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
       entryPoints,
       behaviors,
       jsonSchemas,
+      jobs: collectJobs(app),
       writtenAnywhere: analyzer.writtenAnywhere(),
       addressedAnywhere: analyzer.addressedAnywhere(),
       seededAnywhere: analyzer.seededAnywhere(),

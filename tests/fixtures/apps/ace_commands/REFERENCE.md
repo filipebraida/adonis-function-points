@@ -73,6 +73,30 @@ The first draft of this table had `relatorio` at 3 DET, arguing the count was
 (`render:total`, render_props), and a count printed to a terminal is the same
 value. 4 DET, same band, same 4 FP — corrected before the code ran.
 
+## Jobs nobody dispatches (plan §D) — reported, not counted
+
+Three jobs, one per case; none changes a number above:
+
+| job                 | who reaches it                                          | report                                                                          |
+| ------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `IndexarNoticiaJob` | dispatched by `noticias:importar` — part of that EI (§9) | nothing                                                                         |
+| `PodarNoticiasJob`  | `start/scheduler.ts` schedules it; no transaction        | "scheduled from start/scheduler.ts, outside every transaction: a process nobody counts" |
+| `EnviarBoletimJob`  | nothing in the application                              | "dispatched by nothing: dead code, or a scheduler this analysis does not read"  |
+
+A fourth case exists on the validated applications and has its own line: a job
+dispatched from a service that **no transaction reaches** — "dispatched from
+app/ai/services/language_model_service.ts, which no transaction reaches". The
+dispatcher is unreached code, not a scheduler, and saying "scheduled" would name
+a thing that is not there.
+
+A scheduled job is an elementary process — and it is **not counted**, because
+inventing one is the error this package exists to avoid. When a scheduler appears
+on a real application it becomes an entry point `job:<Class>` with the identity §5
+already decided; until then the report says what it saw. `PodarNoticiasJob`
+deletes `Noticia`: that write still makes `Noticia` maintained here (§6.5.4 asks
+who maintains the store, not which route), which is why it stays an ILF whatever
+the report says about the job.
+
 ## What `afp@1.5.0` says
 
 Commands do not exist. Nothing in the HTTP surface writes `Noticia`, so it is an

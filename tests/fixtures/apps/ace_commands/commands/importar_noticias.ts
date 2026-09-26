@@ -1,6 +1,7 @@
 import { BaseCommand, flags } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
 
+import IndexarNoticiaJob from '#jobs/indexar_noticia_job'
 import Noticia from '#models/noticia'
 
 /**
@@ -25,6 +26,7 @@ export default class ImportarNoticias extends BaseCommand {
     const itens = await buscarFeed(this.desde, this.limite)
     for (const item of itens) {
       await Noticia.updateOrCreate({ slug: item.slug }, { ...item, fonte: 'portal-antigo' })
+      await IndexarNoticiaJob.dispatch({ slug: item.slug })
     }
     this.logger.info(`${itens.length} notícias importadas`)
   }

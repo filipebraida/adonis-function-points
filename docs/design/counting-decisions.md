@@ -694,6 +694,22 @@ crossed a complexity band. The measurement got more complete without the total
 moving — which is the granularity effect §7 already describes, seen from the
 other side.
 
+### A job no transaction reaches is reported, never counted
+
+A job dispatched by a handler is that handler's transaction, as above. A job
+that **nothing reachable dispatches** is one of two things: a scheduled process
+— `PodarAuditoriaJob.schedule({}).cron('0 3 * * *')` in a start file, an
+elementary process nobody is counting — or dead code. The code cannot say which,
+and the package does not guess: the count lists each such job with what it saw
+("scheduled from start/scheduler.ts, outside every transaction" or "dispatched by
+nothing in the application"), and counts none of them. Inventing an elementary
+process is the error this package exists to avoid; when a scheduler is read as a
+source, the job becomes an entry point `job:<Class>` with the identity §5 already
+decided — not before. The write such a job performs still makes its store
+maintained here (§6.5.4 asks who maintains the store, not which route), so an ILF
+pruned only by a scheduled job stays an ILF whatever the report says about the job.
+Fixture: `ace_commands`, one job per case (plan 0.7 §D).
+
 ### An input that enumerates nothing is a floor, never a zero
 
 `answers: vine.object({}).allowUnknownProperties()` declares a field whose own
