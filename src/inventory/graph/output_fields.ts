@@ -33,18 +33,20 @@ export type OutputFacts = {
   outputs: string[]
   /** of those, the placeholders: a spread the walker could not read */
   opaqueOutputs: string[]
+  /**
+   * The store this transformer is FOR — `BaseTransformer<Livro>` — when it is a
+   * known store. A transformer decides what leaves for its resource, not for the
+   * page: a store read beside it and passed raw is not covered.
+   */
+  resource: string | null
 }
 
-export type SelectedColumns = {
+/** how a body reads a store, per chain — what leaves when nothing transforms it */
+export type StoreRead = {
   store: string
+  shape: 'whole' | 'select' | 'aggregate'
+  /** for `select`: the columns named */
   columns: string[]
-}
-
-/** what a fluent chain narrowed a store to, or the reason it could not be read */
-export type SelectFacts = {
-  selected: SelectedColumns[]
-  /** a `.select()` whose column list is not literal */
-  unreadable: { line: number; expression: string }[]
 }
 
 /**
@@ -100,7 +102,9 @@ export function outputFieldsIn(
   stores: Map<string, CollectedDataStore>,
   followed: (call: CallExpression) => boolean
 ): OutputFacts {
-  if (!owner || !isTransformerClass(owner)) return { outputs: [], opaqueOutputs: [] }
+  if (!owner || !isTransformerClass(owner)) {
+    return { outputs: [], opaqueOutputs: [], resource: null }
+  }
 
   const qualifier = owner.getName() ?? 'Transformer'
   const resource = transformerResourceOf(owner)
@@ -207,7 +211,11 @@ export function outputFieldsIn(
 
   for (const literal of returnedLiteralsOf(body)) walk(literal, '')
 
-  return { outputs: [...outputs], opaqueOutputs: [...opaque] }
+  return {
+    outputs: [...outputs],
+    opaqueOutputs: [...opaque],
+    resource: resource && stores.has(resource) ? resource : null,
+  }
 }
 
 /**
@@ -305,13 +313,62 @@ function unwrap(node: Node | undefined | null): Expression | null {
  * that is not a string literal — a variable, a raw expression — is unreadable:
  * the store falls back to every column, and the chain is reported.
  */
-export function selectedColumnsIn(access: CallExpression, store: string): SelectFacts {
-  const columns = new Set<string>()
-  const unreadable: SelectFacts['unreadable'] = []
+/** methods that leave ONE derived scalar rather than rows */
+const AGGREGATES = new Set(['count', 'countDistinct', 'exists', 'sum', 'avg', 'min', 'max'])
 
-  let node: Node = access
+/**
+ * The shape of the chain an access belongs to — read from the WHOLE chain, root
+ * to end, because every call on it is detected as an access and each must reach
+ * the same answer: `Livro.query().where(…).count()` is an aggregate whether the
+ * detector is looking at `query` or at `count`.
+ *
+ *   whole      rows leave: every column of the store (unless a transformer covers it)
+ *   select     only the columns named
+ *   aggregate  `.count()`, `.exists()`: one derived scalar leaves, not the table
+ */
+export type ChainShape = {
+  selected: string[]
+  aggregate: boolean
+  /** a `.select()` whose column list is not literal */
+  unreadable: { line: number; expression: string }[]
+}
+
+export function chainShapeOf(access: CallExpression): ChainShape {
+  const selected = new Set<string>()
+  const unreadable: ChainShape['unreadable'] = []
+  let aggregate = false
+
+  const inspect = (call: CallExpression) => {
+    const callee = call.getExpression()
+    if (!Node.isPropertyAccessExpression(callee)) return
+    const name = callee.getName()
+
+    if (AGGREGATES.has(name)) aggregate = true
+    if (name !== 'select') return
+
+    const literal = literalColumnsOf(call)
+    if (literal) for (const column of literal) selected.add(column)
+    else
+      unreadable.push({
+        line: call.getStartLineNumber(),
+        expression: call.getText().replace(/\s+/g, ''),
+      })
+  }
+
+  // down to the root of the chain
+  let node: Node | undefined = access
+  for (let depth = 0; node && depth < 40; depth++) {
+    if (Node.isCallExpression(node)) inspect(node)
+    node =
+      Node.isCallExpression(node) || Node.isPropertyAccessExpression(node)
+        ? node.getExpression()
+        : undefined
+  }
+
+  // and up to its end — only calls ON the chain, not a callback's own chain
+  node = access
   for (let depth = 0; depth < 40; depth++) {
-    const parent = node.getParent()
+    const parent: Node | undefined = node.getParent()
     if (!parent) break
 
     if (Node.isAwaitExpression(parent) || Node.isParenthesizedExpression(parent)) {
@@ -324,24 +381,11 @@ export function selectedColumnsIn(access: CallExpression, store: string): Select
     const call = parent.getParent()
     if (!call || !Node.isCallExpression(call) || call.getExpression() !== parent) break
 
-    if (parent.getName() === 'select') {
-      const literal = literalColumnsOf(call)
-      if (literal) for (const column of literal) columns.add(column)
-      else {
-        unreadable.push({
-          line: call.getStartLineNumber(),
-          expression: call.getText().replace(/\s+/g, ''),
-        })
-      }
-    }
-
+    inspect(call)
     node = call
   }
 
-  return {
-    selected: columns.size > 0 ? [{ store, columns: [...columns] }] : [],
-    unreadable,
-  }
+  return { selected: [...selected], aggregate, unreadable }
 }
 
 /** string-literal columns of one `.select(...)`; null when any is not a literal */

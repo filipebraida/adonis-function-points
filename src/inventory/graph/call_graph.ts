@@ -17,8 +17,8 @@ import { BUILTIN_CALL_RESOLVERS, isTechnicalWrite, resolveCall } from '../resolv
 import { isApplicationCode } from '../paths.js'
 import type { EventBindings } from '../sources/event_bindings.js'
 import { isIterationCall, isNoise, isNoiseMember } from './noise.js'
-import { outputFieldsIn, selectedColumnsIn } from './output_fields.js'
-import type { SelectedColumns } from './output_fields.js'
+import { chainShapeOf, outputFieldsIn } from './output_fields.js'
+import type { StoreRead } from './output_fields.js'
 import type { CallResolver, ResolverContext } from '../resolvers/types.js'
 import type { HandlerRef, TraceStep, UnresolvedCall } from '../../types.js'
 
@@ -85,8 +85,15 @@ export type Behavior = {
   outputFields: string[]
   /** of those, the spreads the walker could not read: 1 DET each, a floor, reported */
   opaqueOutputFields: string[]
-  /** store -> columns a `.select()` on the path narrowed it to */
-  selectedColumns: Record<string, string[]>
+  /** stores a transformer on the path is FOR: their columns are not output DETs, their keys are */
+  transformedStores: string[]
+  /**
+   * How each store was read, over every chain on the path: whether rows left
+   * whole, which columns a `.select()` named, and whether an aggregate
+   * (`.count()`, `.exists()`) left one scalar. What an output shows when no
+   * transformer covers the store.
+   */
+  outputReads: Record<string, { whole: boolean; selected: string[]; aggregate: boolean }>
   trace: TraceStep[]
   /** bodies reached, for `fp:diff` */
   scope: ScopeEntry[]
@@ -420,8 +427,10 @@ type BodyFacts = {
   /** keys this body emits, when it is a transformer method — §6 */
   outputs: string[]
   opaqueOutputs: string[]
-  /** `.select()` narrowing found on the access chains of this body */
-  selected: SelectedColumns[]
+  /** the store the transformer body is for, when it is one */
+  transformed: string | null
+  /** how the read chains of this body read each store */
+  reads: StoreRead[]
   followUps: { ref: HandlerRef; by: string; technical?: boolean }[]
   unresolved: UnresolvedCall[]
   bodyHash: string
@@ -582,7 +591,7 @@ export function createAnalyzer(
     const accesses: { store: string; write: boolean; technical?: boolean }[] = []
     const followUps: { ref: HandlerRef; by: string; technical?: boolean }[] = []
     const unresolved: UnresolvedCall[] = []
-    const selected: SelectedColumns[] = []
+    const reads: StoreRead[] = []
     /** calls a strategy claimed: a nested transformer's keys arrive through its body */
     const followedCalls = new Set<CallExpression>()
     const validator = validatorFieldsIn(body, file, app)
@@ -617,14 +626,32 @@ export function createAnalyzer(
         accesses.push({ store: access.store, write: access.mode === 'write', technical })
 
         /**
-         * `.select([...])` on the chain narrows what this store contributes to an
-         * output — §6. A list that is not literal is reported, and the store falls
-         * back to every column, which overestimates in the open.
+         * How the chain reads the store decides what leaves when nothing transforms
+         * it — §6: rows whole, `.select()` columns, or one scalar from `.count()`.
+         * A select list that is not literal is reported, and the store falls back
+         * to every column, which overestimates in the open.
+         *
+         * `related('itens').query().count()` reads the RELATION target, and the
+         * parent only as a receiver; `preload('itens')` reads the target whole.
          */
         if (access.mode === 'read') {
-          const narrowed = selectedColumnsIn(call, access.store)
-          selected.push(...narrowed.selected)
-          for (const problem of narrowed.unreadable) {
+          const chain = chainShapeOf(call)
+          const shape: StoreRead['shape'] = chain.aggregate
+            ? 'aggregate'
+            : chain.selected.length > 0
+              ? 'select'
+              : 'whole'
+          const read = (store: string, how: StoreRead['shape']) =>
+            reads.push({ store, shape: how, columns: how === 'select' ? chain.selected : [] })
+
+          if (access.method === 'related' && access.viaRelation) {
+            read(access.viaRelation, shape)
+          } else {
+            read(access.store, shape)
+            if (access.viaRelation) read(access.viaRelation, 'whole')
+          }
+
+          for (const problem of chain.unreadable) {
             unresolved.push({
               file: ref.file,
               line: problem.line,
@@ -698,7 +725,8 @@ export function createAnalyzer(
       opaqueRequest: request.opaque,
       outputs: output.outputs,
       opaqueOutputs: output.opaqueOutputs,
-      selected,
+      transformed: output.resource,
+      reads,
       bodyHash: hashOf(body),
     }
   }
@@ -799,7 +827,11 @@ export function createAnalyzer(
     let opaqueRequest = false
     const outputFields = new Set<string>()
     const opaqueOutputFields = new Set<string>()
-    const selectedColumns = new Map<string, Set<string>>()
+    const transformedStores = new Set<string>()
+    const outputReads = new Map<
+      string,
+      { whole: boolean; selected: Set<string>; aggregate: boolean }
+    >()
     const trace: TraceStep[] = []
     const scope: ScopeEntry[] = []
     const unresolved: UnresolvedCall[] = []
@@ -856,10 +888,17 @@ export function createAnalyzer(
       if (facts.opaqueRequest) opaqueRequest = true
       for (const field of facts.outputs) outputFields.add(field)
       for (const field of facts.opaqueOutputs) opaqueOutputFields.add(field)
-      for (const { store, columns } of facts.selected) {
-        const known = selectedColumns.get(store) ?? new Set<string>()
-        for (const column of columns) known.add(column)
-        selectedColumns.set(store, known)
+      if (facts.transformed) transformedStores.add(facts.transformed)
+      for (const { store, shape, columns } of facts.reads) {
+        const known = outputReads.get(store) ?? {
+          whole: false,
+          selected: new Set<string>(),
+          aggregate: false,
+        }
+        if (shape === 'whole') known.whole = true
+        if (shape === 'aggregate') known.aggregate = true
+        for (const column of columns) known.selected.add(column)
+        outputReads.set(store, known)
       }
 
       trace.push({
@@ -893,10 +932,14 @@ export function createAnalyzer(
       opaqueRequest,
       outputFields: [...outputFields].sort(),
       opaqueOutputFields: [...opaqueOutputFields].sort(),
-      selectedColumns: Object.fromEntries(
-        [...selectedColumns.entries()]
+      transformedStores: [...transformedStores].sort(),
+      outputReads: Object.fromEntries(
+        [...outputReads.entries()]
           .sort(([a], [b]) => a.localeCompare(b))
-          .map(([store, columns]) => [store, [...columns].sort()])
+          .map(([store, read]) => [
+            store,
+            { whole: read.whole, selected: [...read.selected].sort(), aggregate: read.aggregate },
+          ])
       ),
       trace,
       scope,

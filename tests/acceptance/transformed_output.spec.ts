@@ -9,17 +9,21 @@ import { appFixturePath } from '../helpers.js'
  *
  * The reference (`fixtures/apps/transformed_output/REFERENCE.md`) was written
  * and committed before the code that narrows output DETs existed, with the
- * number the previous rule set produced predicted beside it (42 against 41).
+ * number the previous rule set produced predicted beside it (57 against 55).
  *
- * Six transactions read the same two tables in six shapes. Only the shape
+ * Eight transactions read the same tables in eight shapes. Only the shape
  * differs, and the shape is exactly what decides the DETs: a transformer's
- * keys, a `.select()` list, or — when nothing is visible — every column.
+ * keys for the store it is for, a `.select()` list, one scalar for a `.count()`,
+ * or — when nothing is visible — every column.
  */
 const REFERENCE = {
-  total: 41,
+  total: 55,
   functions: {
     'Livro': { type: 'ILF', det: 9, refs: 1, fp: 7 },
     'Autor': { type: 'EIF', det: 2, refs: 1, fp: 5 },
+    'Categoria': { type: 'EIF', det: 2, refs: 1, fp: 5 },
+    'GET /livros/destaques': { type: 'EO', det: 6, refs: 3, fp: 5 },
+    'GET /livros/painel': { type: 'EO', det: 3, refs: 2, fp: 4 },
     'GET /livros': { type: 'EO', det: 4, refs: 2, fp: 4 },
     'GET /livros/bruto': { type: 'EO', det: 11, refs: 2, fp: 5 },
     'GET /livros/resumo': { type: 'EO', det: 2, refs: 1, fp: 4 },
@@ -125,6 +129,37 @@ test.group('output DETs: where each one came from', () => {
       'select:Livro.titulo',
     ])
     assert.deepEqual(fn(result, 'GET /autores').rationale.detSources, ['select:Autor.nome'])
+  })
+
+  /**
+   * A transformer covers ITS resource, not the page. Recounting a real application
+   * showed a questionnaire page at 4 DET with 5 FTR: the transformer of its header
+   * had erased the questions rendered raw beside it.
+   */
+  test('a store passed raw beside a transformed one still contributes its columns', async ({
+    assert,
+  }) => {
+    const destaques = fn(await countFixture(), 'GET /livros/destaques')
+
+    assert.deepEqual(destaques.rationale.detSources.sort(), [
+      'output:Categoria.descricao',
+      'output:Categoria.nome',
+      'transformer:AutorTransformer.nome',
+      'transformer:AutorTransformer.totalLivros',
+      'transformer:LivroTransformer.isbn',
+      'transformer:LivroTransformer.titulo',
+    ])
+  })
+
+  /** `.count()` leaves one derived scalar. A dashboard of counters is a handful of DETs, not a hundred. */
+  test('an aggregate read is one DET for the store, not the table', async ({ assert }) => {
+    const painel = fn(await countFixture(), 'GET /livros/painel')
+
+    assert.deepEqual(painel.rationale.detSources.sort(), [
+      'aggregate:Livro (a count or an existence check: one scalar)',
+      'output:Autor.nome',
+      'output:Autor.pais',
+    ])
   })
 
   /** The control: nothing visible means every column, marked `output:`, as before. */

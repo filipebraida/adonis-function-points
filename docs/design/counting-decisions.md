@@ -302,20 +302,21 @@ And AFP is explicit about the priority when this diverges from a human counter:
 The DETs of an EO are **what the code shows leaving the boundary**, read in this
 order of precedence — the first that is visible decides:
 
-| what the code does                                                     | DETs                                                                      | rationale prefix |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------- |
-| passes through a transformer (`X.transform(...)`, `new X(r).method()`) | **the keys the method returns**; the stores' columns are NOT added on top | `transformer:`   |
-| a nested transformer inside the literal                                | its own keys, once; the key holding it is not a DET                       | `transformer:`   |
-| `...this.pick(this.resource, [...])`                                   | the listed names                                                          | `transformer:`   |
-| `...this.toObject()`                                                   | nothing here — the followed body contributes                              |                  |
-| `xs.map((x) => x.nome)`                                                | 1 — a repeating group of one attribute                                    | `transformer:`   |
-| `xs.map((x) => ({ a, b }))`                                            | the leaves, once                                                          | `transformer:`   |
-| any other spread (`...this.resource.serialize()`)                      | **1, opaque, reported** — a floor, like an open `vine.object` (§9)        | `transformer:`   |
-| the resource's identifier re-emitted (`id`)                            | 0 — the same reason `isPrimary` is not a DET on the data function         |                  |
-| a system timestamp (`autoCreate` / `autoUpdate`), however it leaves    | 0 — the framework stamps it; the user neither supplies nor recognises it  |                  |
-| no transformer, `.select(['title', 'isbn'])` / `.select('a', 'b')`     | only the columns named, for that store                                    | `select:`        |
-| no transformer, nothing visible                                        | every column of every store reached, `.preload()` included                | `output:`        |
-| a field that enters and exits (a filter echoed on screen)              | counted once                                                              |                  |
+| what the code does                                                     | DETs                                                                                                                                                                                                                                                           | rationale prefix |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| passes through a transformer (`X.transform(...)`, `new X(r).method()`) | **the keys the method returns**, for the store the transformer is FOR (`BaseTransformer<X>`, and the nested ones' resources); a covered store's columns are NOT added on top. A store read beside it and passed raw is not covered and falls to the rows below | `transformer:`   |
+| a nested transformer inside the literal                                | its own keys, once; the key holding it is not a DET                                                                                                                                                                                                            | `transformer:`   |
+| `...this.pick(this.resource, [...])`                                   | the listed names                                                                                                                                                                                                                                               | `transformer:`   |
+| `...this.toObject()`                                                   | nothing here — the followed body contributes                                                                                                                                                                                                                   |                  |
+| `xs.map((x) => x.nome)`                                                | 1 — a repeating group of one attribute                                                                                                                                                                                                                         | `transformer:`   |
+| `xs.map((x) => ({ a, b }))`                                            | the leaves, once                                                                                                                                                                                                                                               | `transformer:`   |
+| any other spread (`...this.resource.serialize()`)                      | **1, opaque, reported** — a floor, like an open `vine.object` (§9)                                                                                                                                                                                             | `transformer:`   |
+| the resource's identifier re-emitted (`id`)                            | 0 — the same reason `isPrimary` is not a DET on the data function                                                                                                                                                                                              |                  |
+| a system timestamp (`autoCreate` / `autoUpdate`), however it leaves    | 0 — the framework stamps it; the user neither supplies nor recognises it                                                                                                                                                                                       |                  |
+| `.count()`, `.exists()` on a store — an aggregate read                 | **1 DET** for that store, one derived scalar leaving; a dashboard of counters is a handful of DETs, not the tables                                                                                                                                             | `aggregate:`     |
+| no transformer, `.select(['title', 'isbn'])` / `.select('a', 'b')`     | only the columns named, for that store                                                                                                                                                                                                                         | `select:`        |
+| no transformer, nothing visible                                        | every column of every store reached, `.preload()` included                                                                                                                                                                                                     | `output:`        |
+| a field that enters and exits (a filter echoed on screen)              | counted once                                                                                                                                                                                                                                                   |                  |
 
 A `.select()` whose list is not literal is unresolved with its reason, and the
 store falls back to every column: overestimating in the open rather than
@@ -326,6 +327,13 @@ on the related store's chain, not this one.
 changed DET, the total moved −9 FP, and `GET /perfil` went from 45 DET to the 10
 keys its three transformers emit. The DETs moved far more than the points did,
 which is the granularity effect §7 describes.
+
+The first version made a transformer cover the whole page. Recounting the three
+validated applications showed why that is wrong: a questionnaire page at 4 DET
+with 5 FTR — the transformer of its header had erased the questions rendered
+raw beside it — and a dashboard of eight counters at 5 DET. A transformer says
+what leaves for **its** resource; what leaves for the rest is what the code
+shows for the rest, and a `.count()` shows one number.
 
 **Known and accepted divergence:** a human counter counts the fields
 _displayed_; with no transformer and no `.select()` we count the whole table and

@@ -20,9 +20,11 @@ and the shape is the only thing that differs between them:
 | `GET /livros/:id`  | `new LivroTransformer(livro).forDetalhe()` — spreads `toObject()`, adds 2 |
 | `GET /livros/exportacao` | `ExportacaoTransformer` — spreads `serialize()`, which cannot be read |
 | `GET /autores`     | `Autor.query().select('nome')`, untouched                           |
+| `GET /livros/destaques` | `LivroTransformer` for the books, `Categoria.all()` raw beside it |
+| `GET /livros/painel` | `Livro.query().count()` — one scalar — and `Autor.all()` raw        |
 | `POST /livros`     | validator with 3 fields, writes `Livro`                              |
 
-## Reference: 41 unadjusted FP
+## Reference: 55 unadjusted FP
 
 | function            | type | FTR/RET | DET | complexity | FP  | DET origin                                       |
 | ------------------- | ---- | ------- | --- | ---------- | --- | ------------------------------------------------ |
@@ -34,17 +36,26 @@ and the shape is the only thing that differs between them:
 | GET /livros/:id     | EO   | 2       | 7   | average    | 5   | `:id` + the 4 above + `resumo`, `paginas`        |
 | GET /livros/exportacao | EO | 1      | 2   | low        | 4   | `formato` + 1 opaque spread, **reported**        |
 | GET /autores        | EO   | 1       | 1   | low        | 4   | `nome`                                           |
+| GET /livros/destaques | EO | 3       | 6   | average    | 5   | the 4 transformer keys + `Categoria.nome`, `.descricao` |
+| GET /livros/painel  | EO   | 2       | 3   | low        | 4   | 1 for the count + `Autor.nome`, `.pais`          |
+| Categoria           | EIF  | 1       | 2   | low        | 5   | columns, minus `id`                              |
 | POST /livros        | EI   | 1       | 3   | low        | 3   | `titulo`, `isbn`, `autorId`                      |
-| **total**           |      |         |     |            | **41** |                                               |
+| **total**           |      |         |     |            | **55** |                                               |
 
 ## Rules the reference applies
 
-1. **A transformer on the path decides the output.** Its DETs are the keys of
-   the object literal `toObject()` returns; a nested transformer contributes its
-   own keys once; an array of scalars (`titulares.map((t) => t.nome)`) is one
-   DET, as a repeating group. When a transformer is present, the columns of the
-   stores read are **not** added on top — what the transformer does not emit
-   does not leave the boundary.
+1. **A transformer decides the output of ITS resource** — the store named in
+   `BaseTransformer<X>`, and the resources of the transformers nested in it.
+   Its DETs are the keys of the object literal the reached method returns; a
+   nested transformer contributes its own keys once; an array of scalars
+   (`titulares.map((t) => t.nome)`) is one DET, as a repeating group. The
+   columns of a covered store are **not** added on top — what the transformer
+   does not emit does not leave the boundary. A store read beside it and passed
+   raw is not covered, and falls to the rules below: a questionnaire page that
+   transforms the header and renders the questions raw shows the questions.
+1b. **An aggregate read — `.count()`, `.exists()` — is one derived scalar
+   leaving the boundary: 1 DET** for that store, `aggregate:Livro`, not the
+   table. A dashboard of counters is a handful of DETs, not a hundred.
 2. **`...this.pick(this.resource, [...])`** contributes the listed names.
    **`...this.toObject()`** contributes the keys of the body it spreads, which
    the graph already follows. Any other spread (`...this.resource.serialize()`,
@@ -75,8 +86,10 @@ Every read transaction is counted from the whole tables, so:
 | GET /livros/:id    | 12        | 5        | 5            |
 | GET /livros/exportacao | 9     | 4        | 4            |
 | GET /autores       | 2         | 4        | 4            |
+| GET /livros/destaques | 13     | 5        | 5            |
+| GET /livros/painel | 11        | 5        | 4            |
 
-Predicted 1.4.0 total: **42 FP** (+1). Only one of the five reads moves: an EO
+Predicted 1.4.0 total: **57 FP** (+2). Two of the seven reads move: an EO
 with 1 FTR is low up to 19 DETs, and with 2 FTRs it is average from 6. That is
 the granularity effect counting-decisions §7 describes — DETs change far more
 often than the points do — and it is why the fixture asserts DETs, not only FP.
@@ -87,6 +100,12 @@ changed, to check that the fixture parses with full coverage; it printed 38,
 and the arithmetic above was corrected. The reference column was not touched.
 `GET /livros/exportacao` was added afterwards, still before any code, because
 the rule for an unreadable spread needed a case that exercises it.
+`GET /livros/destaques`, `GET /livros/painel` and `Categoria` were added after
+the first rule shipped and before it was refined: recounting a real
+application showed a questionnaire page at 4 DET with 5 FTR — the transformer
+of its header had erased the questions rendered raw beside it — and a dashboard
+of counters at 5. Rules 1 and 1b above are the refinement, and these two routes
+are its known answers.
 
 ## Transcription choices
 

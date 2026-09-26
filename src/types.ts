@@ -133,8 +133,10 @@ export type HandlerBehavior = {
   outputFields: Field[]
   /** output spreads the analysis could not read: 1 DET each, a floor */
   opaqueOutputFields: Field[]
-  /** store -> columns a `.select()` on the path narrowed it to */
-  selectedColumns: Record<string, string[]>
+  /** stores a transformer on the path is for: their keys leave, not their columns */
+  transformedStores: string[]
+  /** how each store was read: rows whole, `.select()` columns, or one aggregate scalar */
+  outputReads: Record<string, { whole: boolean; selected: string[]; aggregate: boolean }>
   /** path walked through the call graph — what `fp:explain` prints */
   trace: TraceStep[]
   /** calls no resolver knew how to follow */

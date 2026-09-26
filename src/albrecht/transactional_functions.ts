@@ -205,58 +205,69 @@ function detsFor(
   // output: only a transaction that presents data has output fields
   if (type === 'EO' || type === 'EQ') {
     /**
-     * counting-decisions §6, in order of what is visible:
+     * counting-decisions §6, per store, in order of what is visible:
      *
-     *   transformer   its keys are what crosses the boundary; the stores' columns
-     *                 are NOT added on top — what it does not emit does not leave
-     *   select        the store contributes only the columns named
-     *   nothing       every column of the store, which overestimates on purpose
+     *   transformer   covers ITS resource: the keys leave, the columns do not.
+     *                 A store read beside it and passed raw is not covered.
+     *   aggregate     `.count()` / `.exists()`: one derived scalar leaves — 1 DET,
+     *                 whatever else is known about the store
+     *   whole         rows leave: every column
+     *   select        only the columns named
+     *   unknown       reached some other way (a hook, a relation): every column
      *
      * An unreadable spread in a transformer is a placeholder at 1 DET, marked
      * `(opaque)` like an open input object, and the counter reports it.
      */
     const opaqueOutputs = new Set(behavior.opaqueOutputFields)
-    const viaTransformer = behavior.outputFields.length > 0
+    const covered = new Set(behavior.transformedStores)
 
-    if (viaTransformer) {
-      for (const field of behavior.outputFields) {
-        add(field, `transformer:${field}${opaqueOutputs.has(field) ? ' (opaque)' : ''}`)
+    for (const field of behavior.outputFields) {
+      add(field, `transformer:${field}${opaqueOutputs.has(field) ? ' (opaque)' : ''}`)
+    }
+
+    for (const store of touched) {
+      const read = behavior.outputReads[store]
+
+      if (read?.aggregate) {
+        add(
+          `${store}.<aggregate>`,
+          `aggregate:${store} (a count or an existence check: one scalar)`
+        )
       }
-    } else {
-      for (const store of touched) {
-        /**
-         * The key and the system timestamps are not DETs however they leave —
-         * selected by name or as part of the whole table. Same ground as on the
-         * data function: the user neither supplies nor recognises them (§6).
-         */
-        const attributes = options.countedStores.get(store)!.attributes
-        const excluded = new Set([
-          ...attributes.filter((a) => a.isIdentifier || a.system).map((a) => a.name),
-          // a detail's link to the master it is folded into: not a DET of the group (§10)
-          ...(options.grouping.linkColumns.get(store) ?? []),
-        ])
-        const selected = behavior.selectedColumns[store]
+      if (covered.has(store)) continue
+      if (read && read.aggregate && !read.whole && read.selected.length === 0) continue
 
-        /**
-         * A JSON column leaving the boundary is as unreadable here as on the data
-         * function: 1 DET, marked, so a declaration about the column (§8) reaches the
-         * transactions that show it and not only the store.
-         */
-        const opaqueOf = new Map(attributes.map((a) => [a.name, isOpaqueType(a.type)]))
-        const mark = (column: string) => (opaqueOf.get(column) ? ' (opaque)' : '')
+      /**
+       * The key and the system timestamps are not DETs however they leave —
+       * selected by name or as part of the whole table. Same ground as on the
+       * data function: the user neither supplies nor recognises them (§6).
+       */
+      const attributes = options.countedStores.get(store)!.attributes
+      const excluded = new Set([
+        ...attributes.filter((a) => a.isIdentifier || a.system).map((a) => a.name),
+        // a detail's link to the master it is folded into: not a DET of the group (§10)
+        ...(options.grouping.linkColumns.get(store) ?? []),
+      ])
 
-        if (selected && selected.length > 0) {
-          for (const column of selected) {
-            if (excluded.has(column)) continue
-            add(`${store}.${column}`, `select:${store}.${column}${mark(column)}`)
-          }
-          continue
+      /**
+       * A JSON column leaving the boundary is as unreadable here as on the data
+       * function: 1 DET, marked, so a declaration about the column (§8) reaches the
+       * transactions that show it and not only the store.
+       */
+      const opaqueOf = new Map(attributes.map((a) => [a.name, isOpaqueType(a.type)]))
+      const mark = (column: string) => (opaqueOf.get(column) ? ' (opaque)' : '')
+
+      if (read && !read.whole && read.selected.length > 0) {
+        for (const column of read.selected) {
+          if (excluded.has(column)) continue
+          add(`${store}.${column}`, `select:${store}.${column}${mark(column)}`)
         }
+        continue
+      }
 
-        for (const column of attributes) {
-          if (excluded.has(column.name)) continue
-          add(`${store}.${column.name}`, `output:${store}.${column.name}${mark(column.name)}`)
-        }
+      for (const column of attributes) {
+        if (excluded.has(column.name)) continue
+        add(`${store}.${column.name}`, `output:${store}.${column.name}${mark(column.name)}`)
       }
     }
   }

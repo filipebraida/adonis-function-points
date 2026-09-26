@@ -1,5 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 
+import Categoria from '#models/categoria'
+import Autor from '#models/autor'
 import Livro from '#models/livro'
 import ExportacaoTransformer from '#transformers/exportacao_transformer'
 import LivroTransformer from '#transformers/livro_transformer'
@@ -34,6 +36,27 @@ export default class LivrosController {
   async exportacao({ inertia }: HttpContext) {
     const livros = await Livro.query().orderBy('titulo')
     return inertia.render('livros/exportacao', { livros: ExportacaoTransformer.transform(livros) })
+  }
+
+  /**
+   * A transformer covers ITS resource, not the page. `Categoria` leaves raw beside
+   * the transformed books, so its columns count; `Autor` is covered by the nested
+   * `AutorTransformer` and contributes its keys only.
+   */
+  async destaques({ inertia }: HttpContext) {
+    const livros = await Livro.query().preload('autor').limit(3)
+    const categorias = await Categoria.all()
+    return inertia.render('livros/destaques', {
+      livros: LivroTransformer.transform(livros),
+      categorias,
+    })
+  }
+
+  /** `.count()` leaves one derived scalar, not the table; `Autor.all()` leaves every column */
+  async painel({ inertia }: HttpContext) {
+    const total = await Livro.query().count('* as total')
+    const autores = await Autor.all()
+    return inertia.render('livros/painel', { total, autores })
   }
 
   async store({ request, response }: HttpContext) {
