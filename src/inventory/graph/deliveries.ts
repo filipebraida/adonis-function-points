@@ -4,6 +4,7 @@ import type { CallExpression, Expression, Identifier, SourceFile, Type } from 't
 import { detectAccess, rootSymbolOf } from '../detectors/lucid.js'
 import type { RelationMap, StoreSymbols } from '../detectors/lucid.js'
 import { mappedLiteralOf, unwrap } from './output_fields.js'
+import type { PageRef } from './pages.js'
 import type { HandlerRef } from '../../types.js'
 
 /**
@@ -23,7 +24,12 @@ import type { HandlerRef } from '../../types.js'
  * module only says WHAT was delivered and where it came from.
  */
 
-export type Delivery =
+export type Delivery = DeliveredValue & {
+  /** the page or template this value was handed to, when it was a render — what the page shows of it is read there */
+  via?: PageRef
+}
+
+type DeliveredValue =
   /** a variable bound to a store: its columns leave */
   | { kind: 'store'; store: string; path: string }
   /**
@@ -196,8 +202,13 @@ export function deliveriesIn(ctx: DeliveryContext): BodyDeliveries {
     const receiver = lastSegmentOf(callee.getExpression())
 
     let payload: Node | undefined
-    if (RENDERERS.has(receiver) && RENDER_METHODS.has(method)) payload = call.getArguments()[1]
-    else if (receiver === 'response' && RESPONSE_METHODS.has(method))
+    let via: PageRef | undefined
+    if (RENDERERS.has(receiver) && RENDER_METHODS.has(method)) {
+      payload = call.getArguments()[1]
+      const name = unwrap(call.getArguments()[0])
+      if (name && Node.isStringLiteral(name))
+        via = { engine: receiver === 'view' ? 'edge' : 'inertia', page: name.getLiteralValue() }
+    } else if (receiver === 'response' && RESPONSE_METHODS.has(method))
       payload = call.getArguments()[0]
     else if (isPrinter(callee.getExpression(), ctx.body)) {
       any = true
@@ -209,7 +220,9 @@ export function deliveriesIn(ctx: DeliveryContext): BodyDeliveries {
     any = true
     if (!payload) continue
     seen.add(call)
+    const before = deliveries.length
     classify(unwrap(payload), '', ctx, deliveries, 0)
+    if (via) for (let i = before; i < deliveries.length; i++) deliveries[i].via = via
   }
 
   {

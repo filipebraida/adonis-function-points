@@ -165,6 +165,8 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
       })),
       transformedStores: behavior.transformedStores,
       delivered: behavior.delivered,
+      pageReads: behavior.pageReads,
+      unreadablePages: behavior.unreadablePages,
       outputReads: behavior.outputReads,
       trace: behavior.trace.map((step) => ({ ...step, file: emit(step.file) })),
       unresolved: behavior.unresolved.map((call) => ({ ...call, file: emit(call.file) })),

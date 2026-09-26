@@ -154,6 +154,10 @@ export type HandlerBehavior = {
   transformedStores: string[]
   /** what the transaction delivers: derived fields, raw stores, values nobody could read */
   delivered: { any: boolean; fields: string[]; opaqueFields: string[]; stores: string[] }
+  /** of the stores delivered raw to a page, the columns the page reads off them (§6, plan 0.8 §D) */
+  pageReads?: Record<string, string[]>
+  /** stores a page could not be read for, and why: they leave whole */
+  unreadablePages?: Record<string, string>
   /**
    * How each store was read: rows whole, `.select()` columns, or one aggregate
    * scalar; by its own chain (`direct`) or preloaded through another store (`via`).

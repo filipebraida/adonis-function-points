@@ -327,6 +327,20 @@ function detsFor(
         continue
       }
 
+      /**
+       * Handed raw to a page the reader could open: the columns the page reads off
+       * the rows are what the user sees (§6, plan 0.8 §D). A page it could not read
+       * leaves the store whole below, and the count says why.
+       */
+      const shown = behavior.pageReads?.[store]
+      if (shown && !behavior.unreadablePages?.[store]) {
+        for (const column of shown) {
+          if (excluded.has(column)) continue
+          add(`${store}.${column}`, `page:${store}.${column}${mark(column)}`)
+        }
+        continue
+      }
+
       for (const column of attributes) {
         if (excluded.has(column.name)) continue
         add(`${store}.${column.name}`, `output:${store}.${column.name}${mark(column.name)}`)

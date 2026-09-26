@@ -1,0 +1,10 @@
+{
+  "name": "inertia-pages",
+  "type": "module",
+  "dependencies": { "@adonisjs/core": "^7.5.0", "@adonisjs/lucid": "^22.4.2", "@adonisjs/inertia": "^3.0.0" },
+  "imports": {
+    "#models/*": "./app/models/*.js",
+    "#controllers/*": "./app/controllers/*.js",
+    "#start/*": "./start/*.js"
+  }
+}

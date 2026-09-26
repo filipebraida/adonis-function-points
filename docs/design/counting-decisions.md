@@ -490,6 +490,39 @@ What stays **opaque** after this, on the three applications, is what nobody can
 read statically: `Map.get()`, a `reduce` into an object, a package's health check,
 an external API's answer. It is reported by transaction, as a floor.
 
+**What the page shows (0.8, plan §D).** The one case the delivery rule left open
+is a store handed to the page **raw** — no transformer, no `.select()`. The
+controller says which store; the page says which columns, and the page is
+TypeScript the same reader can open. `inertia.render('livros/index', { livros })`
+→ `inertia/pages/livros/index.tsx` (or `app/<module>/ui/pages/<rest>.tsx`, or any
+`pages/` directory under the root — **exactly one** match, or nothing is read);
+`view.render('catalogo')` → `resources/views/catalogo.edge`. From the component's
+props to every member read off a row — `livros.map((livro) => …)`, `{livro.titulo}`,
+`livro.autor.nome` on a declared relation, `const { titulo } = livro` — **one child
+component deep** (`<Ficha livro={livro} />`, resolved through tsconfig `paths`,
+subpath imports and relative paths); in Edge, `{{ x.col }}`, `@each(x in xs)`,
+`@if(x.col)`, `@include` one level. The columns read are the DETs, `page:Livro.titulo`.
+
+Where it cannot read, the store leaves **whole, in the open**, and the count says
+why, by transaction: a second level of components (`<Capa livro />` inside
+`Vitrine`), a spread, a function receiving the rows (`formatar(livro)`), a
+component from a package (`<DataTable data={rows} />`), two files answering to one
+page name, a prop carrying several stores at once (a query object's unreadable
+result), a page that reads members that are not columns (a row serialised on the
+way), or a page that never reads the rows. Never a floor: a floor would undercount
+what the user sees. A transformer-covered store is not raw and is not read here.
+
+Measured on the three applications before it landed: **0 FP moved**. On sae the
+reader read three pages (`GET /vagas` 34 → 22 DET, still 7 FP) and reported 22
+stores it could not read — four pages hand their rows to a generic `<DataTable>`,
+two to a second level of components, and one dashboard hands six stores under one
+prop. On peticao-ia and agencia-inovacao every raw store reaching a page is
+transformer-covered, so nothing was read and nothing changed. The rule is right and
+the moved number is zero, which is what the fixture `inertia_pages` (25 FP, five
+shapes) asserts too: the DETs change, the points do not. It is here for the
+application that does hand rows raw to a page — and for the report, which now names
+the page instead of the table.
+
 **Error and confirmation messages:** the IFPUG manual counts +1 DET; AFP does
 not. We follow AFP. The Ligeiro study showed this is the systematic −1 DET per
 transaction divergence; it stays as `messageDet: 0 | 1` in the configuration,

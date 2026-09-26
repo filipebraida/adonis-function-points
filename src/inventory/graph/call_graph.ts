@@ -20,6 +20,8 @@ import { isIterationCall, isNoise, isNoiseMember } from './noise.js'
 import { chainShapeOf, outputFieldsIn } from './output_fields.js'
 import type { StoreRead } from './output_fields.js'
 import { PASSES_ROWS, deliveriesIn } from './deliveries.js'
+import { readPages } from './pages.js'
+import type { RawDelivery } from './pages.js'
 import { commandFieldsOf, isCommandClass } from '../sources/commands.js'
 import type { Delivery } from './deliveries.js'
 import type { CallResolver, ResolverContext } from '../resolvers/types.js'
@@ -118,6 +120,13 @@ export type Behavior = {
    * a query object; `opaqueFields` are values nobody could read, 1 DET each.
    */
   delivered: { any: boolean; fields: string[]; opaqueFields: string[]; stores: string[] }
+  /**
+   * Of the stores delivered raw to a page, the columns the page reads off them
+   * (plan 0.8 §D). A store absent here leaves whole; one in `unreadablePages` leaves
+   * whole because the page could not be read, and says why.
+   */
+  pageReads: Record<string, string[]>
+  unreadablePages: Record<string, string>
   trace: TraceStep[]
   /** bodies reached, for `fp:diff` */
   scope: ScopeEntry[]
@@ -1166,6 +1175,8 @@ export function createAnalyzer(
     const deliveredFields = new Set<string>()
     const deliveredOpaque = new Set<string>()
     const deliveredStores = new Set<string>()
+    /** stores handed raw to a page: what the page shows of them is read after the walk */
+    const rawDeliveries: RawDelivery[] = []
     let anyDelivery = false
     const outputReads = new Map<
       string,
@@ -1214,6 +1225,7 @@ export function createAnalyzer(
       switch (item.kind) {
         case 'store':
           deliveredStores.add(item.store)
+          if (item.via) rawDeliveries.push({ ...item.via, store: item.store, path: item.path })
           return
         case 'scalar':
           deliveredFields.add(item.path || '<value>')
@@ -1254,7 +1266,7 @@ export function createAnalyzer(
               for (const r of above) {
                 const rest = r.path ? item.pick.slice(r.path.length + 1) : item.pick
                 if (r.kind === 'call')
-                  deliver({ ...r, path: item.path, pick: rest }, depth + 1, seen)
+                  deliver({ ...r, path: item.path, pick: rest, via: item.via }, depth + 1, seen)
                 else if (r.kind === 'store' || r.kind === 'scalar')
                   deliveredFields.add(item.path || '<value>')
               }
@@ -1272,7 +1284,7 @@ export function createAnalyzer(
               for (const r of returned) {
                 const rest = item.pick ? r.path.slice(item.pick.length).replace(/^\./, '') : r.path
                 const path = [item.path, rest].filter(Boolean).join('.')
-                deliver({ ...r, path } as Delivery, depth + 1, seen)
+                deliver({ ...r, path, via: item.via } as Delivery, depth + 1, seen)
               }
               resolved = true
               continue
@@ -1280,7 +1292,10 @@ export function createAnalyzer(
             if (item.pick) continue
             const read = storesReadBy(ref, depth + 1)
             if (read.size > 0) {
-              for (const store of read) deliveredStores.add(store)
+              for (const store of read) {
+                deliveredStores.add(store)
+                if (item.via) rawDeliveries.push({ ...item.via, store, path: item.path })
+              }
               resolved = true
             }
           }
@@ -1300,7 +1315,7 @@ export function createAnalyzer(
            * received, so the rows' stores leave. Nothing handed in: opaque.
            */
           if (item.args.length > 0) {
-            for (const argument of item.args) deliver(argument, depth, seen)
+            for (const argument of item.args) deliver({ ...argument, via: item.via }, depth, seen)
             return
           }
           deliveredOpaque.add(`${item.path ? `${item.path}.` : ''}<${item.expression}>`)
@@ -1408,6 +1423,23 @@ export function createAnalyzer(
 
     visit(handler, 0)
 
+    /**
+     * What each page shows of the stores handed to it raw — read once the walk is
+     * done, because a query object's rows reach the page through the delivery of a
+     * call, not of a variable (plan 0.8 §D).
+     */
+    // a store a transformer covers is not raw: its keys are the output, whatever the page does with them
+    const pages = readPages(
+      rawDeliveries.filter((d) => !transformedStores.has(d.store)),
+      {
+        root: app.root,
+        project,
+        stores: storesByName,
+        relations: relationsByStore,
+        resolveSpecifier: app.resolveSpecifier,
+      }
+    )
+
     return {
       writes,
       touches: [...touches].sort(),
@@ -1426,6 +1458,10 @@ export function createAnalyzer(
         opaqueFields: [...deliveredOpaque].sort(),
         stores: [...deliveredStores].sort(),
       },
+      pageReads: Object.fromEntries(
+        [...pages.columns.entries()].map(([store, columns]) => [store, [...columns].sort()])
+      ),
+      unreadablePages: Object.fromEntries(pages.unreadable),
       outputReads: Object.fromEntries(
         [...outputReads.entries()]
           .sort(([a], [b]) => a.localeCompare(b))

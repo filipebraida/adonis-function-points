@@ -274,6 +274,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
   warnings.push(...unreadableDeliveryWarnings(input))
   warnings.push(...commandWarnings(entryPoints, transactionalFunctions))
   warnings.push(...undispatchedJobWarnings(input))
+  warnings.push(...unreadablePageWarnings(input))
   warnings.push(...lookAlikeWarnings(functions))
   warnings.push(...seededOnlyWarnings(functions, grouping.members, input.seededAnywhere))
 
@@ -315,6 +316,29 @@ function unreadableDeliveryWarnings(input: CountInput): string[] {
           `  ${entry.trigger} ${entry.signature}: ${behavior!.delivered.opaqueFields.join(', ')}`
       ),
     ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
+  ]
+}
+
+/**
+ * Pages the reader could not open for a store handed to them raw — plan 0.8 §D.
+ *
+ * The store leaves whole, as it always did; this says which page, and why: a
+ * second level of components, a spread, a package's component, two files answering
+ * to one name. Overestimating in the open — the fix is usually in the page.
+ */
+function unreadablePageWarnings(input: CountInput): string[] {
+  const lines: string[] = []
+  for (const entry of input.entryPoints) {
+    const behavior = input.behaviors.get(entry.id)
+    if (!behavior || behavior.writes) continue
+    for (const [store, reason] of Object.entries(behavior.unreadablePages ?? {}))
+      lines.push(`  ${entry.trigger} ${entry.signature}: ${store} leaves whole — ${reason}`)
+  }
+  if (lines.length === 0) return []
+  return [
+    `${lines.length} store(s) handed raw to a page the analysis could not read: every column counted. What the page shows would be less:`,
+    ...lines.slice(0, 12),
+    ...(lines.length > 12 ? [`  … and ${lines.length - 12} more`] : []),
   ]
 }
 
