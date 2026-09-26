@@ -6,6 +6,44 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## 0.11.0
+
+Rule set unchanged (`afp@1.9.0`); no number moves. What changes is what the **coverage**
+means: it measures what of the application the walk could not follow, and nothing else.
+
+### Fixed
+
+- **A call into a package is outside the boundary — noted, not an unresolved call.** An
+  authorisation service from a package injected into the application's façade, a variant of an
+  attachment whose column type is a package's, a content collection built by a package factory,
+  a mailer method inherited from a package base: none is code the analysis should follow, so none
+  is a gap it failed to follow. What a package does with its own tables is technical (§4); what it
+  hands back is a value. Read structurally — the injected property's declared type, the model
+  property's declared type, the exported const's factory, the class's base, each resolving to a
+  specifier the application does not — never by package name. One note per site in
+  `inventory.notes`, naming the transactions that reach it; behind the same noise gate as an
+  unresolved call, so what was silent stays silent. A receiver typed by the application stays a
+  gap. Fixture `fronteira_pacote` (23 FP before and after; four unresolved calls become three
+  notes and the one gap of the application).
+- **A `Map` or `Set` that arrives through the constructor, one level down a named type**
+  (`this.extras?.panel?.get(id)` with `extras?: Extras`, `Extras = { panel: Map<…> }`) is noise,
+  as `private names = new Map()` already was. Fixture `patterns/native_receivers`.
+- **A command's `@flags.*` / `@args.*` property is a string, a number or a boolean**: a method on
+  it (`this.name.trim()`) is the language's, not a gap.
+- **A method of an interface says so**: "interface method: the implementation is injected at
+  runtime and cannot be followed statically" — a gap, with the right words, where "probably
+  inherited from a package class" pointed the reader at the wrong place.
+- **A local mixin factory whose returned class declares no `@column`** adds behaviour, not
+  attributes: a note. One that declares a column stays a gap — reading its columns off the
+  returned class is a rule for a release that moves numbers.
+
+On the three validated applications, unresolved calls go from 13 / 8 / 12 to **0 / 0 / 1** —
+the one an interface method, which is a gap of the application — with no point moved.
+
+### Documented
+
+- counting-decisions §4 gains "A call into a package is outside the boundary".
+
 ## 0.10.1
 
 Rule set unchanged (`afp@1.9.0`); no number moves.
