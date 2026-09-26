@@ -160,6 +160,8 @@ export type HandlerBehavior = {
   unreadablePages?: Record<string, string>
   /** calls into a package met on the way: outside the boundary, noted, never a gap (plan 0.11 §A) */
   packageCalls?: { file: string; line: number; expression: string; specifier: string }[]
+  /** raw query-builder calls the analysis did not read as accesses — a store-less transaction carrying them is marked */
+  rawBuilderCalls?: number
   /**
    * How each store was read: rows whole, `.select()` columns, or one aggregate
    * scalar; by its own chain (`direct`) or preloaded through another store (`via`).
@@ -313,6 +315,8 @@ export type CountResult = {
     /** distinct call sites nobody could follow — the same number the inventory shows */
     unresolvedCalls: number
     entryPointsWithoutHandler: number
+    /** the entry points without a handler, by identity — the coverage line names them */
+    withoutHandler?: string[]
     warnings: string[]
     /** the sites themselves, so the report can list them; absent on a count built by hand */
     unresolved?: UnresolvedSite[]

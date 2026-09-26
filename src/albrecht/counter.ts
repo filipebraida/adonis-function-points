@@ -294,6 +294,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
   warnings.push(...commandWarnings(entryPoints, transactionalFunctions))
   warnings.push(...undispatchedJobWarnings(input))
   warnings.push(...unreadablePageWarnings(input))
+  warnings.push(...storelessRouteWarnings(entryPoints, input.behaviors, transactionalFunctions))
   warnings.push(...lookAlikeWarnings(functions))
   warnings.push(...seededOnlyWarnings(functions, grouping.members, input.seededAnywhere))
 
@@ -335,6 +336,40 @@ function unreadableDeliveryWarnings(input: CountInput): string[] {
           `  ${entry.identity}: ${behavior!.delivered.opaqueFields.join(', ')}`
       ),
     ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
+  ]
+}
+
+/**
+ * Routes with a handler that reach no data store — counting-decisions §1 drops them, and
+ * used to drop them in silence. Most are static pages, redirects and forms; one that
+ * carries raw query-builder calls the analysis does not read is a data access it missed,
+ * and is marked. A whole management area of a reviewed application fell out this way
+ * for three releases (plan 0.12 §A).
+ */
+function storelessRouteWarnings(
+  entryPoints: CollectedEntryPoint[],
+  behaviors: Map<string, Behavior>,
+  functions: CountedFunction[]
+): string[] {
+  const counted = new Set(functions.map((f) => f.id))
+  const storeless = entryPoints.filter(
+    (entry) => behaviors.has(entry.id) && !counted.has(`tx:${entry.identity}`)
+  )
+  if (storeless.length === 0) return []
+  const line = (entry: CollectedEntryPoint) => {
+    const raw = behaviors.get(entry.id)!.rawBuilderCalls
+    return `  ${entry.identity}${raw > 0 ? ` ⚑ raw query builder on the way (${raw} call${raw > 1 ? 's' : ''}) — a data access the analysis does not read yet` : ''}`
+  }
+  const flagged = storeless.filter((e) => behaviors.get(e.id)!.rawBuilderCalls > 0)
+  const plain = storeless.filter((e) => behaviors.get(e.id)!.rawBuilderCalls === 0)
+  return [
+    `${storeless.length} route(s) with a handler reach no data store the analysis sees, and are not counted ` +
+      `(counting-decisions §1). Most are static pages, redirects and forms; ⚑ marks the ones passing through the raw query builder:`,
+    ...flagged.map(line),
+    ...plain.slice(0, 25 - Math.min(flagged.length, 25)).map(line),
+    ...(storeless.length > 25
+      ? [`  … and ${storeless.length - 25} more — fp:inventory lists every entry point`]
+      : []),
   ]
 }
 
@@ -728,6 +763,7 @@ function totalsOf(functions: CountedFunction[]): CountResult['totals'] {
  */
 function confidenceOf(input: CountInput, warnings: string[]): CountResult['confidence'] {
   let withoutHandler = 0
+  const withoutHandlerNames: string[] = []
   const sites = new Map<string, UnresolvedSite>()
   for (const site of input.unresolved ?? [])
     sites.set(`${site.file}:${site.line}:${site.expression}`, { ...site })
@@ -736,6 +772,7 @@ function confidenceOf(input: CountInput, warnings: string[]): CountResult['confi
     const behavior = input.behaviors.get(entry.id)
     if (!behavior) {
       withoutHandler++
+      withoutHandlerNames.push(entry.identity)
       continue
     }
     // without the inventory's list: the sites the behaviors show, one each, however many routes reach them
@@ -754,6 +791,7 @@ function confidenceOf(input: CountInput, warnings: string[]): CountResult['confi
   return {
     unresolvedCalls: unresolved.length,
     entryPointsWithoutHandler: withoutHandler,
+    withoutHandler: withoutHandlerNames,
     warnings,
     unresolved,
   }

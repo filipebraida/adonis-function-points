@@ -133,6 +133,13 @@ export type Behavior = {
    * package base. Outside the boundary (§4): noted, never a gap (plan 0.11 §A).
    */
   packageCalls: PackageCall[]
+  /**
+   * Calls to the raw query builder (`db.from('t')`, `trx.table('t')`, `db.rawQuery(…)`)
+   * met on the way and NOT read as data accesses. A transaction that reaches no store
+   * but carries these is marked in the report: a data access the analysis does not
+   * read yet (plan 0.12 §A), rather than a page that reads nothing.
+   */
+  rawBuilderCalls: number
   trace: TraceStep[]
   /** bodies reached, for `fp:diff` */
   scope: ScopeEntry[]
@@ -459,6 +466,8 @@ type BodyFacts = {
   validators: string[]
   /** calls whose target resolves to a package: outside the boundary, noted */
   packageCalls: PackageCall[]
+  /** raw query-builder calls not read as accesses */
+  rawBuilderCalls: number
   /** the command's flags and arguments, when the body belongs to an ace command */
   commandFields: string[]
   /** validator fields that enumerate nothing: an open `vine.object` */
@@ -1025,6 +1034,7 @@ export function createAnalyzer(
     const followUps: { ref: HandlerRef; by: string; technical?: boolean }[] = []
     const unresolved: UnresolvedCall[] = []
     const packageCalls: PackageCall[] = []
+    let rawBuilderCalls = 0
     const reads: StoreRead[] = []
     /** calls a strategy claimed, and where they lead: a nested transformer's keys arrive through its body */
     const followedCalls = new Map<CallExpression, HandlerRef[]>()
@@ -1159,6 +1169,12 @@ export function createAnalyzer(
        * its own tables is technical (§4), what it hands back is a value. Not a gap
        * the walk failed at; noted (plan 0.11 §A).
        */
+      // `db.from('t')…`, `trx.table('t')…`: the raw query builder — counted so a store-less transaction can be marked
+      if (isRawBuilderCall(call)) {
+        rawBuilderCalls++
+        continue
+      }
+
       if (
         isUnreadableWrite(call, symbols, imports, packageImports, body) &&
         !isNoise(call, owner, (typeNode) => membersOfType(typeNode, file, app))
@@ -1216,6 +1232,7 @@ export function createAnalyzer(
       unresolved,
       validators: validator.fields,
       packageCalls,
+      rawBuilderCalls,
       commandFields,
       opaqueValidators: validator.opaque,
       requestFields: request.fields,
@@ -1337,6 +1354,7 @@ export function createAnalyzer(
     const inputFields = new Set<string>()
     const commandFields = new Set<string>()
     const packageCalls: PackageCall[] = []
+    let rawBuilderCalls = 0
     const opaqueInputFields = new Set<string>()
     const requestFields = new Set<string>()
     let opaqueRequest = false
@@ -1569,6 +1587,7 @@ export function createAnalyzer(
       for (const field of facts.validators) inputFields.add(field)
       for (const field of facts.commandFields) commandFields.add(field)
       for (const packaged of facts.packageCalls) packageCalls.push(packaged)
+      rawBuilderCalls += facts.rawBuilderCalls
       for (const field of facts.opaqueValidators) opaqueInputFields.add(field)
       for (const field of facts.requestFields) requestFields.add(field)
       if (facts.opaqueRequest) opaqueRequest = true
@@ -1648,6 +1667,7 @@ export function createAnalyzer(
       inputFields: [...inputFields].sort(),
       commandFields: [...commandFields].sort(),
       packageCalls,
+      rawBuilderCalls,
       opaqueInputFields: [...opaqueInputFields].sort(),
       requestFields: [...requestFields].sort(),
       opaqueRequest,
@@ -1978,6 +1998,55 @@ function dependencyTypeOf(node: ParameterDeclaration | PropertyDeclaration): str
 }
 
 /** type identifier -> application file where it is declared */
+/** the Lucid query builder's entry points off `db` / `trx` */
+const RAW_BUILDER = new Set([
+  'from',
+  'table',
+  'query',
+  'insertQuery',
+  'modifyQuery',
+  'rawQuery',
+  'raw',
+  'knexQuery',
+  'knexRawQuery',
+])
+
+/** `db.from('t')…`, `trx.table('t').insert(…)`, `db.rawQuery(…)`: a chain rooted at the database service or a transaction client */
+function isRawBuilderCall(call: CallExpression): boolean {
+  // one chain, one call: `db.from('t').where(…).count()` is counted at its outermost link only
+  const parent = call.getParent()
+  if (
+    parent &&
+    Node.isPropertyAccessExpression(parent) &&
+    parent.getExpression() === call &&
+    Node.isCallExpression(parent.getParent())
+  )
+    return false
+  let current: Node = call
+  let touchesBuilder = false
+  for (let depth = 0; depth < 40; depth++) {
+    if (Node.isCallExpression(current)) {
+      current = current.getExpression()
+      continue
+    }
+    if (Node.isPropertyAccessExpression(current)) {
+      if (RAW_BUILDER.has(current.getName())) touchesBuilder = true
+      current = current.getExpression()
+      continue
+    }
+    if (Node.isAwaitExpression(current) || Node.isParenthesizedExpression(current)) {
+      current = current.getExpression()
+      continue
+    }
+    break
+  }
+  return (
+    touchesBuilder &&
+    Node.isIdentifier(current) &&
+    /^(db|trx|Database|database)$/.test(current.getText())
+  )
+}
+
 /** a call whose target resolves to a package: where, what, which package */
 export type PackageCall = { file: string; line: number; expression: string; specifier: string }
 

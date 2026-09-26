@@ -1,5 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
+import db from '@adonisjs/lucid/services/db'
 
 import { guias } from '#collections/guias'
 import Pedido from '#models/pedido'
@@ -34,6 +35,17 @@ export default class PedidosController {
     const pedidos = await Pedido.query().where('status', 'aberto')
     const texto = await this.relatorios.resumo(pedidos)
     return response.send(texto)
+  }
+
+  /** a static page: reaches no store, and is not a transaction — listed, not counted */
+  async sobre({ inertia }: HttpContext) {
+    return inertia.render('sobre', {})
+  }
+
+  /** the raw query builder: a data access the analysis does not read yet — listed with a mark (plan 0.12 §A), read in §B */
+  async contagem({ response }: HttpContext) {
+    const [{ total }] = await db.from('pedidos').where('status', 'aberto').count('* as total')
+    return response.json({ total })
   }
 
   async store({ request, response }: HttpContext) {

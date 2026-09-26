@@ -16,7 +16,7 @@ import {
   describeSite,
 } from '../reporters/table.js'
 import { loadConfig } from './load_config.js'
-import type { CountResult } from '../types.js'
+import type { CountResult, Inventory } from '../types.js'
 
 /**
  * What each command actually does, with no front-end attached.
@@ -94,13 +94,22 @@ export async function runInventory(options: Common & { out?: string }): Promise<
       `data stores:   ${inventory.dataStores.length}`,
       `entry points:  ${coverage.entryPointsTotal}`,
       `coverage:      ${(coverage.ratio * 100).toFixed(1)}% ` +
-        `(${coverage.unresolvedCalls} unresolved calls)`,
+        `(${coverage.unresolvedCalls} unresolved calls${withoutHandlerNote(inventory)})`,
       ...inventory.unresolved.map((site) => `  ${describeSite(site)}`),
       ...(inventory.notes.length > 0
         ? ['notes (declarations, not gaps):', ...inventory.notes.map((note) => `  ${note}`)]
         : []),
     ].join('\n'),
   }
+}
+
+/** `; 1 entry point without a handler: GET /admin` — the rest of the coverage line, when it applies */
+function withoutHandlerNote(inventory: Inventory): string {
+  const names = inventory.entryPoints
+    .filter((e) => !e.handler)
+    .map((e) => `${e.trigger} ${e.signature}`)
+  if (names.length === 0) return ''
+  return `; ${names.length} entry point${names.length > 1 ? 's' : ''} without a handler: ${names.join(', ')}`
 }
 
 export async function runCount(

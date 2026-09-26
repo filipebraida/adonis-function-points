@@ -51,6 +51,31 @@ test.group('package boundary: the reference, function by function', () => {
   })
 })
 
+test.group('nothing falls out in silence', () => {
+  /** a management area of a reviewed application fell out this way for three releases */
+  test('routes that reach no store are listed, and the ones passing through the raw query builder are marked', async ({
+    assert,
+  }) => {
+    const { count: result } = await analyzed()
+    const block = result.confidence.warnings.join('\n')
+    assert.include(
+      block,
+      'route(s) with a handler reach no data store the analysis sees, and are not counted'
+    )
+    assert.include(block, '  GET /sobre')
+    assert.include(
+      block,
+      '  GET /painel/contagem ⚑ raw query builder on the way (1 call) — a data access the analysis does not read yet'
+    )
+  })
+
+  test('the coverage line names the entry point without a handler', async ({ assert }) => {
+    const { count: result } = await analyzed()
+    assert.equal(result.confidence.entryPointsWithoutHandler, 1)
+    assert.deepEqual(result.confidence.withoutHandler, ['GET /ajuda'])
+  })
+})
+
 test.group('package boundary: notes, not gaps', () => {
   test('a call into a package is a note — an injected package type, a package-typed column, a package factory', async ({
     assert,

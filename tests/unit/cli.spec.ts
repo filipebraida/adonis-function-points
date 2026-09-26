@@ -118,6 +118,16 @@ test.group('runners: an empty inventory is never a number', () => {
     assert.include(count.output, '1 unresolved call(s)')
   })
 
+  test('the coverage line says why it is not 100%', async ({ assert }) => {
+    const inventory = await runInventory({ root: appFixturePath('fronteira_pacote') })
+    assert.match(
+      inventory.output,
+      /coverage: {6}\d+\.\d% \(1 unresolved calls; 1 entry point without a handler: GET \/ajuda\)/
+    )
+    const count = await runCount({ root: appFixturePath('fronteira_pacote') })
+    assert.include(count.output, '1 entry point(s) without a handler: GET /ajuda')
+  })
+
   test('the same holds for the inventory', async ({ assert }) => {
     const result = await runInventory({ root: fixturePath('monorepo') })
     assert.isNotEmpty(result.errors)

@@ -91,7 +91,11 @@ export function renderCount(result: CountResult): string {
         lines.push(`    … and ${sites.length - 25} more — fp:inventory lists them all`)
     }
     if (entryPointsWithoutHandler > 0) {
-      lines.push(`  ${entryPointsWithoutHandler} entry points without a handler`)
+      const names = result.confidence.withoutHandler ?? []
+      lines.push(
+        `  ${entryPointsWithoutHandler} entry point(s) without a handler` +
+          (names.length > 0 ? `: ${names.join(', ')}` : '')
+      )
     }
     for (const warning of warnings) lines.push(`  ${warning}`)
   }

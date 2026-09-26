@@ -44,6 +44,18 @@ Three transactions and four call sites the walk cannot follow:
   - `GET /pedidos: call into @acme/anexos/types (this.resource.capa?.variante) — outside the boundary; …`
   - `GET /pedidos: call into @acme/conteudo (guias.carregar) — outside the boundary; …`
 
+## Nothing falls out in silence (plan 0.12 §A)
+
+Three more routes, none counted, each said in the report:
+
+| route                 | what it is                                                        | report                                                                            |
+| --------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `GET /sobre`          | a static page, no store                                           | listed under "reach no data store … not counted (§1)"                             |
+| `GET /painel/contagem`| `db.from('pedidos').count(…)` — the raw query builder             | the same list, **marked ⚑**: a data access the analysis does not read yet          |
+| `GET /ajuda`          | `router.on('/ajuda').redirect(…)`, no handler                     | the coverage line names it: `1 entry point without a handler: GET /ajuda`         |
+
+Under §B `GET /painel/contagem` becomes an EO and leaves the list; `GET /sobre` stays on it, which is right.
+
 ## The rules
 
 1. A call is **into a package** when, structurally, its receiver or its target resolves to a

@@ -227,6 +227,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
       delivered: behavior.delivered,
       pageReads: behavior.pageReads,
       packageCalls: behavior.packageCalls.map((c) => ({ ...c, file: emit(c.file) })),
+      rawBuilderCalls: behavior.rawBuilderCalls,
       unreadablePages: behavior.unreadablePages,
       outputReads: behavior.outputReads,
       trace: behavior.trace.map((step) => ({ ...step, file: emit(step.file) })),
