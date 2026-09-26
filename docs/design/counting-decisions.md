@@ -110,6 +110,49 @@ multiple optional paths as part of the same transaction.
 
 ---
 
+### A write is attributed to what the variable IS, not to where it was born
+
+`document.save()` is a write on `Document` when the body can say that `document`
+holds a `Document`. Until 0.8 it could say so only when the instance was born in
+the same body (`Document.find`, `Document.query`, `new Document()`) or arrived
+as a parameter typed inline — and the dominant shape on a reviewed application is
+"the controller loads, the action alters": `handle({ document, name }:
+RenameDocumentInput)`, `const { preIntake } = input`, `const session = await
+this.sessions.active(intake)`, `for (const item of pasta.documentos)`, a service
+the container resolved. Every one of those writes was invisible, six EIs were
+counted as EOs, and the coverage said 99.5%.
+
+The body's locals are typed by **what the code declares**, read in source order:
+
+| the local                                                 | is                                                                                                                                                                                                    |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `f(x: Store)`, `f(xs: Store[])`, `f(x: Store \| null)`    | the store                                                                                                                                                                                             |
+| `f(input: Named)`; later `const { x } = input`, `input.x` | the member's type in the interface, same file or imported                                                                                                                                             |
+| `f({ x }: Named)`                                         | the same, element by element, renames kept                                                                                                                                                            |
+| `const s = await this.svc.method(a)`                      | the followed body's **declared return type**; unannotated, its `return`s when every one is a store access, `new Store()` or a call that resolves to one — two stores, or one nobody can read: nothing |
+| `c ? A : B`, `A ?? B`, `A \|\| B`                         | the store when every non-null branch is the same one                                                                                                                                                  |
+| `auth.user`, `auth.getUserOrFail()`                       | the model `config/auth.ts` names in its provider — read, never assumed                                                                                                                                |
+| `const pasta = documento.pasta`                           | the declared relation's target, not the row's store (`pasta.save()` had been billed to `Documento`); a plain field is no store                                                                        |
+| `for (const x of rows)`, `for (const x of parent.rel)`    | a row of the rows' store, or of the relation's target                                                                                                                                                 |
+| `rows.map((x) => …)`, `forEach`, `filter`, `find`…        | the callback's parameter is a row; `rows.find(…)`, `rows.filter(…)[0]` are one row                                                                                                                    |
+| `let x: Store`, assigned later                            | the declared type                                                                                                                                                                                     |
+| `const svc = await app.container.make(X)`, `new X()`      | an instance of X — its methods are followed as a constructor-injected property's are                                                                                                                  |
+
+No type checker: the ts-morph project resolves no `#alias/…`, so `getType()` is
+`any` for almost every receiver, and the graph already resolves the call to its
+body — the annotation there is the same answer.
+
+**And the rule that mattered most: a write on a receiver none of this can type is
+an UNRESOLVED call**, reason "write on a receiver whose type the analysis cannot
+read" — `x.save()` / `x.delete()` with no arguments, `x.merge(…).save()`,
+`x.related('…').create|sync|attach(…)`. It lowers coverage and is listed by
+`fp:inventory`; the transaction stays what the readable code says. A local whose
+value came from a package (`await PDFDocument.create()`, then `pdf.save()`) is
+not a store and is not reported: an application model never comes out of a
+package's call. The difference between a count that errs and a count that lies is
+that line, and it did not exist. Fixture: `escritas_indiretas` (plan 0.8 §A/§B),
+87 FP where `afp@1.6.0` printed 57 with full coverage.
+
 ## 4. Mixins and packages that change the model
 
 Example: `class User extends compose(UserSchema, Auditable)`.

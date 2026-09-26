@@ -53,10 +53,36 @@ function classOfReceiver(receiver: Node): string | null {
       ?.getDeclarations()
       .find((d) => d.isKind(SyntaxKind.VariableDeclaration))
 
-    const init = decl?.asKind(SyntaxKind.VariableDeclaration)?.getInitializer()
+    let init = decl?.asKind(SyntaxKind.VariableDeclaration)?.getInitializer()
+    while (
+      init?.isKind(SyntaxKind.AwaitExpression) ||
+      init?.isKind(SyntaxKind.ParenthesizedExpression)
+    )
+      init = init.getExpression()
     if (init?.isKind(SyntaxKind.NewExpression)) {
       const target = init.getExpression()
       return target.isKind(SyntaxKind.Identifier) ? target.getText() : null
+    }
+
+    /**
+     * `const svc = await app.container.make(IntakeService)`: the container hands
+     * back an instance of the class named — the same binding as `new`, written the
+     * way a controller writes it when the service has dependencies of its own. On a
+     * reviewed application this shape carried the write of `POST /gestao/atribuicao`
+     * and 31 more sites, and none was followed (plan 0.8 §B).
+     */
+    if (init?.isKind(SyntaxKind.CallExpression)) {
+      const callee = init.getExpression()
+      if (
+        callee.isKind(SyntaxKind.PropertyAccessExpression) &&
+        callee.getName() === 'make' &&
+        callee.getExpression().isKind(SyntaxKind.PropertyAccessExpression) &&
+        callee.getExpression().asKind(SyntaxKind.PropertyAccessExpression)!.getName() ===
+          'container'
+      ) {
+        const made = init.getArguments()[0]
+        return made?.isKind(SyntaxKind.Identifier) ? made.getText() : null
+      }
     }
   }
 

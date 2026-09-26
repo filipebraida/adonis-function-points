@@ -588,7 +588,9 @@ function classifyCall(
     if (Node.isPropertyAccessExpression(callee)) {
       const root = chainRootOf(callee.getExpression())
       if (root && ctx.symbols.has(root)) {
-        out.push({ kind: 'scalar', path })
+        // `produto.nome.toUpperCase()`: one field; `rows.map(f).join('\n')`: a document of the rows
+        if (readsField(callee.getExpression())) out.push({ kind: 'scalar', path })
+        else out.push({ kind: 'store', store: ctx.symbols.get(root)!, path })
         return
       }
       if (root && root !== 'this') {

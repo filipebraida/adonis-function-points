@@ -609,6 +609,240 @@ export function createAnalyzer(
     return facts
   }
 
+  /** store name by the posix path of the model that declares it */
+  const storeByFile = new Map<string, string>()
+  for (const [name, store] of storesByName) storeByFile.set(toPosix(store.provenance.file), name)
+
+  /**
+   * The guard's user: `auth.user`, `auth.getUserOrFail()` are rows of the model
+   * `config/auth.ts` names in its provider (`model: () => import('#models/user')`).
+   * Read, never assumed — an application with no such config binds nothing.
+   */
+  const authUserStore = ((): string | null => {
+    const config = project.addSourceFileAtPathIfExists(`${toPosix(app.root)}/config/auth.ts`)
+    if (!config) return null
+    for (const call of config.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      if (call.getExpression().getKind() !== SyntaxKind.ImportKeyword) continue
+      if (call.getFirstAncestorByKind(SyntaxKind.PropertyAssignment)?.getName() !== 'model')
+        continue
+      const specifier = call.getArguments()[0]
+      if (!specifier || !Node.isStringLiteral(specifier)) continue
+      const target = app.resolveSpecifier(specifier.getLiteralValue())
+      const store = target ? storeByFile.get(toPosix(target)) : undefined
+      if (store) return store
+    }
+    return null
+  })()
+
+  /**
+   * What a body's locals ARE — plan 0.8 §A. `storeSymbolsFor` binds what the
+   * parameters and the static imports say; this pass, run in source order before
+   * the accesses are detected, binds what the body's own statements say:
+   *
+   *   const s = await this.sessoes.ativa(d)        the followed body's return type,
+   *                                                or its returns when unannotated
+   *   const n = id ? await N.find(id) : new N()    a conditional, both branches N
+   *   const p = (await P.first()) ?? new P()       a default, both operands P
+   *   const u = auth.getUserOrFail()               the guard's model, per config/auth.ts
+   *   const pasta = documento.pasta                a relation read off a loaded row
+   *   for (const d of pasta.documentos)            a row of the relation's target
+   *   rows.map(async (d) => …)                     the callback's parameter, a row
+   *
+   * Every one is a reading of what the code declares; none is a guess. A `save()`
+   * on a local none of this can type is reported as unresolved — not dropped.
+   */
+  function bindLocals(
+    body: Node,
+    symbols: StoreSymbols,
+    context: ResolverContext,
+    strategies: CallResolver[]
+  ): void {
+    const returnedStoreOf = (
+      call: CallExpression,
+      from: ResolverContext = context,
+      depth = 0
+    ): string | null => {
+      if (depth > 2) return null
+      const resolved = resolveCall(call, from, strategies)
+      if (!resolved || resolved.refs.length === 0) return null
+      const found = new Set<string>()
+      for (const target of resolved.refs) {
+        const source = sourceFile(target.file)
+        const resolvedBody = source ? findBody(source, target) : null
+        if (!resolvedBody) continue
+        const annotation = Node.isReturnTyped(resolvedBody)
+          ? resolvedBody.getReturnTypeNode()?.getText()
+          : undefined
+        if (annotation) {
+          const store = storeNamedBy(annotation, storesByName)
+          if (store) found.add(store)
+          else return null
+          continue
+        }
+        // unannotated: every `return` a store access or `new Store()`, all the same store
+        const own = storeSymbolsFor(resolvedBody, source!, app, storesByName, relationsByStore)
+        const returns = resolvedBody
+          .getDescendantsOfKind(SyntaxKind.ReturnStatement)
+          .filter(
+            (r) =>
+              r.getFirstAncestor(
+                (n) =>
+                  Node.isMethodDeclaration(n) ||
+                  Node.isFunctionDeclaration(n) ||
+                  Node.isArrowFunction(n) ||
+                  Node.isFunctionExpression(n)
+              ) === resolvedBody
+          )
+        if (returns.length === 0) return null
+        for (const statement of returns) {
+          const value = statement.getExpression()
+          if (!value) return null
+          const unwrapped = unwrapAwait(value)
+          if (unwrapped.getKind() === SyntaxKind.NullKeyword) continue
+          // `return this.createFromBuffer(buffer)`: what THAT body returns, one level down
+          if (Node.isCallExpression(unwrapped) && !detectAccess(unwrapped, own, relationsByStore)) {
+            // resolved FROM the body that returns it: `this.createFromBuffer` is a method of that class
+            const inner: ResolverContext = {
+              ...context,
+              file: source!,
+              ...importsFor(source!),
+              injected: injectedFor(
+                resolvedBody.getFirstAncestorByKind(SyntaxKind.ClassDeclaration),
+                source!,
+                app
+              ),
+            }
+            const store = returnedStoreOf(unwrapped, inner, depth + 1)
+            if (!store) return null
+            found.add(store)
+            continue
+          }
+          const store = Node.isNewExpression(unwrapped)
+            ? storesByName.has(unwrapped.getExpression().getText())
+              ? unwrapped.getExpression().getText()
+              : null
+            : (own.get(rootSymbolOf(unwrapped) ?? '') ??
+              (storesByName.has(rootSymbolOf(unwrapped) ?? '') ? rootSymbolOf(unwrapped) : null))
+          if (!store) return null
+          found.add(store)
+        }
+      }
+      return found.size === 1 ? [...found][0] : null
+    }
+
+    const isAuthUser = (node: Node): boolean => {
+      if (!authUserStore) return false
+      const chain = Node.isCallExpression(node) ? node.getExpression() : node
+      if (!Node.isPropertyAccessExpression(chain)) return false
+      if (rootSymbolOf(chain) !== 'auth' && lastSegmentText(chain.getExpression()) !== 'auth')
+        return false
+      const last = chain.getName()
+      return last === 'user' || last === 'getUserOrFail' || last === 'authenticate'
+    }
+
+    /** the store a value is rows (or one row) of, by what the code says — or nothing */
+    const storeOfValue = (value: Node | undefined, depth = 0): string | null => {
+      if (!value || depth > 6) return null
+      const node = unwrapAwait(value)
+      if (node.getKind() === SyntaxKind.NullKeyword) return null
+      if (Node.isIdentifier(node)) {
+        if (node.getText() === 'undefined') return null
+        return symbols.get(node.getText()) ?? null
+      }
+      if (Node.isNewExpression(node)) {
+        const name = node.getExpression().getText()
+        return storesByName.has(name) ? name : null
+      }
+      if (Node.isConditionalExpression(node))
+        return sameStore(
+          storeOfValue(node.getWhenTrue(), depth + 1),
+          storeOfValue(node.getWhenFalse(), depth + 1),
+          node.getWhenTrue(),
+          node.getWhenFalse()
+        )
+      if (Node.isBinaryExpression(node)) {
+        const operator = node.getOperatorToken().getKind()
+        if (operator === SyntaxKind.QuestionQuestionToken || operator === SyntaxKind.BarBarToken)
+          return sameStore(
+            storeOfValue(node.getLeft(), depth + 1),
+            storeOfValue(node.getRight(), depth + 1),
+            node.getLeft(),
+            node.getRight()
+          )
+        return null
+      }
+      if (Node.isElementAccessExpression(node)) return storeOfValue(node.getExpression(), depth + 1)
+      if (isAuthUser(node)) return authUserStore
+      if (Node.isPropertyAccessExpression(node))
+        return storeOfExpression(node, symbols, relationsByStore)
+      if (Node.isCallExpression(node)) {
+        const access = detectAccess(node, symbols, relationsByStore)
+        if (access)
+          return access.method === 'related' && access.viaRelation
+            ? access.viaRelation
+            : access.store
+        const callee = node.getExpression()
+        if (Node.isPropertyAccessExpression(callee) && ONE_OF_ROWS.has(callee.getName()))
+          return storeOfValue(callee.getExpression(), depth + 1)
+        return returnedStoreOf(node)
+      }
+      return null
+    }
+
+    const isNullish = (node: Node) => {
+      const inner = unwrapAwait(node)
+      return (
+        inner.getKind() === SyntaxKind.NullKeyword ||
+        (Node.isIdentifier(inner) && inner.getText() === 'undefined')
+      )
+    }
+    const sameStore = (
+      a: string | null,
+      b: string | null,
+      left: Node,
+      right: Node
+    ): string | null => {
+      if (a && b) return a === b ? a : null
+      if (a && isNullish(right)) return a
+      if (b && isNullish(left)) return b
+      return null
+    }
+
+    body.forEachDescendant((node) => {
+      if (Node.isVariableDeclaration(node)) {
+        const initializer = node.getInitializer()
+        const nameNode = node.getNameNode()
+        if (!initializer) return
+        if (Node.isIdentifier(nameNode)) {
+          if (symbols.has(nameNode.getText())) return
+          const store = storeOfValue(initializer)
+          if (store) symbols.set(nameNode.getText(), store)
+        }
+        return
+      }
+      if (Node.isForOfStatement(node)) {
+        const declared = node.getInitializer()
+        if (!Node.isVariableDeclarationList(declared)) return
+        const nameNode = declared.getDeclarations()[0]?.getNameNode()
+        if (!nameNode || !Node.isIdentifier(nameNode) || symbols.has(nameNode.getText())) return
+        const store = storeOfValue(node.getExpression())
+        if (store) symbols.set(nameNode.getText(), store)
+        return
+      }
+      if (Node.isCallExpression(node)) {
+        const callee = node.getExpression()
+        if (!Node.isPropertyAccessExpression(callee) || !ITERATES_ROWS.has(callee.getName())) return
+        const callback = node.getArguments()[0]
+        if (!callback || !(Node.isArrowFunction(callback) || Node.isFunctionExpression(callback)))
+          return
+        const parameter = callback.getParameters()[0]?.getNameNode()
+        if (!parameter || !Node.isIdentifier(parameter) || symbols.has(parameter.getText())) return
+        const store = storeOfValue(callee.getExpression())
+        if (store) symbols.set(parameter.getText(), store)
+      }
+    })
+  }
+
   function computeFacts(ref: HandlerRef): BodyFacts | null {
     const file = sourceFile(ref.file)
     if (!file) return null
@@ -617,10 +851,19 @@ export function createAnalyzer(
     if (!body) return null
 
     const { imports, exportedAs } = importsFor(file)
+    /** locals imported from packages, not from the application: their objects are not stores */
+    const packageImports = new Set<string>()
+    for (const declaration of file.getImportDeclarations()) {
+      if (app.resolveSpecifier(declaration.getModuleSpecifierValue())) continue
+      const defaultImport = declaration.getDefaultImport()?.getText()
+      if (defaultImport) packageImports.add(defaultImport)
+      for (const named of declaration.getNamedImports())
+        packageImports.add(named.getAliasNode()?.getText() ?? named.getName())
+    }
     /** the class this body belongs to: how `this.something` resolves */
     const owner = body.getFirstAncestorByKind(SyntaxKind.ClassDeclaration)
     const injected = injectedFor(owner, file, app)
-    const symbols = storeSymbolsFor(body, file, app, storesByName)
+    const symbols = storeSymbolsFor(body, file, app, storesByName, relationsByStore)
 
     const accesses: { store: string; write: boolean; technical?: boolean }[] = []
     const followUps: { ref: HandlerRef; by: string; technical?: boolean }[] = []
@@ -643,6 +886,8 @@ export function createAnalyzer(
       resolveSpecifier: app.resolveSpecifier,
       sourceFile,
     }
+
+    bindLocals(body, symbols, context, resolvers)
 
     for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const access = detectAccess(call, symbols, relationsByStore)
@@ -744,6 +989,25 @@ export function createAnalyzer(
         continue
       }
 
+      /**
+       * `alvo.save()` on a receiver nobody could type. Not a write the count can
+       * attribute — and not silence either: the reviewed application had six EIs
+       * counted as EOs under a coverage of 99.5%, because a write on an unknown
+       * local was dropped without a word. It lowers coverage and is named.
+       */
+      if (
+        isUnreadableWrite(call, symbols, imports, packageImports, body) &&
+        !isNoise(call, owner)
+      ) {
+        unresolved.push({
+          file: ref.file,
+          line: call.getStartLineNumber(),
+          expression: call.getExpression().getText().replace(/\s+/g, ''),
+          reason: 'write on a receiver whose type the analysis cannot read',
+        })
+        continue
+      }
+
       if (isWorthReporting(call, symbols, imports) && !isNoise(call, owner)) {
         unresolved.push({
           file: ref.file,
@@ -830,7 +1094,7 @@ export function createAnalyzer(
        */
       if (!isApplicationCode(app.root, file.getFilePath())) {
         if (isSeeder(app.root, file.getFilePath())) {
-          const symbols = storeSymbolsFor(file, file, app, storesByName)
+          const symbols = storeSymbolsFor(file, file, app, storesByName, relationsByStore)
           for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
             const access = symbols.size > 0 ? detectAccess(call, symbols, relationsByStore) : null
             if (access?.mode !== 'write') continue
@@ -841,7 +1105,7 @@ export function createAnalyzer(
         continue
       }
 
-      const symbols = storeSymbolsFor(file, file, app, storesByName)
+      const symbols = storeSymbolsFor(file, file, app, storesByName, relationsByStore)
       if (symbols.size === 0) continue
 
       for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
@@ -1257,7 +1521,8 @@ function storeSymbolsFor(
   body: Node,
   file: SourceFile,
   app: AppContext,
-  stores: Map<string, CollectedDataStore>
+  stores: Map<string, CollectedDataStore>,
+  relations: RelationMap = new Map()
 ): StoreSymbols {
   const symbols: StoreSymbols = new Map()
 
@@ -1304,7 +1569,27 @@ function storeSymbolsFor(
   for (const declaration of body.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
     const initializer = declaration.getInitializer()
     const name = declaration.getNameNode()
-    if (!initializer || !Node.isIdentifier(name)) continue
+    if (!Node.isIdentifier(name)) continue
+
+    // `let message: Message | undefined`, assigned later: the declared type says what it holds
+    const declared = storeNamedBy(declaration.getTypeNode()?.getText(), stores)
+    if (declared) {
+      symbols.set(name.getText(), declared)
+      continue
+    }
+    if (!initializer) continue
+
+    /**
+     * `const pasta = documento.pasta`: a RELATION read off a row is the relation's
+     * target, not the row's store — `pasta.save()` had been billed to `Documento`.
+     * A plain field (`documento.nome`) is no store at all.
+     */
+    const plain = unwrapAwait(initializer)
+    if (Node.isPropertyAccessExpression(plain)) {
+      const target = storeOfExpression(plain, symbols, relations)
+      if (target) symbols.set(name.getText(), target)
+      continue
+    }
 
     const root = rootSymbolOf(initializer)
     const store = root ? symbols.get(root) : undefined
@@ -1317,9 +1602,9 @@ function storeSymbolsFor(
       const typeNode = parameter.getTypeNode()
       const nameNode = parameter.getNameNode()
 
-      // direct form: `expire(invite: Invite)`
-      const typeName = typeNode?.getText()
-      if (typeName && stores.has(typeName) && Node.isIdentifier(nameNode)) {
+      // direct form: `expire(invite: Invite)`, `mark(attachments: Attachment[])`, `x: Invite | null`
+      const typeName = storeNamedBy(typeNode?.getText(), stores)
+      if (typeName && Node.isIdentifier(nameNode)) {
         symbols.set(nameNode.getText(), typeName)
         continue
       }
@@ -1333,37 +1618,60 @@ function storeSymbolsFor(
        */
       if (typeNode && Node.isIdentifier(nameNode)) {
         for (const [property, propertyType] of membersOfType(typeNode, file, app)) {
-          if (stores.has(propertyType)) {
-            symbols.set(`${nameNode.getText()}.${property}`, propertyType)
-          }
+          const named = storeNamedBy(propertyType, stores)
+          if (named) symbols.set(`${nameNode.getText()}.${property}`, named)
         }
       }
 
       /**
-       * Destructured form: `handle({ invite }: { invite: Invite })`.
-       *
-       * This is the dominant shape in the action-object pattern — the action
-       * receives a named payload. Without it, `invite.save()` inside the action
-       * does not count as a write, and the whole transaction becomes an EO
-       * instead of an EI.
+       * Destructured form: `handle({ invite }: { invite: Invite })`, and
+       * `handle({ document, name }: RenameDocumentInput)` with the interface named
+       * — in this file or imported. The second is the dominant shape on a reviewed
+       * application, and only the inline literal was read: every `document.save()`
+       * behind it was invisible, and the transaction an EO (plan 0.8 §A).
        */
       const binding = nameNode.asKind(SyntaxKind.ObjectBindingPattern)
-      const literal = typeNode?.asKind(SyntaxKind.TypeLiteral)
-      if (!binding || !literal) continue
+      if (!binding || !typeNode) continue
 
-      const propertyTypes = new Map<string, string>()
-      for (const member of literal.getMembers()) {
-        if (!Node.isPropertySignature(member)) continue
-        const memberType = member.getTypeNode()?.getText()
-        if (memberType) propertyTypes.set(member.getName(), memberType)
-      }
-
+      const propertyTypes = membersOfType(typeNode, file, app)
       for (const element of binding.getElements()) {
         const property = element.getPropertyNameNode()?.getText() ?? element.getName()
-        const resolved = propertyTypes.get(property)
-        if (resolved && stores.has(resolved)) symbols.set(element.getName(), resolved)
+        const resolved = storeNamedBy(propertyTypes.get(property), stores)
+        if (resolved) symbols.set(element.getName(), resolved)
       }
     }
+  }
+
+  /**
+   * `const { preIntake } = input` where `input.preIntake` is a registered path:
+   * each element inherits the store of its path. Read AFTER the parameters, which
+   * is where the paths come from.
+   */
+  for (const declaration of body.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+    const binding = declaration.getNameNode()
+    const initializer = declaration.getInitializer()
+    if (!Node.isObjectBindingPattern(binding) || !initializer) continue
+    const root = Node.isIdentifier(initializer) ? initializer.getText() : null
+    if (!root) continue
+    for (const element of binding.getElements()) {
+      const property = element.getPropertyNameNode()?.getText() ?? element.getName()
+      const store = symbols.get(`${root}.${property}`)
+      if (store) symbols.set(element.getName(), store)
+    }
+  }
+
+  /**
+   * `for (const documento of pasta.documentos)`, `for (const row of rows)`: the
+   * loop variable is a row of the relation's target, or of the rows' store. A
+   * `delete()` inside such a loop was invisible; read last, after the parameters that name the parent — plan 0.8 §A.
+   */
+  for (const loop of body.getDescendantsOfKind(SyntaxKind.ForOfStatement)) {
+    const declared = loop.getInitializer()
+    if (!Node.isVariableDeclarationList(declared)) continue
+    const nameNode = declared.getDeclarations()[0]?.getNameNode()
+    if (!nameNode || !Node.isIdentifier(nameNode)) continue
+    const store = storeOfExpression(unwrapAwait(loop.getExpression()), symbols, relations)
+    if (store) symbols.set(nameNode.getText(), store)
   }
 
   return symbols
@@ -1456,6 +1764,91 @@ function resolveTypeToFile(typeName: string, file: SourceFile, app: AppContext):
  * Accepts an inline type literal and a named type declared in this file or
  * imported from the application. Anything else yields empty — no guessing.
  */
+/**
+ * The store a type annotation names, or nothing: `Sessao`, `Sessao | null`,
+ * `Promise<Sessao | null>`, `Sessao[]`, `Promise<Sessao[]>`. Two different stores
+ * in one union name nothing — a guess is not a binding.
+ */
+function storeNamedBy(
+  typeText: string | undefined,
+  stores: Map<string, CollectedDataStore>
+): string | null {
+  if (!typeText) return null
+  let text = typeText.trim()
+  const promise = text.match(/^Promise<([\s\S]*)>$/)
+  if (promise) text = promise[1]
+  const named = new Set(
+    text
+      .split('|')
+      .map((part) =>
+        part
+          .trim()
+          .replace(/\[\]$/, '')
+          .replace(/^Array<(.*)>$/, '$1')
+          .trim()
+      )
+      .filter((part) => part && part !== 'null' && part !== 'undefined')
+  )
+  if (named.size !== 1) return null
+  const [only] = named
+  return stores.has(only) ? only : null
+}
+
+/** array methods that hand back one row, or the same rows, of the receiver */
+const ONE_OF_ROWS = new Set([
+  'find',
+  'findLast',
+  'at',
+  'filter',
+  'slice',
+  'sort',
+  'toSorted',
+  'reverse',
+  'toReversed',
+  'concat',
+  'flat',
+  'first',
+  'last',
+])
+/** array methods whose callback receives one row of the receiver */
+const ITERATES_ROWS = new Set([
+  'map',
+  'forEach',
+  'filter',
+  'find',
+  'findLast',
+  'some',
+  'every',
+  'flatMap',
+  'reduce',
+])
+
+const lastSegmentText = (node: Node): string =>
+  Node.isPropertyAccessExpression(node) ? node.getName() : node.getText()
+
+/** the store an expression is rows of: a store symbol, or `parent.relation` with the relation declared */
+function storeOfExpression(
+  expression: Node | undefined,
+  symbols: StoreSymbols,
+  relations: RelationMap
+): string | null {
+  if (!expression) return null
+  if (Node.isIdentifier(expression)) return symbols.get(expression.getText()) ?? null
+  if (Node.isPropertyAccessExpression(expression)) {
+    const receiver = expression.getExpression()
+    // `input.documents`: a registered PATH of a typed parameter
+    if (Node.isIdentifier(receiver)) {
+      const byPath = symbols.get(`${receiver.getText()}.${expression.getName()}`)
+      if (byPath) return byPath
+    }
+    const parent = symbols.get(rootSymbolOf(receiver) ?? '')
+    if (!parent) return null
+    return relations.get(parent)?.[expression.getName()] ?? null
+  }
+  const root = rootSymbolOf(expression)
+  return root ? (symbols.get(root) ?? null) : null
+}
+
 function membersOfType(typeNode: Node, file: SourceFile, app: AppContext): Map<string, string> {
   const members = new Map<string, string>()
 
@@ -1614,6 +2007,86 @@ function isWorthReporting(
 
   // a symbol of the application itself that no strategy followed
   return imports.has(root)
+}
+
+/** Lucid's persistence on an instance, with no arguments: `x.save()`, `x.delete()` — a `Map#delete(key)` has one */
+const INSTANCE_WRITES = new Set(['save', 'delete', 'forceDelete'])
+/** persistence through a relation or a merge: `x.related('y').create(…)`, `x.merge(p).save()` */
+const CHAINED_WRITES = new Set([
+  'create',
+  'createMany',
+  'save',
+  'saveMany',
+  'attach',
+  'detach',
+  'sync',
+  'updateOrCreate',
+  'firstOrCreate',
+  'delete',
+])
+const WRITE_CHAINS = new Set(['related', 'merge', 'fill', 'useTransaction'])
+
+/**
+ * A persistence call on a receiver the body cannot type: a local that is neither a
+ * store, nor an import, nor `this`, nor the result of a call on one of those.
+ * Reported as unresolved — the count must not stay silent where an EI may hide.
+ */
+function isUnreadableWrite(
+  call: CallExpression,
+  symbols: StoreSymbols,
+  imports: Map<string, string>,
+  packageImports: Set<string>,
+  body: Node
+): boolean {
+  const expression = call.getExpression()
+  if (!Node.isPropertyAccessExpression(expression)) return false
+  const method = expression.getName()
+  const receiver = unwrapAwait(expression.getExpression())
+
+  if (Node.isCallExpression(receiver)) {
+    const inner = receiver.getExpression()
+    if (!Node.isPropertyAccessExpression(inner) || !WRITE_CHAINS.has(inner.getName())) return false
+    if (!CHAINED_WRITES.has(method)) return false
+  } else {
+    if (!INSTANCE_WRITES.has(method) || call.getArguments().length > 0) return false
+  }
+
+  const root = rootSymbolOf(expression.getExpression())
+  if (!root || root === 'this') return false
+  if (symbols.has(root) || imports.has(root) || packageImports.has(root)) return false
+  if (!Node.isIdentifier(unwrapAwait(rootNodeOf(expression.getExpression())))) return false
+
+  /**
+   * `const pdfDoc = await PDFDocument.create()` from `pdf-lib`, then `pdfDoc.save()`:
+   * a package's object with a method called `save`. Its declaration says where it
+   * came from, and it is not a store — nothing to report.
+   */
+  for (const declaration of body.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+    const nameNode = declaration.getNameNode()
+    if (!Node.isIdentifier(nameNode) || nameNode.getText() !== root) continue
+    const initializer = declaration.getInitializer()
+    const origin = initializer ? rootSymbolOf(unwrapAwait(initializer)) : null
+    if (origin && packageImports.has(origin)) return false
+  }
+  return true
+}
+
+/** the leftmost node of a chain */
+function rootNodeOf(node: Node): Node {
+  let current: Node = node
+  for (let depth = 0; depth < 40; depth++) {
+    const next = unwrapAwait(current)
+    if (
+      Node.isPropertyAccessExpression(next) ||
+      Node.isCallExpression(next) ||
+      Node.isElementAccessExpression(next)
+    ) {
+      current = next.getExpression()
+      continue
+    }
+    return next
+  }
+  return current
 }
 
 /** `(await x())` and `x()` are the same receiver for this purpose. */
