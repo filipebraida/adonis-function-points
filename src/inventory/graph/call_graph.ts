@@ -774,6 +774,74 @@ export function createAnalyzer(
       return found.size === 1 ? [...found][0] : null
     }
 
+    /**
+     * `await db.transaction(async (trx) => { … return … })` — also `Model.transaction`
+     * and `trx.transaction` (a savepoint): a body whose VALUE is what it returns. The
+     * callback's own locals are bound first, in source order, so `return { row: created }`
+     * can be read; then every return names one store, or nothing binds (plan 0.10 §B).
+     */
+    const transactionCallbackOf = (call: CallExpression): Node | null => {
+      const callee = call.getExpression()
+      if (!Node.isPropertyAccessExpression(callee) || callee.getName() !== 'transaction')
+        return null
+      const callback = call
+        .getArguments()
+        .find((a) => Node.isArrowFunction(a) || Node.isFunctionExpression(a))
+      return callback ?? null
+    }
+    const returnsOf = (callback: Node): Node[] => {
+      if (!Node.isArrowFunction(callback) && !Node.isFunctionExpression(callback)) return []
+      const callbackBody = callback.getBody()
+      if (!Node.isBlock(callbackBody)) return [callbackBody]
+      const returned: Node[] = []
+      for (const statement of callbackBody.getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
+        const owner = statement.getFirstAncestor(
+          (n) =>
+            Node.isArrowFunction(n) ||
+            Node.isFunctionExpression(n) ||
+            Node.isFunctionDeclaration(n) ||
+            Node.isMethodDeclaration(n)
+        )
+        const expression = statement.getExpression()
+        if (owner === callback && expression) returned.push(expression)
+      }
+      return returned
+    }
+    const bindCallbackLocals = (callback: Node) => {
+      for (const declaration of callback.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+        const nameNode = declaration.getNameNode()
+        const initializer = declaration.getInitializer()
+        if (!initializer || !Node.isIdentifier(nameNode)) continue
+        const store = storeOfValue(initializer)
+        if (store) symbols.set(nameNode.getText(), store)
+      }
+    }
+    /** the store every return of the callback names — whole, or under one key of a returned literal */
+    const transactionValueStore = (callback: Node, key?: string): string | null => {
+      bindCallbackLocals(callback)
+      const returned = returnsOf(callback)
+      if (returned.length === 0) return null
+      const found = new Set<string>()
+      for (const expression of returned) {
+        let value: Node | undefined = unwrapAwait(expression)
+        if (key) {
+          if (!Node.isObjectLiteralExpression(value)) return null
+          const property = value.getProperty(key)
+          if (!property) return null
+          value = Node.isPropertyAssignment(property)
+            ? property.getInitializer()
+            : Node.isShorthandPropertyAssignment(property)
+              ? property.getNameNode()
+              : undefined
+          if (!value) return null
+        }
+        const store = storeOfValue(value)
+        if (!store) return null
+        found.add(store)
+      }
+      return found.size === 1 ? [...found][0] : null
+    }
+
     const isAuthUser = (node: Node): boolean => {
       if (!authUserStore) return false
       const chain = Node.isCallExpression(node) ? node.getExpression() : node
@@ -821,6 +889,9 @@ export function createAnalyzer(
         return storeOfExpression(node, symbols, relationsByStore)
       if (Node.isCallExpression(node)) {
         const callee = node.getExpression()
+        // `await db.transaction(async (trx) => …)`: the value is what the callback returns
+        const callback = transactionCallbackOf(node)
+        if (callback) return transactionValueStore(callback)
         if (Node.isPropertyAccessExpression(callee)) {
           /**
            * `q.forUpdate()`, `q.where(…)`: a query-builder chain hands the same rows on —
@@ -883,6 +954,16 @@ export function createAnalyzer(
            */
           const store = storeOfValue(initializer)
           if (store) symbols.set(nameNode.getText(), store)
+        } else if (Node.isObjectBindingPattern(nameNode)) {
+          // `const { row, reused } = await db.transaction(async (trx) => { … return { row, reused } })`
+          const call = unwrapAwait(initializer)
+          const callback = Node.isCallExpression(call) ? transactionCallbackOf(call) : null
+          if (!callback) return
+          for (const element of nameNode.getElements()) {
+            const key = element.getPropertyNameNode()?.getText() ?? element.getName()
+            const store = transactionValueStore(callback, key)
+            if (store) symbols.set(element.getName(), store)
+          }
         }
         return
       }
@@ -2161,8 +2242,20 @@ function isUnreadableWrite(
     const nameNode = declaration.getNameNode()
     if (!Node.isIdentifier(nameNode) || nameNode.getText() !== root) continue
     const initializer = declaration.getInitializer()
-    const origin = initializer ? rootSymbolOf(unwrapAwait(initializer)) : null
-    if (origin && packageImports.has(origin)) return false
+    const initialized = initializer ? unwrapAwait(initializer) : null
+    /**
+     * `await db.transaction(async (trx) => …)` is rooted at a package too, but its value
+     * is what the CALLBACK returns — the application's. Only a call with no function
+     * argument is a package's own object.
+     */
+    const handsBackACallback =
+      initialized &&
+      Node.isCallExpression(initialized) &&
+      initialized
+        .getArguments()
+        .some((a) => Node.isArrowFunction(a) || Node.isFunctionExpression(a))
+    const origin = initialized ? rootSymbolOf(initialized) : null
+    if (origin && packageImports.has(origin) && !handsBackACallback) return false
   }
   return true
 }
