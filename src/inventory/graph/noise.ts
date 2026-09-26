@@ -124,6 +124,10 @@ const FRAMEWORK_SERVICES = new Set([
   'i18n',
   'ally',
   'bouncer',
+  // an ace command's terminal and application handle: `this.ui.table()`, `this.colors.red()`, `this.app.makePath()`
+  'ui',
+  'colors',
+  'app',
 ])
 
 /** Is this call one that cannot reach a data store? */

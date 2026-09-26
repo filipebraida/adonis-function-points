@@ -20,6 +20,7 @@ import { isIterationCall, isNoise, isNoiseMember } from './noise.js'
 import { chainShapeOf, outputFieldsIn } from './output_fields.js'
 import type { StoreRead } from './output_fields.js'
 import { PASSES_ROWS, deliveriesIn } from './deliveries.js'
+import { commandFieldsOf, isCommandClass } from '../sources/commands.js'
 import type { Delivery } from './deliveries.js'
 import type { CallResolver, ResolverContext } from '../resolvers/types.js'
 import type { HandlerRef, TraceStep, UnresolvedCall } from '../../types.js'
@@ -75,6 +76,8 @@ export type Behavior = {
    * not a validator.
    */
   requestFields: string[]
+  /** an ace command's `@flags.*` / `@args.*`: `flags.limite`, `args.name` — its input DETs */
+  commandFields: string[]
   /** the transaction reads the request in a way that enumerates nothing */
   opaqueRequest: boolean
   /**
@@ -439,6 +442,8 @@ type BodyFacts = {
   accesses: { store: string; write: boolean; technical?: boolean }[]
   /** validators used in this body */
   validators: string[]
+  /** the command's flags and arguments, when the body belongs to an ace command */
+  commandFields: string[]
   /** validator fields that enumerate nothing: an open `vine.object` */
   opaqueValidators: string[]
   /** fields read straight off the request, with no validator in between */
@@ -624,6 +629,7 @@ export function createAnalyzer(
     /** calls a strategy claimed, and where they lead: a nested transformer's keys arrive through its body */
     const followedCalls = new Map<CallExpression, HandlerRef[]>()
     const validator = validatorFieldsIn(body, file, app)
+    const commandFields = owner && isCommandClass(owner) ? commandFieldsOf(owner) : []
     const request = requestFieldsIn(body)
 
     const context: ResolverContext = {
@@ -767,6 +773,7 @@ export function createAnalyzer(
       followUps,
       unresolved,
       validators: validator.fields,
+      commandFields,
       opaqueValidators: validator.opaque,
       requestFields: request.fields,
       opaqueRequest: request.opaque,
@@ -885,6 +892,7 @@ export function createAnalyzer(
     const touches = new Set<string>()
     const writtenStores = new Set<string>()
     const inputFields = new Set<string>()
+    const commandFields = new Set<string>()
     const opaqueInputFields = new Set<string>()
     const requestFields = new Set<string>()
     let opaqueRequest = false
@@ -1080,6 +1088,7 @@ export function createAnalyzer(
 
       unresolved.push(...facts.unresolved)
       for (const field of facts.validators) inputFields.add(field)
+      for (const field of facts.commandFields) commandFields.add(field)
       for (const field of facts.opaqueValidators) opaqueInputFields.add(field)
       for (const field of facts.requestFields) requestFields.add(field)
       if (facts.opaqueRequest) opaqueRequest = true
@@ -1140,6 +1149,7 @@ export function createAnalyzer(
       touches: [...touches].sort(),
       writtenStores: [...writtenStores].sort(),
       inputFields: [...inputFields].sort(),
+      commandFields: [...commandFields].sort(),
       opaqueInputFields: [...opaqueInputFields].sort(),
       requestFields: [...requestFields].sort(),
       opaqueRequest,
@@ -1261,6 +1271,32 @@ function storeSymbolsFor(
     for (const named of declaration.getNamedImports()) {
       const binding = named.getAliasNode()?.getText() ?? named.getName()
       if (stores.has(named.getName())) symbols.set(binding, named.getName())
+    }
+  }
+
+  /**
+   * `const { default: Noticia } = await import('#noticias/models/noticia')`: a
+   * model imported INSIDE the body — an ace command does this to keep the app
+   * from booting for `--help`. The store is the same; only the binding moved.
+   */
+  const storeByFile = new Map<string, string>()
+  for (const [name, store] of stores) storeByFile.set(toPosix(store.provenance.file), name)
+  for (const declaration of body.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+    const binding = declaration.getNameNode()
+    if (!Node.isObjectBindingPattern(binding)) continue
+    let initializer = declaration.getInitializer()
+    if (initializer && Node.isAwaitExpression(initializer))
+      initializer = initializer.getExpression()
+    if (!initializer || !Node.isCallExpression(initializer)) continue
+    if (initializer.getExpression().getKind() !== SyntaxKind.ImportKeyword) continue
+    const specifier = initializer.getArguments()[0]
+    if (!specifier || !Node.isStringLiteral(specifier)) continue
+    const target = app.resolveSpecifier(specifier.getLiteralValue())
+    const store = target ? storeByFile.get(toPosix(target)) : undefined
+    if (!store) continue
+    for (const element of binding.getElements()) {
+      const property = element.getPropertyNameNode()?.getText() ?? element.getName()
+      if (property === 'default') symbols.set(element.getName(), store)
     }
   }
 
@@ -1496,6 +1532,35 @@ export function importMapsOf(
       const local = alias ?? named.getName()
       imports.set(local, target)
       if (alias) exportedAs.set(alias, named.getName())
+    }
+  }
+
+  /**
+   * `const { default: SincronizarBulk } = await import('#inpi/actions/sincronizar_bulk')`
+   * `const { execucaoEmAndamento } = await import('#inpi/services/execucao')`
+   *
+   * A module imported INSIDE a body — the shape ace commands use so `--help` does
+   * not boot the application. The binding moved; the body it names did not, and
+   * a command importing its whole action layer this way reached nothing.
+   */
+  for (const declaration of file.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+    const binding = declaration.getNameNode()
+    if (!Node.isObjectBindingPattern(binding)) continue
+    let initializer = declaration.getInitializer()
+    if (initializer && Node.isAwaitExpression(initializer))
+      initializer = initializer.getExpression()
+    if (!initializer || !Node.isCallExpression(initializer)) continue
+    if (initializer.getExpression().getKind() !== SyntaxKind.ImportKeyword) continue
+    const specifier = initializer.getArguments()[0]
+    if (!specifier || !Node.isStringLiteral(specifier)) continue
+    const target = app.resolveSpecifier(specifier.getLiteralValue())
+    if (!target) continue
+
+    for (const element of binding.getElements()) {
+      const exported = element.getPropertyNameNode()?.getText() ?? element.getName()
+      const local = element.getName()
+      imports.set(local, target)
+      if (exported !== 'default' && exported !== local) exportedAs.set(local, exported)
     }
   }
 

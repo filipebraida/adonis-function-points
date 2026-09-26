@@ -173,8 +173,11 @@ function detsFor(
     sources.push(source)
   }
 
-  for (const param of entry.signature.match(/:[A-Za-z_][\w]*/g) ?? []) {
-    add(param.slice(1), `param:${param}`)
+  // route parameters — `noticias:importar` is a command's name, not a pattern with one
+  if (entry.kind === 'http') {
+    for (const param of entry.signature.match(/:[A-Za-z_][\w]*/g) ?? []) {
+      add(param.slice(1), `param:${param}`)
+    }
   }
 
   /**
@@ -201,6 +204,13 @@ function detsFor(
    * paid for twice.
    */
   for (const field of behavior.requestFields) add(field, `request:${field}`)
+
+  // an ace command: what the operator types — `flags.limite` → `flag:limite`
+  for (const field of behavior.commandFields ?? []) {
+    const [kind, ...rest] = field.split('.')
+    const name = rest.join('.')
+    add(name, `${kind === 'args' ? 'arg' : 'flag'}:${name}`)
+  }
 
   // output: only a transaction that presents data has output fields
   if (type === 'EO' || type === 'EQ') {

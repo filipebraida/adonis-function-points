@@ -264,6 +264,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
   warnings.push(...unreadableInputWarnings(input))
   warnings.push(...unreadableOutputWarnings(input))
   warnings.push(...unreadableDeliveryWarnings(input))
+  warnings.push(...commandWarnings(entryPoints, transactionalFunctions))
   warnings.push(...lookAlikeWarnings(functions))
   warnings.push(...seededOnlyWarnings(functions, grouping.members, input.seededAnywhere))
 
@@ -305,6 +306,38 @@ function unreadableDeliveryWarnings(input: CountInput): string[] {
           `  ${entry.trigger} ${entry.signature}: ${behavior!.delivered.opaqueFields.join(', ')}`
       ),
     ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
+  ]
+}
+
+/**
+ * Ace commands counted as transactions — plan 0.7 §C.
+ *
+ * A batch process an operator starts is an elementary process, and it is counted.
+ * Half the commands on the validated applications are development tools — a data
+ * generator, a scaffolder — which the CPM does not count and the code cannot tell
+ * from an importer: both write the same table. So each one is listed with the FP
+ * at stake, the collector's hint beside it, and the way out is a declaration.
+ */
+function commandWarnings(
+  entryPoints: CollectedEntryPoint[],
+  functions: CountedFunction[]
+): string[] {
+  const counted = entryPoints
+    .filter((entry) => entry.kind === 'command')
+    .map((entry) => ({ entry, fn: functions.find((f) => f.id === `tx:${entry.identity}`) }))
+    .filter(({ fn }) => fn !== undefined)
+
+  if (counted.length === 0) return []
+
+  return [
+    `${counted.length} ace command(s) counted as elementary processes — a batch process an operator ` +
+      `starts is a transaction. A development tool (a data generator, a scaffolder) is not the ` +
+      `user's: exclude it with \`boundary.ignoreEntryPoints: ['<commandName>']\`:`,
+    ...counted.map(
+      ({ entry, fn }) =>
+        `  ${entry.identity}: ${fn!.type} ${fn!.points} FP` +
+        (entry.hints?.length ? ` — ${entry.hints.join('; ')}` : '')
+    ),
   ]
 }
 

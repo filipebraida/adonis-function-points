@@ -1,6 +1,7 @@
 import { discoverApp } from './inventory/app_context.js'
 import { collectDataStores } from './inventory/sources/data_stores.js'
 import { collectEntryPoints } from './inventory/sources/routes_ast.js'
+import { collectCommands } from './inventory/sources/commands.js'
 import { collectEventBindings } from './inventory/sources/event_bindings.js'
 import { collectJsonSchemas } from './inventory/sources/json_schemas.js'
 import { createAnalyzer } from './inventory/graph/call_graph.js'
@@ -64,7 +65,10 @@ export class CoverageTooLowError extends Error {
 export async function analyze(root: string, options: AnalysisOptions = {}): Promise<Analysis> {
   const app = await discoverApp(root)
   const { stores, unresolved: storeProblems } = await collectDataStores(app)
-  const { entryPoints, unresolved: routeProblems } = await collectEntryPoints(app)
+  const routes = await collectEntryPoints(app)
+  const routeProblems = routes.unresolved
+  // ace commands are elementary processes too — counting-decisions §5, plan 0.7 §C
+  const entryPoints = [...routes.entryPoints, ...collectCommands(app)]
 
   /** only read when an override names one — but collected once, like everything else */
   const jsonSchemas = collectJsonSchemas(app)
@@ -141,6 +145,14 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
         name,
         provenance: { file: emit(app.root), by: 'request' },
       })),
+      ...(behavior.commandFields.length
+        ? {
+            commandFields: behavior.commandFields.map((name) => ({
+              name,
+              provenance: { file: emit(app.root), by: 'ace-commands' },
+            })),
+          }
+        : {}),
       opaqueRequest: behavior.opaqueRequest,
       outputFields: behavior.outputFields.map((name) => ({
         name,

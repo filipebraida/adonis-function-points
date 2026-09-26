@@ -87,6 +87,12 @@ export type EntryPoint = {
   /** route name when present; not the identity used across versions */
   name?: string
   handler: HandlerRef | null
+  /**
+   * What the collector noticed and the counter cannot decide: an ace command that
+   * imports a data generator is probably a development tool. Printed beside the
+   * function, so a person excludes it with `boundary.ignoreEntryPoints`.
+   */
+  hints?: string[]
   provenance: Provenance
 }
 
@@ -129,6 +135,12 @@ export type HandlerBehavior = {
    * user-recognisable field crossing the boundary, which is §7.2's definition.
    */
   requestFields: Field[]
+  /**
+   * The `@flags.*` / `@args.*` an ace command declares — its input DETs, exact.
+   * Named `flags.<name>` / `args.<name>`, as the operator types them. Absent on
+   * an HTTP transaction.
+   */
+  commandFields?: Field[]
   /** the transaction reads the request in a way that enumerates nothing */
   opaqueRequest: boolean
   /**

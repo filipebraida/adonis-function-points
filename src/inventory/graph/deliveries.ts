@@ -56,6 +56,12 @@ const RENDERERS = new Set(['inertia', 'view'])
 const RENDER_METHODS = new Set(['render', 'modal'])
 /** `response.json(x)`, `.ok(x)`, `.created(x)`, `.send(x)`, `.accepted(x)` */
 const RESPONSE_METHODS = new Set(['json', 'ok', 'created', 'accepted', 'send'])
+/**
+ * An ace command prints: `this.ui.table().row([…])`, `this.logger.info(…)`,
+ * `console.log(…)`. What a report hands to the terminal is what leaves — every
+ * argument is delivered, read like a prop (plan 0.7 §C).
+ */
+const PRINTERS = new Set(['ui', 'logger', 'console'])
 /** `x.data`, `x.rows` on a paginated / wrapped result hand the collection on */
 const PASSES_THROUGH = new Set(['data', 'rows', 'all', 'toJSON', 'serialize'])
 /** keys of a result that carry its rows: picking one of these is not picking one value */
@@ -193,7 +199,12 @@ export function deliveriesIn(ctx: DeliveryContext): BodyDeliveries {
     if (RENDERERS.has(receiver) && RENDER_METHODS.has(method)) payload = call.getArguments()[1]
     else if (receiver === 'response' && RESPONSE_METHODS.has(method))
       payload = call.getArguments()[0]
-    else continue
+    else if (isPrinter(callee.getExpression(), ctx.body)) {
+      any = true
+      seen.add(call)
+      for (const argument of call.getArguments()) classify(unwrap(argument), '', ctx, deliveries, 0)
+      continue
+    } else continue
 
     any = true
     if (!payload) continue
@@ -254,6 +265,31 @@ function chainRootOf(node: Node): string | null {
   return null
 }
 
+/**
+ * `this.ui.table().row(x)`, `this.logger.info(x)`, `console.log(x)`: a chain rooted
+ * at a printer — through a variable too (`const table = this.ui.table(); table.row(x)`).
+ */
+function isPrinter(receiver: Node, body: Node, depth = 0): boolean {
+  let current: Node | undefined = receiver
+  for (let steps = 0; current && steps < 20; steps++) {
+    if (Node.isCallExpression(current)) {
+      current = current.getExpression()
+      continue
+    }
+    if (Node.isPropertyAccessExpression(current)) {
+      const inner = current.getExpression()
+      if (Node.isThisExpression(inner)) return PRINTERS.has(current.getName())
+      current = inner
+      continue
+    }
+    if (!Node.isIdentifier(current)) return false
+    if (current.getText() === 'console') return true
+    const bound = depth < 3 ? bindingOf(current.getText(), body) : null
+    return !!bound && isPrinter(bound.initializer, body, depth + 1)
+  }
+  return false
+}
+
 /** `ctx.inertia` -> 'inertia', `inertia` -> 'inertia', `this.response` -> 'response' */
 function lastSegmentOf(node: Node): string {
   if (Node.isPropertyAccessExpression(node)) return node.getName()
@@ -272,6 +308,19 @@ function classify(
   // `return null`, `return undefined`: nothing leaves on that path
   if (value.getKind() === SyntaxKind.NullKeyword) return
   if (Node.isIdentifier(value) && value.getText() === 'undefined') return
+
+  /**
+   * A constant with no key — `this.logger.info('done')`, a table's `head(['Nome'])`
+   * — is a label or a message, not a field: AFP counts no message DET (§6). Keyed,
+   * `{ titulo: 'X' }` is a value the page receives, and stays one.
+   */
+  if (
+    !path &&
+    (Node.isStringLiteral(value) ||
+      Node.isNoSubstitutionTemplateLiteral(value) ||
+      Node.isNumericLiteral(value))
+  )
+    return
 
   if (Node.isObjectLiteralExpression(value)) {
     for (const property of value.getProperties()) {
@@ -381,7 +430,14 @@ function classify(
     }
   }
 
-  // literals, template strings, arithmetic, comparisons, `new Date()`: one value leaves
+  // `${assinantes.length} assinante(s)`: the values a template carries
+  if (Node.isTemplateExpression(value)) {
+    for (const span of value.getTemplateSpans())
+      classify(unwrap(span.getExpression()), path, ctx, out, depth + 1)
+    return
+  }
+
+  // literals, arithmetic, comparisons, `new Date()`: one value leaves
   out.push({ kind: 'scalar', path })
 }
 
@@ -437,6 +493,16 @@ function classifyCall(
     // `rows.slice(0, 4)`, `rows.find(…)`: the same collection, or one of its rows
     if (Node.isPropertyAccessExpression(callee) && SAME_COLLECTION.has(method)) {
       classify(unwrap(callee.getExpression()), path, ctx, out, depth + 1)
+      return
+    }
+
+    // `this.colors.red(situacao)`: the value, coloured — a coloured constant is a label, and drops
+    if (
+      Node.isPropertyAccessExpression(callee) &&
+      lastSegmentOf(callee.getExpression()) === 'colors'
+    ) {
+      const coloured = unwrap(value.getArguments()[0])
+      if (coloured) classify(coloured, path, ctx, out, depth + 1)
       return
     }
 
@@ -777,7 +843,7 @@ function classifyAccess(
     // `rows[0]`, `rows.data`: the rows; `produto.nome`: one field
     if (!property || PASSES_THROUGH.has(property))
       out.push({ kind: 'store', store: ctx.symbols.get(root)!, path })
-    else out.push({ kind: 'scalar', path })
+    else out.push({ kind: 'scalar', path: path || property.replace(/^\*$/, '') })
     return
   }
 
@@ -815,7 +881,8 @@ function classifyAccess(
     }
   }
 
-  out.push({ kind: 'scalar', path })
+  // `table.row([assinante.nome, assinante.email])`: a field delivered with no key takes the field's name
+  out.push({ kind: 'scalar', path: path || property.replace(/^\*$/, '') })
 }
 
 function keyOfElementAccess(value: import('ts-morph').ElementAccessExpression): string {
