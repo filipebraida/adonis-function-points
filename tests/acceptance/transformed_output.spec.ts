@@ -9,7 +9,7 @@ import { appFixturePath } from '../helpers.js'
  *
  * The reference (`fixtures/apps/transformed_output/REFERENCE.md`) was written
  * and committed before the code that narrows output DETs existed, with the
- * number the previous rule set produced predicted beside it (57 against 55).
+ * number the previous rule set produced predicted beside it (62 against 59).
  *
  * Eight transactions read the same tables in eight shapes. Only the shape
  * differs, and the shape is exactly what decides the DETs: a transformer's
@@ -17,10 +17,11 @@ import { appFixturePath } from '../helpers.js'
  * or — when nothing is visible — every column.
  */
 const REFERENCE = {
-  total: 55,
+  total: 59,
   functions: {
     'Livro': { type: 'ILF', det: 9, refs: 1, fp: 7 },
-    'Autor': { type: 'EIF', det: 2, refs: 1, fp: 5 },
+    'Autor': { type: 'EIF', det: 3, refs: 1, fp: 5 },
+    'GET /livros/recentes': { type: 'EO', det: 2, refs: 2, fp: 4 },
     'Categoria': { type: 'EIF', det: 2, refs: 1, fp: 5 },
     'GET /livros/destaques': { type: 'EO', det: 6, refs: 3, fp: 5 },
     'GET /livros/painel': { type: 'EO', det: 3, refs: 2, fp: 4 },
@@ -160,6 +161,33 @@ test.group('output DETs: where each one came from', () => {
       'output:Autor.nome',
       'output:Autor.pais',
     ])
+  })
+
+  /**
+   * A relation preloaded FOR a transformer is consumed by it, not shown. Found on
+   * an activity log whose users — preloaded so the transformer could name the
+   * actor — leaked every column, password included, as output DETs.
+   */
+  test('a relation preloaded on a covered store is covered too', async ({ assert }) => {
+    const recentes = fn(await countFixture(), 'GET /livros/recentes')
+
+    assert.deepEqual(recentes.rationale.detSources.sort(), [
+      'transformer:RecenteTransformer.autorNome',
+      'transformer:RecenteTransformer.titulo',
+    ])
+    assert.equal(recentes.refs, 2, 'the author is still an FTR: it was read')
+  })
+
+  /** `serializeAs: null`: Lucid never serialises it, so it never leaves — a DET of the file only. */
+  test('a hidden column is a DET of the data function and never of an output', async ({
+    assert,
+  }) => {
+    const result = await countFixture()
+
+    assert.include(fn(result, 'Autor').rationale.detSources, 'ast:autores.cpf')
+    for (const name of ['GET /livros/bruto', 'GET /livros/painel']) {
+      assert.notInclude(fn(result, name).rationale.detSources.join(' '), 'cpf', name)
+    }
   })
 
   /** The control: nothing visible means every column, marked `output:`, as before. */

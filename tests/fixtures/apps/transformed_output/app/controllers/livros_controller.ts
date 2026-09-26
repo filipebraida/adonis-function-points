@@ -5,6 +5,7 @@ import Autor from '#models/autor'
 import Livro from '#models/livro'
 import ExportacaoTransformer from '#transformers/exportacao_transformer'
 import LivroTransformer from '#transformers/livro_transformer'
+import RecenteTransformer from '#transformers/recente_transformer'
 import { criarLivroValidator } from '#validators/livro'
 
 export default class LivrosController {
@@ -57,6 +58,12 @@ export default class LivrosController {
     const total = await Livro.query().count('* as total')
     const autores = await Autor.all()
     return inertia.render('livros/painel', { total, autores })
+  }
+
+  /** the author is preloaded FOR the transformer, which emits one key from it: its table does not leave */
+  async recentes({ inertia }: HttpContext) {
+    const livros = await Livro.query().preload('autor').orderBy('ano', 'desc').limit(5)
+    return inertia.render('livros/recentes', { livros: RecenteTransformer.transform(livros) })
   }
 
   async store({ request, response }: HttpContext) {

@@ -47,6 +47,12 @@ export type StoreRead = {
   shape: 'whole' | 'select' | 'aggregate'
   /** for `select`: the columns named */
   columns: string[]
+  /**
+   * The store this one was preloaded THROUGH (`Livro.query().preload('autor')`),
+   * when it was not read by a chain of its own. A relation loaded for a
+   * transformer is consumed by it, not shown.
+   */
+  via?: string
 }
 
 /**

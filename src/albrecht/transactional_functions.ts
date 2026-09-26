@@ -219,7 +219,25 @@ function detsFor(
      * `(opaque)` like an open input object, and the counter reports it.
      */
     const opaqueOutputs = new Set(behavior.opaqueOutputFields)
+
+    /**
+     * Covered: the stores a transformer is for, and the stores preloaded ONLY
+     * through a covered one — `Livro.query().preload('autor')` handed to
+     * `RecenteTransformer<Livro>` loads the author for the transformer, which
+     * emits whatever of it leaves. A store read by a chain of its own is shown
+     * for itself and is never covered this way. Iterated to a fixpoint: a
+     * relation of a relation.
+     */
     const covered = new Set(behavior.transformedStores)
+    for (let changed = true; changed;) {
+      changed = false
+      for (const [store, read] of Object.entries(behavior.outputReads)) {
+        if (covered.has(store) || read.direct || read.via.length === 0) continue
+        if (!read.via.every((parent) => covered.has(parent))) continue
+        covered.add(store)
+        changed = true
+      }
+    }
 
     for (const field of behavior.outputFields) {
       add(field, `transformer:${field}${opaqueOutputs.has(field) ? ' (opaque)' : ''}`)
@@ -240,11 +258,13 @@ function detsFor(
       /**
        * The key and the system timestamps are not DETs however they leave —
        * selected by name or as part of the whole table. Same ground as on the
-       * data function: the user neither supplies nor recognises them (§6).
+       * data function: the user neither supplies nor recognises them (§6). A
+       * hidden column is a DET of the file and never of an output.
        */
       const attributes = options.countedStores.get(store)!.attributes
       const excluded = new Set([
-        ...attributes.filter((a) => a.isIdentifier || a.system).map((a) => a.name),
+        // `serializeAs: null` is Lucid saying the column never leaves: not an output DET
+        ...attributes.filter((a) => a.isIdentifier || a.system || a.hidden).map((a) => a.name),
         // a detail's link to the master it is folded into: not a DET of the group (§10)
         ...(options.grouping.linkColumns.get(store) ?? []),
       ])

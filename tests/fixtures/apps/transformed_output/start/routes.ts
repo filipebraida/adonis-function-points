@@ -9,6 +9,7 @@ router.get('/livros/resumo', [LivrosController, 'resumo']).as('livros.resumo')
 router.get('/livros/exportacao', [LivrosController, 'exportacao']).as('livros.exportacao')
 router.get('/livros/destaques', [LivrosController, 'destaques']).as('livros.destaques')
 router.get('/livros/painel', [LivrosController, 'painel']).as('livros.painel')
+router.get('/livros/recentes', [LivrosController, 'recentes']).as('livros.recentes')
 router.get('/livros/:id', [LivrosController, 'show']).as('livros.show')
 router.post('/livros', [LivrosController, 'store']).as('livros.store')
 

@@ -93,7 +93,18 @@ export type Behavior = {
    * (`.count()`, `.exists()`) left one scalar. What an output shows when no
    * transformer covers the store.
    */
-  outputReads: Record<string, { whole: boolean; selected: string[]; aggregate: boolean }>
+  outputReads: Record<
+    string,
+    {
+      whole: boolean
+      selected: string[]
+      aggregate: boolean
+      /** read by a chain of its own, not only preloaded through another store */
+      direct: boolean
+      /** stores it was preloaded through */
+      via: string[]
+    }
+  >
   trace: TraceStep[]
   /** bodies reached, for `fp:diff` */
   scope: ScopeEntry[]
@@ -641,14 +652,19 @@ export function createAnalyzer(
             : chain.selected.length > 0
               ? 'select'
               : 'whole'
-          const read = (store: string, how: StoreRead['shape']) =>
-            reads.push({ store, shape: how, columns: how === 'select' ? chain.selected : [] })
+          const read = (store: string, how: StoreRead['shape'], via?: string) =>
+            reads.push({
+              store,
+              shape: how,
+              columns: how === 'select' ? chain.selected : [],
+              ...(via ? { via } : {}),
+            })
 
           if (access.method === 'related' && access.viaRelation) {
             read(access.viaRelation, shape)
           } else {
             read(access.store, shape)
-            if (access.viaRelation) read(access.viaRelation, 'whole')
+            if (access.viaRelation) read(access.viaRelation, 'whole', access.store)
           }
 
           for (const problem of chain.unreadable) {
@@ -830,7 +846,13 @@ export function createAnalyzer(
     const transformedStores = new Set<string>()
     const outputReads = new Map<
       string,
-      { whole: boolean; selected: Set<string>; aggregate: boolean }
+      {
+        whole: boolean
+        selected: Set<string>
+        aggregate: boolean
+        direct: boolean
+        via: Set<string>
+      }
     >()
     const trace: TraceStep[] = []
     const scope: ScopeEntry[] = []
@@ -889,15 +911,19 @@ export function createAnalyzer(
       for (const field of facts.outputs) outputFields.add(field)
       for (const field of facts.opaqueOutputs) opaqueOutputFields.add(field)
       if (facts.transformed) transformedStores.add(facts.transformed)
-      for (const { store, shape, columns } of facts.reads) {
+      for (const { store, shape, columns, via } of facts.reads) {
         const known = outputReads.get(store) ?? {
           whole: false,
           selected: new Set<string>(),
           aggregate: false,
+          direct: false,
+          via: new Set<string>(),
         }
         if (shape === 'whole') known.whole = true
         if (shape === 'aggregate') known.aggregate = true
         for (const column of columns) known.selected.add(column)
+        if (via) known.via.add(via)
+        else known.direct = true
         outputReads.set(store, known)
       }
 
@@ -938,7 +964,13 @@ export function createAnalyzer(
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([store, read]) => [
             store,
-            { whole: read.whole, selected: [...read.selected].sort(), aggregate: read.aggregate },
+            {
+              whole: read.whole,
+              selected: [...read.selected].sort(),
+              aggregate: read.aggregate,
+              direct: read.direct,
+              via: [...read.via].sort(),
+            },
           ])
       ),
       trace,

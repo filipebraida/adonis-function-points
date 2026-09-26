@@ -328,12 +328,19 @@ function columnsOf(cls: ClassDeclaration): Attribute[] {
        * counting side decides what to do with it.
        */
       const system = /auto(Create|Update)\s*:\s*true/.test(options)
+      /**
+       * `serializeAs: null`: Lucid never serialises the column, so it cannot leave
+       * the boundary on an output. It is still a DET of the data function — the
+       * user supplies a password — counting-decisions §6.
+       */
+      const hidden = /serializeAs\s*:\s*null/.test(options)
 
       attributes.push({
         name: property.getName(),
         type: property.getTypeNode()?.getText(),
         isIdentifier,
         ...(system ? { system } : {}),
+        ...(hidden ? { hidden } : {}),
         provenance: { file, line: property.getStartLineNumber(), by: 'column-decorator' },
       })
     }

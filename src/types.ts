@@ -63,6 +63,11 @@ export type Attribute = {
    * counting-decisions §6.
    */
   system?: boolean
+  /**
+   * `serializeAs: null`: Lucid never serialises it, so it never leaves on an
+   * output. Still a DET of the data function — counting-decisions §6.
+   */
+  hidden?: boolean
   provenance: Provenance
 }
 
@@ -135,8 +140,14 @@ export type HandlerBehavior = {
   opaqueOutputFields: Field[]
   /** stores a transformer on the path is for: their keys leave, not their columns */
   transformedStores: string[]
-  /** how each store was read: rows whole, `.select()` columns, or one aggregate scalar */
-  outputReads: Record<string, { whole: boolean; selected: string[]; aggregate: boolean }>
+  /**
+   * How each store was read: rows whole, `.select()` columns, or one aggregate
+   * scalar; by its own chain (`direct`) or preloaded through another store (`via`).
+   */
+  outputReads: Record<
+    string,
+    { whole: boolean; selected: string[]; aggregate: boolean; direct: boolean; via: string[] }
+  >
   /** path walked through the call graph — what `fp:explain` prints */
   trace: TraceStep[]
   /** calls no resolver knew how to follow */

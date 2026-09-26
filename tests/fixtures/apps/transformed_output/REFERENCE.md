@@ -9,7 +9,8 @@ difference is known before it is measured.
 ## The application
 
 A small catalogue. `Livro` has 9 user-recognisable columns and belongs to an
-`Autor` with 2. One transaction writes; five read the same data in five shapes,
+`Autor` with 3 — one of them, `cpf`, declared `serializeAs: null`, which Lucid
+never serialises: a DET of the file and never of an output. One transaction writes; five read the same data in five shapes,
 and the shape is the only thing that differs between them:
 
 | route              | what leaves the boundary                                            |
@@ -22,14 +23,15 @@ and the shape is the only thing that differs between them:
 | `GET /autores`     | `Autor.query().select('nome')`, untouched                           |
 | `GET /livros/destaques` | `LivroTransformer` for the books, `Categoria.all()` raw beside it |
 | `GET /livros/painel` | `Livro.query().count()` — one scalar — and `Autor.all()` raw        |
+| `GET /livros/recentes` | `RecenteTransformer` emitting `titulo` and one key derived from the preloaded author |
 | `POST /livros`     | validator with 3 fields, writes `Livro`                              |
 
-## Reference: 55 unadjusted FP
+## Reference: 59 unadjusted FP
 
 | function            | type | FTR/RET | DET | complexity | FP  | DET origin                                       |
 | ------------------- | ---- | ------- | --- | ---------- | --- | ------------------------------------------------ |
 | Livro               | ILF  | 1       | 9   | low        | 7   | columns, minus `id`                              |
-| Autor               | EIF  | 1       | 2   | low        | 5   | columns, minus `id`                              |
+| Autor               | EIF  | 1       | 3   | low        | 5   | columns, minus `id` — `cpf` counts on the file   |
 | GET /livros         | EO   | 2       | 4   | low        | 4   | `titulo`, `isbn`, `autor.nome`, `autor.totalLivros` |
 | GET /livros/bruto   | EO   | 2       | 11  | average    | 5   | every column of both stores                      |
 | GET /livros/resumo  | EO   | 1       | 2   | low        | 4   | `titulo`, `ano`                                  |
@@ -39,8 +41,9 @@ and the shape is the only thing that differs between them:
 | GET /livros/destaques | EO | 3       | 6   | average    | 5   | the 4 transformer keys + `Categoria.nome`, `.descricao` |
 | GET /livros/painel  | EO   | 2       | 3   | low        | 4   | 1 for the count + `Autor.nome`, `.pais`          |
 | Categoria           | EIF  | 1       | 2   | low        | 5   | columns, minus `id`                              |
+| GET /livros/recentes | EO  | 2       | 2   | low        | 4   | `titulo`, `autorNome`; the preloaded author is consumed, not shown |
 | POST /livros        | EI   | 1       | 3   | low        | 3   | `titulo`, `isbn`, `autorId`                      |
-| **total**           |      |         |     |            | **55** |                                               |
+| **total**           |      |         |     |            | **59** |                                               |
 
 ## Rules the reference applies
 
@@ -56,6 +59,14 @@ and the shape is the only thing that differs between them:
 1b. **An aggregate read — `.count()`, `.exists()` — is one derived scalar
    leaving the boundary: 1 DET** for that store, `aggregate:Livro`, not the
    table. A dashboard of counters is a handful of DETs, not a hundred.
+1c. **A relation preloaded on a covered store is covered too.** `Livro.query()
+   .preload('autor')` handed to `RecenteTransformer<Livro>` loads the author FOR
+   the transformer; whatever of the author leaves is in the transformer's keys
+   (`autorNome`), and the author's table does not. A store read by its own chain
+   is never covered this way.
+1d. **A column declared `serializeAs: null` never leaves.** Lucid does not
+   serialise it, so it is not an output DET however the store leaves — whole or
+   selected. It stays a DET of the data function: the user supplies it.
 2. **`...this.pick(this.resource, [...])`** contributes the listed names.
    **`...this.toObject()`** contributes the keys of the body it spreads, which
    the graph already follows. Any other spread (`...this.resource.serialize()`,
@@ -86,10 +97,11 @@ Every read transaction is counted from the whole tables, so:
 | GET /livros/:id    | 12        | 5        | 5            |
 | GET /livros/exportacao | 9     | 4        | 4            |
 | GET /autores       | 2         | 4        | 4            |
-| GET /livros/destaques | 13     | 5        | 5            |
-| GET /livros/painel | 11        | 5        | 4            |
+| GET /livros/destaques | 14     | 5        | 5            |
+| GET /livros/painel | 12        | 5        | 4            |
+| GET /livros/recentes | 12      | 5        | 4            |
 
-Predicted 1.4.0 total: **57 FP** (+2). Two of the seven reads move: an EO
+Predicted 1.4.0 total: **62 FP** (+3). Three of the eight reads move: an EO
 with 1 FTR is low up to 19 DETs, and with 2 FTRs it is average from 6. That is
 the granularity effect counting-decisions §7 describes — DETs change far more
 often than the points do — and it is why the fixture asserts DETs, not only FP.
@@ -105,7 +117,10 @@ the first rule shipped and before it was refined: recounting a real
 application showed a questionnaire page at 4 DET with 5 FTR — the transformer
 of its header had erased the questions rendered raw beside it — and a dashboard
 of counters at 5. Rules 1 and 1b above are the refinement, and these two routes
-are its known answers.
+are its known answers. `GET /livros/recentes` and `Autor.cpf` came next, from
+an activity log whose `User.password` and `User.verdeToken` were output DETs:
+the users had been preloaded for the transformer that names the actor, and a
+column Lucid never serialises cannot leave. Rules 1c and 1d.
 
 ## Transcription choices
 
