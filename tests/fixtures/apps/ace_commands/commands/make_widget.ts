@@ -13,7 +13,9 @@ export default class MakeWidget extends BaseCommand {
   declare name: string
 
   async run() {
-    writeFileSync(`app/widgets/${this.name}.ts`, `export const ${this.name} = {}\n`)
+    // a method on a flag/argument property is the language's: `this.name` is a string
+    const nome = this.name.trim()
+    writeFileSync(`app/widgets/${nome}.ts`, `export const ${nome} = {}\n`)
     this.logger.success(`widget ${this.name} criado`)
   }
 }

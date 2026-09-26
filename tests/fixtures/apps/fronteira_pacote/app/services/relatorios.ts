@@ -1,14 +1,14 @@
-import type Pedido from '#models/pedido'
+import { inject } from '@adonisjs/core'
 
-/** the CONTROL: a service of the application the resolver cannot find a body for — this one stays a gap */
+import type Pedido from '#models/pedido'
+import type { GeradorDeRelatorios } from '#services/gerador_de_relatorios'
+
+/** the CONTROL: a service of the application typed by an INTERFACE — no body to follow, a gap that stays one */
+@inject()
 export default class Relatorios {
   constructor(private gerador: GeradorDeRelatorios) {}
 
   async resumo(pedidos: Pedido[]) {
     return this.gerador.gerar(pedidos)
   }
-}
-
-interface GeradorDeRelatorios {
-  gerar(pedidos: Pedido[]): Promise<string>
 }

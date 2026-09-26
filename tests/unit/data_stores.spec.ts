@@ -147,6 +147,26 @@ test.group('data functions: source and boundary', () => {
     assert.notMatch(factory!.reason, /outside the application/i)
   })
 
+  /** a local factory whose returned class declares no `@column` adds behaviour, not attributes */
+  test('a local mixin factory without columns is a note, one with columns stays a gap', async ({
+    assert,
+  }) => {
+    const result = await collect(fixturePath('models', 'composed_mixin'))
+
+    assert.isUndefined(result.unresolved.find((u) => u.expression.includes('withTracking')))
+    assert.exists(
+      result.notes.find(
+        (n) =>
+          n ===
+          'Post: local mixin factory withTracking() declares no column — adds behaviour, not attributes'
+      )
+    )
+    assert.exists(
+      result.unresolved.find((u) => u.expression.includes('withSlug')),
+      'a column exists on the return: still a gap'
+    )
+  })
+
   test('a style with no mixin invents no unresolved entry', async ({ assert }) => {
     for (const style of ['direct', 'generated_schema']) {
       const result = await collect(fixturePath('models', style))

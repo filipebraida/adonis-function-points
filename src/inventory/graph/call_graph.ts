@@ -1161,7 +1161,7 @@ export function createAnalyzer(
        */
       if (
         isUnreadableWrite(call, symbols, imports, packageImports, body) &&
-        !isNoise(call, owner)
+        !isNoise(call, owner, (typeNode) => membersOfType(typeNode, file, app))
       ) {
         unresolved.push({
           file: ref.file,
@@ -1172,7 +1172,10 @@ export function createAnalyzer(
         continue
       }
 
-      if (isWorthReporting(call, symbols, imports) && !isNoise(call, owner)) {
+      if (
+        isWorthReporting(call, symbols, imports) &&
+        !isNoise(call, owner, (typeNode) => membersOfType(typeNode, file, app))
+      ) {
         // the same gate as an unresolved call: what is noise stays silent, what is a package is a note
         const specifier = packageTargetOf(call, owner, file, symbols, app, storesByName, sourceFile)
         if (specifier) {
@@ -1523,11 +1526,24 @@ export function createAnalyzer(
             })
             return
           }
+          /**
+           * `fonte.varrerPorDocumento()` where the file declares an INTERFACE with that
+           * member and no class: there is no body because the implementation is injected
+           * at runtime — a gap, and the right words for it.
+           */
+          const declaredAsInterface =
+            !!ref.member &&
+            !!source &&
+            source
+              .getInterfaces()
+              .some((i) => i.getMethod(ref.member!) || i.getProperty(ref.member!))
           unresolved.push({
             file: ref.file,
             line: ref.line ?? 0,
             expression: `${pathOf(ref.file)}.${ref.member ?? 'handle'}`,
-            reason: 'body not found in the resolved file: probably inherited from a package class',
+            reason: declaredAsInterface
+              ? 'interface method: the implementation is injected at runtime and cannot be followed statically'
+              : 'body not found in the resolved file: probably inherited from a package class',
           })
         }
         return
@@ -2214,7 +2230,11 @@ function storeOfExpression(
   return root ? (symbols.get(root) ?? null) : null
 }
 
-function membersOfType(typeNode: Node, file: SourceFile, app: AppContext): Map<string, string> {
+export function membersOfType(
+  typeNode: Node,
+  file: SourceFile,
+  app: AppContext
+): Map<string, string> {
   const members = new Map<string, string>()
 
   const collect = (node: Node) => {

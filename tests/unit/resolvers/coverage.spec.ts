@@ -40,7 +40,7 @@ const EXPECTED_STRATEGY: Record<string, string> = {
  * action — in the controller they use another shape, and asserting otherwise
  * here would be a lying test.
  */
-const NO_RESOLVER_BY_DESIGN = new Set(['fat_controller'])
+const NO_RESOLVER_BY_DESIGN = new Set(['fat_controller', 'native_receivers'])
 
 const patterns = fs
   .readdirSync(fixturePath('patterns'), { withFileTypes: true })

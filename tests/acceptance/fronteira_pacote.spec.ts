@@ -74,8 +74,9 @@ test.group('package boundary: notes, not gaps', () => {
   test('a receiver typed by the application stays an unresolved call', async ({ assert }) => {
     const { count: result, inventory } = await analyzed()
     assert.equal(result.confidence.unresolvedCalls, 1)
-    assert.equal(inventory.unresolved[0].expression, 'this.gerador.gerar')
-    assert.match(inventory.unresolved[0].file, /relatorios\.ts$/)
+    const [gap] = inventory.unresolved
+    assert.match(gap.file, /gerador_de_relatorios\.ts$/)
+    assert.include(gap.reason, 'interface method: the implementation is injected at runtime')
   })
 
   /** the value a package hands back is read as a value — the same as before */

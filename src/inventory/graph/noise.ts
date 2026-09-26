@@ -132,7 +132,14 @@ const FRAMEWORK_SERVICES = new Set([
 ])
 
 /** Is this call one that cannot reach a data store? */
-export function isNoise(call: CallExpression, owner?: ClassDeclaration): boolean {
+/** resolves a type annotation to its members (`name -> type text`), when the caller can */
+export type MembersOf = (typeNode: Node) => Map<string, string>
+
+export function isNoise(
+  call: CallExpression,
+  owner?: ClassDeclaration,
+  membersOf?: MembersOf
+): boolean {
   const expression = call.getExpression()
   if (!Node.isPropertyAccessExpression(expression)) return false
 
@@ -156,7 +163,7 @@ export function isNoise(call: CallExpression, owner?: ClassDeclaration): boolean
     return true
   }
 
-  return isNativeReceiver(receiver, owner)
+  return isNativeReceiver(receiver, owner, membersOf)
 }
 
 /**
@@ -187,19 +194,68 @@ function isIteration(method: string, call: CallExpression): boolean {
 }
 
 /** Does the receiver resolve to a built-in, by its declaration? */
-function isNativeReceiver(receiver: Node, owner?: ClassDeclaration): boolean {
+function isNativeReceiver(
+  receiver: Node,
+  owner?: ClassDeclaration,
+  membersOf?: MembersOf
+): boolean {
   // `['a', 'b'].includes(x)` / `'abc'.split(x)`
   if (Node.isArrayLiteralExpression(receiver) || Node.isStringLiteral(receiver)) return true
 
-  // `this.names.get(id)` where `private names = new Map()`
-  if (Node.isPropertyAccessExpression(receiver) && receiver.getExpression().getKind()) {
+  if (Node.isPropertyAccessExpression(receiver)) {
     const inner = receiver.getExpression()
+
+    // `this.names.get(id)` where `private names = new Map()`; `this.name.trim()` where `@args.string() declare name`
     if (Node.isThisExpression(inner) && owner) {
-      return isNativeProperty(owner, receiver.getName())
+      return (
+        isNativeProperty(owner, receiver.getName()) || isPrimitiveInput(owner, receiver.getName())
+      )
+    }
+
+    /**
+     * `this.extras?.painel?.get(id)` where `constructor(protected extras?: Extras)` and
+     * `type Extras = { painel: Map<number, Row> }`: the lookups a transformer receives
+     * arrive one level down, through a named type. The caller resolves the type; here
+     * only its member's type is read.
+     */
+    if (
+      Node.isPropertyAccessExpression(inner) &&
+      Node.isThisExpression(inner.getExpression()) &&
+      owner &&
+      membersOf
+    ) {
+      const holder = declaredOn(owner, inner.getName())
+      const typeNode = holder?.getTypeNode()
+      if (!typeNode) return false
+      const memberType = membersOf(typeNode).get(receiver.getName())
+      return !!memberType && NATIVE_TYPES.has(memberType.replace(/<.*/, '').trim())
     }
   }
 
   return false
+}
+
+/** a class property or a constructor parameter property by name */
+function declaredOn(owner: ClassDeclaration, name: string) {
+  return (
+    owner.getProperty(name) ??
+    owner
+      .getConstructors()[0]
+      ?.getParameters()
+      .find((parameter) => parameter.getName() === name)
+  )
+}
+
+/** an ace command's `@flags.*` / `@args.*` property is a string, a number or a boolean: any method on it is the language's */
+function isPrimitiveInput(owner: ClassDeclaration, name: string): boolean {
+  const property = owner.getProperty(name)
+  if (!property) return false
+  return property.getDecorators().some((decorator) => {
+    const callee = decorator.getCallExpression()?.getExpression()
+    const root =
+      callee && Node.isPropertyAccessExpression(callee) ? callee.getExpression().getText() : ''
+    return root === 'flags' || root === 'args'
+  })
 }
 
 function isNativeProperty(owner: ClassDeclaration, name: string): boolean {

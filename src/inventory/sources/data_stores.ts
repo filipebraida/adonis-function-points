@@ -1,5 +1,5 @@
 import { Node, Project, SyntaxKind } from 'ts-morph'
-import type { ClassDeclaration, SourceFile } from 'ts-morph'
+import type { ClassDeclaration, SourceFile, ClassExpression } from 'ts-morph'
 
 import type { AppContext } from '../app_context.js'
 import { samePath } from '../paths.js'
@@ -211,6 +211,20 @@ function walkChain(start: ClassDeclaration, app: AppContext, project: Project): 
        * out of the coverage number. A base of the application that was not found stays
        * a gap.
        */
+      /**
+       * A mixin factory OF THE APPLICATION whose returned class declares no `@column`
+       * adds methods, not attributes: a fact, not a gap. One that declares columns
+       * stays a gap — reading them off the returned class is a rule for a release
+       * that moves numbers (plan 0.11 §E).
+       */
+      const columnless = localFactoryWithoutColumns(parent, cls.getSourceFile(), app, project)
+      if (columnless) {
+        notes.push(
+          `${cls.getName() ?? '?'}: local mixin factory ${columnless} declares no column — adds behaviour, not attributes`
+        )
+        continue
+      }
+
       const packaged = packageOriginOf(parent, cls.getSourceFile(), app)
       if (packaged) {
         notes.push(
@@ -239,6 +253,47 @@ function walkChain(start: ClassDeclaration, app: AppContext, project: Project): 
     unresolved,
     notes,
   }
+}
+
+/**
+ * `compose(Base, withTracking())` where `withTracking` is a function of the application
+ * whose body returns a class expression: the factory's name when that class declares no
+ * `@column`, `null` when it declares one (or when the factory cannot be read).
+ */
+function localFactoryWithoutColumns(
+  parent: Node,
+  file: SourceFile,
+  app: AppContext,
+  project: Project
+): string | null {
+  if (!Node.isCallExpression(parent)) return null
+  const callee = parent.getExpression()
+  if (!Node.isIdentifier(callee)) return null
+  const name = callee.getText()
+
+  let declared = file.getFunction(name)
+  if (!declared) {
+    const origin = originOf(name, file)
+    const target = origin ? app.resolveSpecifier(origin.specifier) : null
+    const source = target
+      ? (project.getSourceFile(target) ?? project.addSourceFileAtPathIfExists(target))
+      : null
+    declared =
+      source?.getFunction(
+        origin?.exportedName === 'default' ? name : (origin?.exportedName ?? name)
+      ) ?? undefined
+  }
+  if (!declared) return null
+
+  // `return class extends superclass {}` or `class WithSlug extends superclass {}; return WithSlug`
+  const classes: (ClassExpression | ClassDeclaration)[] = [
+    ...declared.getDescendantsOfKind(SyntaxKind.ClassExpression),
+    ...declared.getDescendantsOfKind(SyntaxKind.ClassDeclaration),
+  ]
+  const declaresColumn = classes.some((c) =>
+    c.getProperties().some((p) => p.getDecorators().some((d) => /^column\b/.test(d.getFullName())))
+  )
+  return declaresColumn ? null : `${name}()`
 }
 
 /**
