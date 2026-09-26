@@ -5,6 +5,7 @@ import { collectDataStores } from '../../src/inventory/sources/data_stores.js'
 import { collectEntryPoints } from '../../src/inventory/sources/routes_ast.js'
 import { createAnalyzer } from '../../src/inventory/graph/call_graph.js'
 import { count } from '../../src/albrecht/counter.js'
+import { analyze } from '../../src/pipeline.js'
 import type { CountResult } from '../../src/types.js'
 import { appFixturePath } from '../helpers.js'
 
@@ -180,6 +181,42 @@ test.group('count: edges', () => {
   test('a transaction touching only a technical table is not counted', async ({ assert }) => {
     const result = await countApp('edges_boundary')
     assert.notExists(result.functions.find((f) => f.name === 'POST /sessions/touch'))
+  })
+
+  /**
+   * Not in the spec's list, and in ours: `auth_access_tokens`, `remember_me_tokens`
+   * and `password_reset_tokens` are the framework's own tables, and a token is the
+   * machinery of authentication, not data the user maintains. On two applications
+   * it was an ILF at 7 PF.
+   */
+  test('a token table is technical, with the label in the report', async ({ assert }) => {
+    const result = await countApp('edges_boundary')
+
+    assert.notExists(result.functions.find((f) => f.name === 'PasswordResetToken'))
+    assert.notExists(result.functions.find((f) => f.name === 'POST /password/forgot'))
+    assert.isTrue(
+      result.confidence.warnings.some(
+        (w) => w.includes('PasswordResetToken') && w.includes('token entity')
+      )
+    )
+  })
+
+  /**
+   * §6.5.2.1.3 treats the naming conventions as user input. The list is
+   * REPLACED, not extended: a team whose business tables end in `_types` needs
+   * to drop that pattern, and an empty list means nothing is technical by name.
+   */
+  test('`boundary.technicalPatterns` replaces the naming conventions', async ({ assert }) => {
+    const { count: replaced } = await analyze(appFixturePath('edges_boundary'), {
+      boundary: { technicalPatterns: [{ label: 'session', pattern: 'session' }] },
+    })
+
+    assert.notExists(replaced.functions.find((f) => f.name === 'UserSession'))
+    assert.exists(
+      replaced.functions.find((f) => f.name === 'PasswordResetToken'),
+      'the token pattern was not in the replacement list, so the table counts'
+    )
+    assert.isTrue(replaced.confidence.warnings.some((w) => w.includes('session (AFP §6.5.2.1.3')))
   })
 })
 

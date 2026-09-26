@@ -162,8 +162,18 @@ AFP offers two mechanisms, and we add a third, better one:
 The third is what really answers "the tool has to discover it": it depends on
 no name, no list, and works for a package nobody anticipated.
 
-> **Not in v1.** The `node_modules` boundary — what makes mechanism 3 possible
-> — is decided but not implemented. Mechanisms 1 and 2 are.
+> **What is implemented is mechanism 2, and only 2.** The `node_modules`
+> boundary that makes mechanism 3 possible is decided but not built. Mechanism 1
+> was evaluated and **rejected**: on a real application its "fewer than three
+> text attributes" test would have excluded `Instituto` — five columns, an admin
+> CRUD, a legitimate ILF. A structural heuristic that moves the number the wrong
+> way is worse than none.
+>
+> The naming list is the spec's, plus one the framework asks for: `.*tokens?.*`
+> — `auth_access_tokens`, `remember_me_tokens`, `password_reset_tokens` are the
+> machinery of authentication, and came out as ILFs at 7 PF each on two
+> applications. `boundary.technicalPatterns` replaces the list, as §6.5.2.1.3
+> intends for user input; `boundary.business` restores one table.
 
 ### AFP's closing rule
 

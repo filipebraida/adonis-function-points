@@ -1,5 +1,6 @@
 import type { ComplexityTable } from './albrecht/tables.js'
 import type { ChangeFactors, ChangeReasonFactors } from './albrecht/diff.js'
+import type { TechnicalPattern } from './albrecht/technical_filter.js'
 import type { CallResolver } from './inventory/resolvers/types.js'
 import type { Complexity, FunctionType } from './types.js'
 
@@ -51,6 +52,16 @@ export type FunctionPointsConfig = {
      * filter missed, this one restores what it caught by accident.
      */
     business?: string[]
+    /**
+     * The naming conventions of the technical-data filter (AFP §6.5.2.1.3),
+     * tested against the physical table name.
+     *
+     * When set, this list REPLACES the defaults — the spec treats the patterns
+     * as user input, and a team whose business tables end in `_types` needs to
+     * drop that one, not add to it. `DEFAULT_TECHNICAL_PATTERNS` is exported to
+     * start from. Every exclusion still appears in the report with its label.
+     */
+    technicalPatterns?: TechnicalPattern[]
     /**
      * Entry points with no functional value to the user, by route name or by
      * identity (`GET /health`).

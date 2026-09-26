@@ -23,6 +23,10 @@ export type { Analysis, AnalysisOptions } from './src/pipeline.js'
  */
 export { RULESET, RULESET_VERSION } from './src/albrecht/counter.js'
 
+/** The technical-data filter's naming list, to start from when replacing it. */
+export { DEFAULT_TECHNICAL_PATTERNS } from './src/albrecht/technical_filter.js'
+export type { TechnicalPattern } from './src/albrecht/technical_filter.js'
+
 /** Change, and what it bills at — AEP §6.3 and §6.5. */
 export {
   AEP_FACTORS,

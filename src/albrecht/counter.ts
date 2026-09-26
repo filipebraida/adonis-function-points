@@ -11,6 +11,7 @@ import { countDataFunctions, groupStores } from './data_functions.js'
 import type { GroupingStrategy, StoreUsage } from './data_functions.js'
 import { countTransactionalFunctions } from './transactional_functions.js'
 import { isTechnical } from './technical_filter.js'
+import type { TechnicalPattern } from './technical_filter.js'
 
 /**
  * Assembles the count from the inventory.
@@ -77,6 +78,8 @@ export type CountOptions = {
     externallyMaintained?: string[]
     /** restores what the AFP naming filter caught by accident */
     business?: string[]
+    /** replaces the filter's naming conventions — §6.5.2.1.3 treats them as user input */
+    technicalPatterns?: TechnicalPattern[]
     ignoreEntryPoints?: string[]
   }
   messageDet?: number
@@ -103,7 +106,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
       return false
     }
 
-    const technical = isTechnical(store)
+    const technical = isTechnical(store, options.boundary?.technicalPatterns)
     if (!technical) return true
 
     /**

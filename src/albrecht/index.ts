@@ -8,6 +8,7 @@
  * Normative reference: OMG Automated Function Points 1.0 / ISO/IEC 19515.
  */
 export * from './tables.js'
+export * from './technical_filter.js'
 export * from './counter.js'
 export * from './diff.js'
 export * from './calibration.js'
