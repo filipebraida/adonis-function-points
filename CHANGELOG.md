@@ -6,6 +6,84 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## 0.6.0
+
+**Rule set `afp@1.5.0`.** Six rules change what a number is made of, all of them found
+by counting real applications function by function against what a certified counter
+would write down — and every one was frozen in a fixture with a hand-written reference
+**before** the code. A 0.5.0 baseline has to be recounted; on the three applications
+this release was reviewed against the totals move −18, −8 and −37 FP, and the whole
+of it is EOs losing DETs they never showed and one data function that was four.
+
+### Counting
+
+- **An output's DETs are what leaves the boundary, not every column read.** A
+  transformer decides the output of the store it is FOR (`BaseTransformer<X>`, and the
+  resources of the transformers nested in it): the keys the reached method returns, a
+  nested transformer's keys once, `this.pick([...])` by name, `xs.map(...)` as a
+  repeating group. For every other store touched, what leaves is what the code shows:
+  rows whole (every column), the columns a `.select()` names, or **one derived scalar**
+  for `.count()` / `.exists()`. A relation preloaded through a covered store and read
+  no other way is covered too — it was loaded for the transformer. A spread the walker
+  cannot read counts 1 DET as a floor and is reported, like an open input object.
+  Before, a detail page through three transformers came out at 67 DET; a dashboard of
+  eight counters at 84.
+- **A system timestamp is not a DET.** `autoCreate` / `autoUpdate` say the framework
+  stamps the column; the user neither supplies nor recognises it — the ground the key
+  was already excluded on. Excluded on the data function, on every output, and on a
+  transformer that re-emits it. A `dateTime` the user sets still counts. AFP §7.2 on
+  its letter would count both; the departure is now consistent, and counting-decisions
+  §6 says so.
+- **A column declared `serializeAs: null` never leaves.** Lucid does not serialise it,
+  so it is not an output DET however the store leaves. It stays a DET of the data
+  function. Found as `User.password` on an activity log's output.
+- **A detail the user only sees inside its master is a RET, not a data function.** A
+  `hasMany` / `hasOne` child that no application code addresses directly — only
+  `related()` / `preload()` from the parent — folds into the parent: one ILF with N RET,
+  the child's link to the parent excluded from the DETs, one FTR for a transaction
+  touching both. A child with a query of its own stays its own file (the Vazquez
+  benchmark depends on it); a child hanging off two parents stays apart and the report
+  says why. Cascade delete was measured and rejected as the signal: on one application
+  11 of 13 cascades pointed at the tenant table. On the three applications the rule
+  folds four stores in all — the `Inpi*` mirror of an external registry becomes **one**
+  EIF with 4 RET, which is what the CPM says.
+- **A data function is identified by its table**, as counting-decisions §5 always said.
+  Keyed by the class, renaming a model billed as a deletion plus an addition.
+- **A token table is technical.** `password_reset_tokens`, `auth_access_tokens`,
+  `remember_me_tokens` are the machinery of authentication; `.*tokens?.*` joins the
+  naming list. And the list is now configurable in fact — `boundary.technicalPatterns`
+  replaces it, `DEFAULT_TECHNICAL_PATTERNS` is exported to start from — as §4 and the
+  filter's own comment had claimed since 0.1.0 while `counter.ts` passed nothing.
+
+### Configuration
+
+- **`opaque.<Store.column | validator.field>`** replaces `overrides.<fn>.detFromSchema`
+  and `overrides.<fn>.opaqueReviewed`. A declaration about a DET the analysis cannot read
+  is about the column or the validator field — its ORIGIN — and applies to every
+  function that carries it: the ILF, the transaction that submits it, each screen that
+  shows it. Read from a real configuration, the old shape had the same mapping written
+  twice and a `GET` returning the same column still at 1 DET: the same column worth two
+  numbers in one count. Reviews are matched exactly; matched by bare name, reviewing
+  `Message.schema` reviewed every `schema` column of every store. A column may be keyed
+  by model or by table. The two old keys are no longer read, and a configuration still
+  carrying them is told so. `overrides.<fn>.det` / `.refs` remain per function.
+- **`dataFunctions.grouping: 'usage' | 'none'`** replaces `retStrategy`. `none` is the
+  0.5.0 behaviour — every table its own data function at RET 1 — for comparing with an
+  old count; it is not a preference. `retStrategy` is no longer read, and `fp:count`
+  says so when it is present.
+- **`boundary.technicalPatterns`**, see above.
+
+### Documented
+
+- counting-decisions §6 now describes what the code does for output DETs, row by row,
+  and records the two refinements the recounts forced; §4 says plainly that only the
+  naming mechanism of the technical filter exists, and why the lookup-structure rule
+  was rejected; §9 gains "Declared by origin, not by function"; §10 is the master-detail
+  rule, with the cascade measurement that rejected the structural signal.
+- Five reference fixtures were written before their rules: `transformed_output` (59 FP,
+  eight output shapes), `system_timestamps` (18), `mestre_detalhe` (41; 51 with
+  grouping off), and additions to `edges_boundary` and `open_object`.
+
 ## 0.5.0
 
 **Rule set `afp@1.4.0`.** Two classification defects are fixed and both move numbers,

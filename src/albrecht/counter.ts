@@ -37,15 +37,19 @@ export const RULESET = 'afp'
  * that is easy to forget. Four such changes landed in 1.1.0 — maintenance read
  * across the whole project rather than from routes alone, a job followed into
  * `process`, an event followed into its listeners, and `request.input(…)` counted
- * as a DET — and three more in 1.2.0: an open input object counting 1 instead of 0,
+ * as a DET — three more in 1.2.0: an open input object counting 1 instead of 0,
  * `detFromSchema` no longer subtracting a placeholder that was not there, and a
- * write through `related(…)` maintaining the related table.
+ * write through `related(…)` maintaining the related table — and six in 1.5.0:
+ * output DETs read from transformers, selects and aggregates instead of every
+ * column; system timestamps and `serializeAs: null` columns leaving the DETs;
+ * master-detail folded into one data function; identity by table; token tables
+ * technical; and opaque declarations reaching every function carrying the origin.
  *
  * Without the bump, a baseline saved by the previous version compares cleanly
  * against this one and bills the tool's own improvement as work done. The guard
  * exists for exactly that, and only this constant arms it.
  */
-export const RULESET_VERSION = '1.4.0'
+export const RULESET_VERSION = '1.5.0'
 
 export type CountInput = {
   app: AppContext

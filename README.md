@@ -13,7 +13,7 @@ node ace fp:count
 
 ```
 Unadjusted count: 46 FP
-Ruleset: afp@1.4.0
+Ruleset: afp@1.5.0
 
 type      n     FP
 ILF       2     14
@@ -522,7 +522,7 @@ tested outside the sample that produced it).
 
 ```bash
 pnpm install
-pnpm test              # lint + 242 tests, from source
+pnpm test              # lint + 427 tests, from source
 pnpm run typecheck
 pnpm run compile && pnpm run test:package   # the packed tarball, installed and used
 ```
