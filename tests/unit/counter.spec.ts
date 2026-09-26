@@ -20,7 +20,13 @@ async function countApp(name: string): Promise<CountResult> {
       .map((entry) => [entry.id, analyzer.analyze(entry.handler!)])
   )
 
-  return count({ app, stores, entryPoints, behaviors })
+  return count({
+    app,
+    stores,
+    entryPoints,
+    behaviors,
+    addressedAnywhere: analyzer.addressedAnywhere(),
+  })
 }
 
 const fn = (result: CountResult, name: string) => {
@@ -78,9 +84,11 @@ test.group('count: data functions', () => {
     assert.equal(fn(result, 'Author').id, 'data:authors')
   })
 
-  test('RET starts at 1, per the default strategy', async ({ assert }) => {
+  /** `Author hasMany Book`, but `Book` has its own routes: nothing folds, RET stays 1 (§10) */
+  test('RET is 1 when no composition child is folded in', async ({ assert }) => {
     const result = await countApp('minimal_flat')
     assert.equal(fn(result, 'Book').refs, 1)
+    assert.equal(fn(result, 'Author').refs, 1)
   })
 
   test('a low-complexity ILF is worth 7; an EIF is worth 5', async ({ assert }) => {

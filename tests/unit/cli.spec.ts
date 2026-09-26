@@ -55,7 +55,7 @@ test.group('config loading', () => {
   test('fills the defaults for what the file omits', async ({ assert }) => {
     const { config } = await loadConfig(configFixture('valid'))
 
-    assert.equal(config.retStrategy, 'constant')
+    assert.equal(config.dataFunctions?.grouping, 'usage')
     assert.equal(config.messageDet, 0, 'the default follows AFP, not the IFPUG manual')
   })
 

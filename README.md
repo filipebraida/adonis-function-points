@@ -335,7 +335,7 @@ export default defineConfig({
     ignoreEntryPoints: ['prometheus.metrics'],
   },
 
-  retStrategy: 'constant', // or 'composition'
+  dataFunctions: { grouping: 'usage' }, // 'none' keeps every table its own data function
   maxDepth: 3, // how far to follow the call graph
   messageDet: 0, // 1 restores the IFPUG confirmation-message DET
   minCoverage: 0.85, // below this, the analysis fails
@@ -426,9 +426,12 @@ Inherited from the AFP standard itself, not from this implementation:
 - **EQ is collapsed into EO.** Telling an inquiry from an output requires
   knowing whether there is derived data or calculation, which static analysis
   cannot see. AFP mandates the collapse.
-- **RET is approximated.** What a user recognises as a logical subgroup is not
-  derivable from code. The default pins it at 1; `composition` derives it from
-  composition relations.
+- **RET comes from usage, not from the user's view.** A `hasMany`/`hasOne`
+  child that no application code addresses directly folds into its parent as a
+  RET; one that has its own queries stays its own data function. That is the
+  only signal static analysis has, and it is conservative: it groups only when
+  the code cannot see the child apart from the parent. A child hanging off two
+  parents stays apart and is reported.
 - **Confirmation and error messages** count 1 DET in a manual count and are
   invisible here — a known systematic divergence of −1 DET per transaction.
   `messageDet: 1` restores it.

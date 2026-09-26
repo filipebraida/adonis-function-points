@@ -261,7 +261,7 @@ test.group('config: defineConfig', () => {
     const config = defineConfig({ boundary: { infrastructure: ['audits'] } })
 
     assert.deepEqual(config.boundary.infrastructure, ['audits'])
-    assert.equal(config.retStrategy, 'constant')
+    assert.equal(config.dataFunctions?.grouping, 'usage')
     assert.equal(config.messageDet, 0, 'the default follows AFP, not the IFPUG manual')
   })
 

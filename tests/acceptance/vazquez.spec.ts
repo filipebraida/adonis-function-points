@@ -55,9 +55,15 @@ async function countFixture(): Promise<CountResult> {
       .map((entry) => [entry.id, analyzer.analyze(entry.handler!)])
   )
 
-  // `Pessoa` belongs to access control, outside the boundary — see REFERENCE.md
+  /**
+   * `Pessoa` belongs to access control, outside the boundary — see REFERENCE.md.
+   *
+   * The project-wide pass is provided so the grouping rule (§10) is exercised for
+   * real: `Pessoa hasMany Apontamento`, and `Apontamento` has its own controller,
+   * so it must stay its own data function, as the published count has it.
+   */
   return count(
-    { app, stores, entryPoints, behaviors },
+    { app, stores, entryPoints, behaviors, addressedAnywhere: analyzer.addressedAnywhere() },
     { boundary: { externallyMaintained: ['Pessoa'] } }
   )
 }

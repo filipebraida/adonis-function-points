@@ -5,6 +5,7 @@ import type { Behavior } from '../inventory/graph/call_graph.js'
 import type { Complexity, CountedFunction, FunctionType } from '../types.js'
 import { complexityOf, pointsOf } from './tables.js'
 import type { ComplexityTable } from './tables.js'
+import type { StoreGrouping } from './data_functions.js'
 
 /**
  * Transactional functions: EI and EO.
@@ -25,6 +26,12 @@ import type { ComplexityTable } from './tables.js'
 export type TransactionOptions = {
   /** stores that are counted; anything else contributes no FTR */
   countedStores: Map<string, CollectedDataStore>
+  /**
+   * How the stores fold into data functions — counting-decisions §10. A
+   * transaction touching a detail and its master touches ONE logical file: one
+   * FTR, and the detail's link to the master is not an output DET.
+   */
+  grouping: StoreGrouping
   /**
    * Extra DET for the confirmation or error message.
    *
@@ -67,7 +74,20 @@ export function countTransactionalFunctions(
     if (touched.length === 0) continue
 
     const type: FunctionType = behavior.writes ? 'EI' : 'EO'
-    const refs = touched.length
+
+    /**
+     * FTR counts logical files, not tables: the master and the detail folded
+     * into it are one. `reaches:Pedido (via ItemPedido)` keeps the path visible.
+     */
+    const { rootOf } = options.grouping
+    const viaOf = new Map<string, string[]>()
+    for (const store of touched) {
+      const root = rootOf.get(store) ?? store
+      const via = viaOf.get(root) ?? []
+      if (root !== store) via.push(store)
+      viaOf.set(root, via)
+    }
+    const refs = viaOf.size
 
     const { det, sources } = detsFor(entry, behavior, touched, type, options)
     const complexity = complexityOf(type, refs, det, options.tables)
@@ -87,7 +107,9 @@ export function countTransactionalFunctions(
           ? 'afp:6.5.3 modifies a data store -> EI'
           : 'afp:6.5.3 uses without modifying -> EO (EQ collapsed per 6.5.3)',
         detSources: sources,
-        refSources: touched.map((store) => `reaches:${store}`),
+        refSources: [...viaOf.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([root, via]) => `reaches:${root}${via.length ? ` (via ${via.join(', ')})` : ''}`),
         trace: behavior.trace.map((step) => ({
           ...step,
           file: relativeTo(options.root, step.file),
@@ -207,9 +229,11 @@ function detsFor(
          * data function: the user neither supplies nor recognises them (§6).
          */
         const attributes = options.countedStores.get(store)!.attributes
-        const excluded = new Set(
-          attributes.filter((a) => a.isIdentifier || a.system).map((a) => a.name)
-        )
+        const excluded = new Set([
+          ...attributes.filter((a) => a.isIdentifier || a.system).map((a) => a.name),
+          // a detail's link to the master it is folded into: not a DET of the group (§10)
+          ...(options.grouping.linkColumns.get(store) ?? []),
+        ])
         const selected = behavior.selectedColumns[store]
 
         if (selected && selected.length > 0) {

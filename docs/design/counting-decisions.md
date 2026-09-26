@@ -757,6 +757,64 @@ was there to resolve. The callback is what does the work — `repo.find(id)` is 
 query and `rows.find((r) => …)` is a predicate, so the method name alone still
 decides nothing.
 
+## 10. Master-detail: when a table is a RET, not a data function
+
+Every Lucid model was a data function of its own. Under the CPM a detail the
+user only ever sees inside its master — the lines of an order, the phone
+numbers of a person — is a **RET** of the master's ILF, not an ILF at 7 PF. In
+any application with master-detail that overcounts the data half, and the
+Vazquez benchmark could not catch it because the case study has no composition.
+
+**The signal that was measured and rejected.** The structural criterion —
+`onDelete('CASCADE')` in the migration — is what one would reach for first. On
+a real application 11 of 13 cascades pointed at the tenant table: comments,
+contacts, questionnaires and requests all cascade with `cursos`, and none of
+them is a RET of a course. Cascade is referential hygiene, not composition.
+
+**Decision: usage, the rule the rest of the count already runs on.** The CPM
+asks whether the user recognises the group **on its own**. If no application
+code addresses a store directly — no `C.query()`, `C.find…()`, `C.create()`,
+`new C()` anywhere outside tests, seeders and factories — and it is only ever
+reached through a parent's `related()` / `preload()` / `load()`, the user never
+sees it outside that parent. §6.5.4 already decides ILF against EIF and what is
+counted at all by how the application uses a store; this decides RET the same
+way.
+
+A store `C` is a RET of `P` when, and only when:
+
+1. `P` declares `hasMany` / `hasOne` → `C`;
+2. no application code addresses `C` directly — a project-wide pass, the same
+   one that decides maintenance, with the same exclusions;
+3. exactly one `P` satisfies (1). With two or more, `C` stays its own data
+   function and the report says which parents it hangs off and that the choice
+   is not derivable from the code.
+
+Consequences, all needed for the number to close:
+
+- DET of the group = the non-identifier, non-system columns of every member,
+  **minus each child's foreign key to its parent** (`pedidoId` on the line is
+  the subgroup's link, not an attribute the user recognises). A foreign key to a
+  _different_ data function still counts, as IFPUG requires.
+- A transaction touching the child touches the group: **one** FTR, shown as
+  `reaches:Pedido (via ItemPedido)`.
+- A write to the child maintains the group: ILF.
+- `fp:explain` on the master lists each RET with the reason.
+
+**Measured** on the three applications this package was validated against:
+one groups nothing (every model has a query of its own), one folds `Fragment`
+into `Page`, one folds `InpiClassificacao`, `InpiDespacho` and `InpiTitular`
+into `InpiProcesso` — the "4 EIFs mirrored from an external registry" §9
+mentions, which under the CPM are **one** EIF with 4 RET. About 15 FP over
+~2,500. The rule groups little and never groups wrong, which is the right side
+to err on: an invented RET is invisible; an invented ILF is 7 PF on an invoice.
+
+`dataFunctions.grouping: 'none'` restores the pre-1.5.0 behaviour — every table
+its own data function at RET 1 — for comparing against an old count. It is not
+a preference. The former `retStrategy` is no longer read, and a configuration
+that still carries it is told so.
+
+---
+
 ## The total is more defensible than any single function
 
 Worth stating plainly, because it shapes how the output should be used.

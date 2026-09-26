@@ -7,8 +7,8 @@ import type { Complexity, CountResult, CountedFunction, FunctionType } from '../
 import { DEFAULT_TABLES, DEFAULT_WEIGHTS, complexityOf, pointsOf } from './tables.js'
 import type { FunctionOverride } from '../define_config.js'
 import type { ComplexityTable } from './tables.js'
-import { countDataFunctions } from './data_functions.js'
-import type { StoreUsage } from './data_functions.js'
+import { countDataFunctions, groupStores } from './data_functions.js'
+import type { GroupingStrategy, StoreUsage } from './data_functions.js'
 import { countTransactionalFunctions } from './transactional_functions.js'
 import { isTechnical } from './technical_filter.js'
 
@@ -58,9 +58,17 @@ export type CountInput = {
    * seeder is this application just as much as a route is.
    */
   writtenAnywhere?: Set<string>
+  /**
+   * Stores the application addresses DIRECTLY somewhere in its code — as opposed
+   * to reaching only through a parent's relation. Decides which composition
+   * children fold into their parent as a RET (counting-decisions §10).
+   */
+  addressedAnywhere?: Set<string>
 }
 
 export type CountOptions = {
+  dataFunctions?: { grouping?: GroupingStrategy }
+  /** @deprecated no longer read; `fp:count` warns when it is present */
   retStrategy?: 'constant' | 'composition'
   /** declared DET/RET for what static analysis cannot read — see §8 */
   overrides?: Record<string, FunctionOverride>
@@ -133,18 +141,58 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     return false
   })
 
-  // 3. data functions
+  /**
+   * A configuration the code does not honour is worse than none: whoever set it
+   * believes something changed. `retStrategy` stopped being read in 0.6.0.
+   */
+  if (options.retStrategy !== undefined) {
+    warnings.push(
+      `\`retStrategy\` is no longer read: RET comes from how the application uses each table ` +
+        `(counting-decisions §10), configurable as \`dataFunctions.grouping: 'usage' | 'none'\`. ` +
+        `Remove the key.`
+    )
+  }
+
+  /**
+   * 3. how the stores fold into data functions — §10 — then the data functions.
+   *
+   * Grouping by usage needs the project-wide pass. Without it an empty set would
+   * read as "nobody addresses this table" and fold every composition child into
+   * its parent — the absence of a fact is not the fact. The pipeline always
+   * provides it; a direct caller that does not is told, and gets no grouping.
+   */
+  const strategy = options.dataFunctions?.grouping ?? 'usage'
+  if (strategy === 'usage' && input.addressedAnywhere === undefined) {
+    warnings.push(
+      `grouping by usage needs the project-wide pass (\`addressedAnywhere\`) and none was ` +
+        `provided: every table is its own data function in this count.`
+    )
+  }
+
+  const grouping = groupStores(countable, {
+    grouping: input.addressedAnywhere === undefined ? 'none' : strategy,
+    addressedAnywhere: input.addressedAnywhere ?? new Set(),
+  })
+  warnings.push(...grouping.warnings)
+
   const dataFunctions = countDataFunctions(countable, usage, {
+    grouping,
     writtenAnywhere: input.writtenAnywhere ?? new Set(),
-    retStrategy: options.retStrategy ?? 'constant',
     externallyMaintained: new Set(options.boundary?.externallyMaintained ?? []),
     tables,
     weights,
   })
 
-  // 4. transactional functions, over the stores that actually count
+  /**
+   * 4. transactional functions, over the stores that actually count — a child
+   * folded into a counted root counts too: a transaction reaching it reaches the
+   * group, and its columns are the group's output.
+   */
+  const countedRoots = new Set(dataFunctions.map((fn) => fn.name))
   const countedStores = new Map(
-    dataFunctions.map((fn) => [fn.name, countable.find((store) => store.name === fn.name)!])
+    countable
+      .filter((store) => countedRoots.has(grouping.rootOf.get(store.name) ?? store.name))
+      .map((store) => [store.name, store])
   )
 
   const ignored = new Set(options.boundary?.ignoreEntryPoints ?? [])
@@ -154,6 +202,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
 
   const transactionalFunctions = countTransactionalFunctions(entryPoints, input.behaviors, {
     countedStores,
+    grouping,
     root: input.app.root,
     messageDet: options.messageDet ?? 0,
     tables,

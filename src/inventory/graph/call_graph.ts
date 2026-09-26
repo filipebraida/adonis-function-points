@@ -718,8 +718,19 @@ export function createAnalyzer(
    * transaction reaches the store still decides if it is counted at all; this
    * only decides who maintains it.
    */
-  const writtenAnywhere = (): Set<string> => {
+  /**
+   * Both project-wide facts come from one pass, computed once: which stores the
+   * application WRITES (maintenance, §6.5.4) and which it ADDRESSES directly
+   * (grouping, counting-decisions §10). A store reached only through a relation
+   * — `preload('itens')`, `related('itens').create()` — is read or written, but
+   * not addressed: the user never sees it outside its parent.
+   */
+  let projectWide: { written: Set<string>; addressed: Set<string> } | undefined
+
+  const scanProject = () => {
+    if (projectWide) return projectWide
     const written = new Set<string>()
+    const addressed = new Set<string>()
 
     for (const file of project.getSourceFiles()) {
       /**
@@ -739,7 +750,11 @@ export function createAnalyzer(
 
       for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
         const access = detectAccess(call, symbols, relationsByStore)
-        if (access?.mode !== 'write') continue
+        if (!access) continue
+
+        // the root of the access is addressed; a relation target is only reached
+        addressed.add(access.store)
+        if (access.mode !== 'write') continue
 
         written.add(access.store)
 
@@ -751,14 +766,26 @@ export function createAnalyzer(
          */
         if (access.viaRelation && access.relationWritten) written.add(access.viaRelation)
       }
+
+      // `new ItemPedido()` addresses the store as directly as `ItemPedido.create()` does
+      for (const construction of file.getDescendantsOfKind(SyntaxKind.NewExpression)) {
+        const target = construction.getExpression()
+        const store = Node.isIdentifier(target) ? symbols.get(target.getText()) : undefined
+        if (store) addressed.add(store)
+      }
     }
 
-    return written
+    projectWide = { written, addressed }
+    return projectWide
   }
+
+  const writtenAnywhere = (): Set<string> => scanProject().written
+  const addressedAnywhere = (): Set<string> => scanProject().addressed
 
   return {
     analyze: (handler: HandlerRef) => run(handler),
     writtenAnywhere,
+    addressedAnywhere,
     /** how many files the project loaded — used to prove it does not grow */
     fileCount: () => project.getSourceFiles().length,
   }

@@ -63,14 +63,24 @@ export type FunctionPointsConfig = {
   }
 
   /**
-   * Strategy for RET, the logical subgroups of an ILF/EIF.
+   * How tables fold into data functions — counting-decisions §10.
    *
-   * `constant` pins it at 1, which is honest: what a user recognises as a
-   * subgroup is not derivable from code. `composition` derives it from
-   * composition relations; less accurate in general, but captures real
-   * aggregates.
+   * `usage` (the default): a composition child (`hasMany` / `hasOne`) that no
+   * application code addresses directly is a RET of its parent, not an ILF of
+   * its own — the user only ever sees it inside the parent. `none` keeps every
+   * table its own data function at RET 1, which is what rule sets before 1.5.0
+   * did; it exists to compare against an old count, not as a preference.
    */
-  retStrategy: 'constant' | 'composition'
+  dataFunctions?: {
+    grouping?: 'usage' | 'none'
+  }
+
+  /**
+   * @deprecated Removed in 0.6.0 — it is no longer read. RET comes from
+   * `dataFunctions.grouping`. Left in the type so an old configuration still
+   * loads, and `fp:count` warns that the key has no effect.
+   */
+  retStrategy?: 'constant' | 'composition'
 
   /**
    * Maximum depth in the call graph, starting at the handler.
@@ -204,7 +214,7 @@ export type FunctionOverride = {
 
 export const DEFAULTS: FunctionPointsConfig = {
   boundary: {},
-  retStrategy: 'constant',
+  dataFunctions: { grouping: 'usage' },
   maxDepth: 3,
   messageDet: 0,
 }
@@ -214,5 +224,6 @@ export function defineConfig(config: Partial<FunctionPointsConfig>): FunctionPoi
     ...DEFAULTS,
     ...config,
     boundary: { ...DEFAULTS.boundary, ...config.boundary },
+    dataFunctions: { ...DEFAULTS.dataFunctions, ...config.dataFunctions },
   }
 }

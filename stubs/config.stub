@@ -24,8 +24,13 @@ export default defineConfig({
     business: [],
   },
 
-  /** Logical subgroups (RET). `constant` pins it at 1, which is honest. */
-  retStrategy: 'constant',
+  /**
+   * How tables fold into data functions (RET). `usage`, the default: a
+   * `hasMany`/`hasOne` child no application code addresses directly is a RET of
+   * its parent, not an ILF of its own. `none` keeps every table apart, at RET 1,
+   * to compare against a count made before 0.6.0.
+   */
+  // dataFunctions: { grouping: 'usage' },
 
   /** How far to follow the call graph from the handler. */
   maxDepth: 3,

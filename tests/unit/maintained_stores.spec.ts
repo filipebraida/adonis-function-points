@@ -96,21 +96,41 @@ test.group('job dispatch: the write is in the execution method', () => {
  * application reported one it was sure it maintained.
  */
 test.group('relations: a write through one maintains the related table', () => {
+  /**
+   * `ReportLine` is only ever reached through `Report`, so under §10 it is a RET of
+   * `Report` rather than a data function of its own. The mechanism this group
+   * exists for is unchanged and is checked with grouping off: nothing names the
+   * table on the left of a write, and it is still maintained.
+   */
   test('a store written only through a relation is an ILF', async ({ assert }) => {
-    const { count } = await analyze(appFixturePath('job_maintained'))
+    const { count } = await analyze(appFixturePath('job_maintained'), {
+      dataFunctions: { grouping: 'none' },
+    })
 
     const line = count.functions.find((f) => f.name === 'ReportLine')
     assert.exists(line, 'nothing names it on the left of a write')
     assert.equal(line!.type, 'ILF')
   })
 
-  test('the transaction counts the related table as an FTR', async ({ assert }) => {
+  /**
+   * With the default grouping the same fact shows up on the transaction: the write
+   * through the relation is what makes `POST /reports/:id/lines` an EI. Read as a
+   * read, it would be an EO — and `Report` would still be an ILF through the job,
+   * so the type of the transaction is the assertion with teeth.
+   */
+  test('the transaction writes through the relation, and the detail is a RET of its master', async ({
+    assert,
+  }) => {
     const { count } = await analyze(appFixturePath('job_maintained'))
+    const addLine = count.functions.find((f) => f.name === 'POST /reports/:param/lines')!
 
-    assert.deepEqual(
-      count.functions.find((f) => f.name === 'POST /reports/:param/lines')!.rationale.refSources,
-      ['reaches:Report', 'reaches:ReportLine']
-    )
+    assert.equal(addLine.type, 'EI')
+    assert.deepEqual(addLine.rationale.refSources, ['reaches:Report (via ReportLine)'])
+
+    const report = count.functions.find((f) => f.name === 'Report')!
+    assert.equal(report.refs, 2, 'Report + its lines')
+    assert.include(report.rationale.detSources, 'ast:report_lines.label')
+    assert.isUndefined(count.functions.find((f) => f.name === 'ReportLine'))
   })
 
   /**
@@ -152,9 +172,15 @@ test.group('maintenance is per store, and scaffolding does not maintain', () => 
   test('a store a route writes is still an ILF', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('job_maintained'))
 
-    /** the control: excluding scaffolding must not exclude the application */
-    assert.equal(count.functions.find((f) => f.name === 'ReportLine')!.type, 'ILF')
-    assert.equal(count.functions.find((f) => f.name === 'Report')!.type, 'ILF')
+    /**
+     * The control: excluding scaffolding must not exclude the application. The
+     * factory under `app/tests/` is the only file that names `ReportLine` directly,
+     * and it must count neither as maintenance nor as addressing the table — so
+     * `ReportLine` folds into `Report` (§10) and the group is an ILF.
+     */
+    const report = count.functions.find((f) => f.name === 'Report')!
+    assert.equal(report.type, 'ILF')
+    assert.equal(report.refs, 2, 'ReportLine is its RET, not a data function of its own')
   })
 
   /**

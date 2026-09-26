@@ -155,7 +155,13 @@ test.group('golden invariant: shape does not change the count', () => {
             .map((entry) => [entry.id, analyzer.analyze(entry.handler!)])
         )
 
-        return count({ app, stores, entryPoints, behaviors })
+        return count({
+          app,
+          stores,
+          entryPoints,
+          behaviors,
+          addressedAnywhere: analyzer.addressedAnywhere(),
+        })
       })
     )
 
