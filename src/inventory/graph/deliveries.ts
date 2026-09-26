@@ -3,6 +3,8 @@ import type { CallExpression, Expression, Identifier, SourceFile, Type } from 't
 
 import { detectAccess, rootSymbolOf } from '../detectors/lucid.js'
 import type { RelationMap, StoreSymbols } from '../detectors/lucid.js'
+import { detectRawAccess } from '../detectors/raw_builder.js'
+import type { TableMap } from '../detectors/raw_builder.js'
 import { mappedLiteralOf, unwrap } from './output_fields.js'
 import type { PageRef } from './pages.js'
 import type { HandlerRef } from '../../types.js'
@@ -171,6 +173,8 @@ export type DeliveryContext = {
   file: SourceFile
   symbols: StoreSymbols
   relations: RelationMap
+  /** table -> stores, for the raw query builder */
+  tables: TableMap
   followed: Map<CallExpression, HandlerRef[]>
 }
 
@@ -569,6 +573,13 @@ function classifyCall(
     if (access) {
       out.push({ kind: 'store', store: access.store, path })
       if (access.viaRelation) out.push({ kind: 'store', store: access.viaRelation, path })
+      return
+    }
+
+    // `db.from('users').select(…)` handed straight on: the table's store, and the joined ones
+    const raw = detectRawAccess(value, ctx.tables)
+    if (raw && raw.stores.length > 0) {
+      for (const store of [...raw.stores, ...raw.joined]) out.push({ kind: 'store', store, path })
       return
     }
 

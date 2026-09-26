@@ -40,6 +40,19 @@ have to be visible, and AFP requires it:
 > generated report in order to detect and quantify the missing patterns and
 > libraries for the specific count process." — AFP §6.5.3
 
+### Listed, never dropped in silence (0.12)
+
+For eleven releases a route with a handler that reached no store simply was not
+there. A reviewed application's whole management area — eight routes over the
+raw query builder — fell out that way for three releases with the coverage line
+at 99.5%, because coverage measured calls the walk could not follow, and those
+routes had none. Now every such route is listed in the warnings, under "N
+route(s) with a handler reach no data store the analysis sees, and are not
+counted", and an entry point with no handler at all (`router.on(…).redirect(…)`)
+is named on the coverage line. Most of the list is static pages, redirects and
+forms, which is right; what is not right is visible. A route whose handler
+still passes through a builder chain the analysis declined to read is marked ⚑.
+
 ---
 
 ## 2. Routes registered by third-party packages
@@ -465,6 +478,28 @@ field shall be identified as a DET", which on its letter would count both the
 key and the stamps; the package departs from that letter for the key and now,
 consistently, for the stamps, and says so here. Not configurable: an option
 nobody can defend either way is not a business decision.
+
+**The raw query builder is a data access (0.12, `afp@1.10.0`).** `db.from('t')…`,
+`trx.table('t').insert(…)`, `db.rawQuery('select … from t …')` read or write the
+store whose table is `t` — the mapping (`static table`, or the name Lucid derives
+from the class) has always existed. The rows above apply to it unchanged: a
+`.select('a', 'b')` names those columns (qualified and aliased names — `u.nome`
+after `join('usuarios as u', …)` — belong to their table's store), a
+`.count()` or a `db.raw('count(*) as total')` in the select is one derived value
+(`aggregate:`), no select is every column. `.update/.insert/.delete/.increment/
+.decrement` are writes: the transaction is an EI, the store is maintained. A
+join adds the joined store as FTR; the pivot of a declared `@manyToMany`
+(`pivotTable`, or Lucid's default name) is the relation, and reaching it reaches
+both stores. Literal SQL is read the same way, as far as a reader of SQL needs:
+the statement's table, the other tables after `from` and `join`, the names a
+`with` defines left out, the select list's columns. What cannot be read is said,
+per site, as an unresolved call: a table no model declares ("declare a model, or
+the table is not counted"), a table named by an expression or a subquery, SQL
+whose table is where a template has an expression. `ignoreCalls` covers these
+sites like any other call — a package's table (auditing, authorisation) the team
+knows is data-free is declared once. Measured on the three validated
+applications: +2, +35 and +1 FP; the +35 is the management area §1 above
+describes, now seven functions.
 
 **The delivery is the boundary (0.7, plan §A′).** Everything above says what a
 store contributes when it leaves; this says _which_ stores leave, and what else
@@ -1091,6 +1126,14 @@ into their master — the "4 EIFs mirrored from an external registry" §9
 mentions, which under the CPM are **one** EIF with 4 RET. About 15 FP over
 ~2,500. The rule groups little and never groups wrong, which is the right side
 to err on: an invented RET is invisible; an invented ILF is 7 PF on an invoice.
+
+**A raw query does not address a table (0.12).** It reaches it, reads it,
+maintains it — but for grouping it is no evidence. `trx.from('lines').where('order_id', id).delete()`
+followed by a `multiInsert` is how an order's lines get rewritten, not a sign that
+the user handles the lines apart from the order; counted as addressing, the
+external registry's mirror above split back into four ILFs (+18 FP) on the
+strength of its own synchronisation code. A model query (`Line.query()`) still
+addresses.
 
 `dataFunctions.grouping: 'none'` restores the pre-1.5.0 behaviour — every table
 its own data function at RET 1 — for comparing against an old count. It is not

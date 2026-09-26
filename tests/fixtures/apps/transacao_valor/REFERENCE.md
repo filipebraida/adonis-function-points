@@ -37,6 +37,11 @@ AFP §6.5.3 it is **not a transaction** — and its `alvo.save()` is still liste
 unresolved call, so the gap is visible. Total: 7 + 5 + 3 + 3 = **18 FP**, `unresolvedCalls`
 = **1**.
 
+**Since afp@1.10.0 (plan 0.12 §B)** the raw query itself is read: `select * from carimbos`
+names a table no model declares, so it becomes a **second** unresolved call — "raw query on
+a table no model declares: carimbos". Still 18 FP: `carimbar` still reaches no store the
+count knows. Two gaps now, each at its own line.
+
 ## The rules
 
 1. `await db.transaction(async (trx) => { … })`, `Model.transaction(…)` and

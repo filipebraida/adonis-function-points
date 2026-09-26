@@ -12,6 +12,8 @@ import type {
 import type { AppContext } from '../app_context.js'
 import type { CollectedDataStore } from '../sources/data_stores.js'
 import { detectAccess, hooksFiredBy, rootSymbolOf } from '../detectors/lucid.js'
+import { detectRawAccess } from '../detectors/raw_builder.js'
+import type { TableMap } from '../detectors/raw_builder.js'
 import type { PersistenceAccess, RelationMap, StoreSymbols } from '../detectors/lucid.js'
 import { BUILTIN_CALL_RESOLVERS, isTechnicalWrite, resolveCall } from '../resolvers/index.js'
 import { isApplicationCode, isSeeder, toPosix } from '../paths.js'
@@ -552,6 +554,12 @@ export function createAnalyzer(
   const relationsByStore: RelationMap = new Map(
     stores.map((store) => [store.name, store.relations])
   )
+  /** table -> stores, for the raw query builder: a model's table is its store, a pivot is both sides */
+  const tablesByName: TableMap = new Map()
+  for (const store of stores) if (store.table) tablesByName.set(store.table, [store.name])
+  for (const store of stores)
+    for (const [table, related] of Object.entries(store.pivots ?? {}))
+      if (!tablesByName.has(table)) tablesByName.set(table, [store.name, related])
   const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH
 
   const resolvers = [...(options.callResolvers ?? []), ...BUILTIN_CALL_RESOLVERS].sort(
@@ -1138,6 +1146,53 @@ export function createAnalyzer(
       }
 
       /**
+       * `db.from('orders')…`, `trx.table('orders').insert(…)`, `db.rawQuery(…)`: the raw
+       * query builder is a data access on the store whose table is named — read, select,
+       * aggregate or write, like a model's chain (plan 0.12 §B). A table no model declares
+       * is not a store the count knows, and says so; a SQL string the analysis cannot read
+       * says so too. Never silence.
+       */
+      const raw = detectRawAccess(call, tablesByName)
+      if (raw) {
+        // declared data-free (`ignoreCalls` over a package's table): believed, like any other call
+        if (resolvers.some((resolver) => resolver.ignores?.(call, context))) continue
+        // what it cannot read or map is said, one gap per site; what it can is counted
+        const gap = raw.unreadableSql
+          ? 'raw SQL whose table the analysis cannot read: name the table in a literal'
+          : raw.unreadableTable !== undefined
+            ? `raw query over an expression the analysis cannot read (${raw.unreadableTable}): a subquery or a computed table name`
+            : raw.unmodelled.length > 0
+              ? `raw query on a table no model declares: ${raw.unmodelled.join(', ')} — declare a model, or the table is not counted`
+              : null
+        if (gap)
+          unresolved.push({
+            file: ref.file,
+            line: raw.line,
+            expression: raw.expression,
+            reason: gap,
+          })
+        const write = raw.mode === 'write'
+        for (const store of raw.stores) {
+          accesses.push({ store, write })
+          if (!write) {
+            const columns = raw.selected.get(store) ?? []
+            reads.push({
+              store,
+              shape: raw.aggregate ? 'aggregate' : columns.length > 0 ? 'select' : 'whole',
+              columns: raw.aggregate && columns.length === 0 ? [] : columns,
+            })
+          }
+        }
+        for (const store of raw.joined) {
+          if (raw.stores.includes(store)) continue
+          accesses.push({ store, write: false })
+          const columns = raw.selected.get(store) ?? []
+          reads.push({ store, shape: columns.length > 0 ? 'select' : 'whole', columns })
+        }
+        continue
+      }
+
+      /**
        * Asked before the resolvers, unlike the rest of the noise filter: this
        * shape must not be CLAIMED, not merely not reported.
        */
@@ -1223,6 +1278,7 @@ export function createAnalyzer(
       file,
       symbols,
       relations: relationsByStore,
+      tables: tablesByName,
       followed: followedCalls,
     })
 
@@ -1292,6 +1348,9 @@ export function createAnalyzer(
         if (isSeeder(app.root, file.getFilePath())) {
           const symbols = storeSymbolsFor(file, file, app, storesByName, relationsByStore)
           for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+            const raw = detectRawAccess(call, tablesByName)
+            if (raw?.mode === 'write') for (const store of raw.stores) seeded.add(store)
+            if (raw) continue
             const access = symbols.size > 0 ? detectAccess(call, symbols, relationsByStore) : null
             if (access?.mode !== 'write') continue
             seeded.add(access.store)
@@ -1302,9 +1361,21 @@ export function createAnalyzer(
       }
 
       const symbols = storeSymbolsFor(file, file, app, storesByName, relationsByStore)
-      if (symbols.size === 0) continue
 
       for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+        /**
+         * `db.from('orders').update(…)` anywhere maintains the table as much as
+         * `Order.query().update(…)` does — and needs no model imported to say so. It does
+         * NOT address the table for grouping (§10): a statement on a child table, filtered
+         * by its parent's key, is how a parent's rows get rewritten, not evidence that the
+         * user handles them apart from it.
+         */
+        const raw = detectRawAccess(call, tablesByName)
+        if (raw) {
+          if (raw.mode === 'write') for (const store of raw.stores) written.add(store)
+          continue
+        }
+        if (symbols.size === 0) continue
         const access = detectAccess(call, symbols, relationsByStore)
         if (!access) continue
 
@@ -2006,7 +2077,6 @@ const RAW_BUILDER = new Set([
   'insertQuery',
   'modifyQuery',
   'rawQuery',
-  'raw',
   'knexQuery',
   'knexRawQuery',
 ])
@@ -2022,6 +2092,8 @@ function isRawBuilderCall(call: CallExpression): boolean {
     Node.isCallExpression(parent.getParent())
   )
     return false
+  // a builder kept in a local is read where it runs (raw_builder.ts), not where it is built
+  if (parent && Node.isVariableDeclaration(parent)) return false
   let current: Node = call
   let touchesBuilder = false
   for (let depth = 0; depth < 40; depth++) {

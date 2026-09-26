@@ -29,6 +29,8 @@ export type ColumnSource = 'ast' | 'generated-schema'
 export type CollectedDataStore = DataStore & {
   /** where the columns came from; counts from different sources are not equivalent */
   columnSource: ColumnSource
+  /** pivot table -> the related store, from `@manyToMany(() => X, { pivotTable })` or Lucid's default name */
+  pivots: Record<string, string>
 }
 
 export type DataStoreCollection = {
@@ -129,6 +131,7 @@ function describeStore(
     attributes: chain.attributes,
     subgroups: subgroupsOf(chain.classes),
     relations: relationsOf(chain.classes),
+    pivots: pivotsOf(chain.classes, name),
     // decided by boundary configuration, not by heuristic
     maintainedExternally: false,
     columnSource: chain.columnSource,
@@ -506,6 +509,30 @@ function relationsOf(classes: ClassDeclaration[]): Record<string, string> {
   }
 
   return relations
+}
+
+/**
+ * The pivot tables of a model's `@manyToMany` relations: the `pivotTable` option, or
+ * Lucid's default — the two model names, snake-cased, sorted, joined by `_`. Reading a
+ * pivot through the raw query builder reads the relation: both stores.
+ */
+function pivotsOf(classes: ClassDeclaration[], owner: string): Record<string, string> {
+  const pivots: Record<string, string> = {}
+  const snake = (value: string) => value.replace(/([a-z\d])([A-Z])/g, '$1_$2').toLowerCase()
+  for (const cls of classes) {
+    for (const property of cls.getProperties()) {
+      for (const decorator of property.getDecorators()) {
+        if (decorator.getName() !== 'manyToMany') continue
+        const text = decorator.getExpression().getText()
+        const target = text.match(/=>\s*([A-Za-z_$][\w$]*)/)?.[1]
+        if (!target) continue
+        const declared = text.match(/pivotTable\s*:\s*['"]([a-z_][\w]*)['"]/)?.[1]
+        const table = declared ?? [snake(owner), snake(target)].sort().join('_')
+        pivots[table] = target
+      }
+    }
+  }
+  return pivots
 }
 
 /** composition relations, candidates for a logical subgroup (RET) */

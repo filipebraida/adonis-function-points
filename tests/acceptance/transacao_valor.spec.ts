@@ -82,9 +82,11 @@ test.group('transaction value: what is bound, what is reported', () => {
     assert,
   }) => {
     const { count: result, inventory } = await analyzed()
-    assert.equal(result.confidence.unresolvedCalls, 1)
-    const [site] = inventory.unresolved
-    assert.equal(site.expression, 'alvo.save')
+    // afp@1.10.0 reads the raw query too: its table has no model, and that is a gap of its own
+    assert.equal(result.confidence.unresolvedCalls, 2)
+    const site = inventory.unresolved.find((u) => u.expression === 'alvo.save')!
     assert.include(site.reason, 'write on a receiver whose type the analysis cannot read')
+    const raw = inventory.unresolved.find((u) => u.expression.startsWith('trx.rawQuery'))!
+    assert.include(raw.reason, 'raw query on a table no model declares: carimbos')
   })
 })

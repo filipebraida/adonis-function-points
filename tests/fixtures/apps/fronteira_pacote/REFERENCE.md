@@ -25,7 +25,7 @@ Three transactions and four call sites the walk cannot follow:
 | `guias.carregar` in the controller                      | `guias` is `definirColecao(…)` from `@acme/conteudo`: a package's collection over a JSON file | **note** — outside |
 | `this.gerador.gerar` in `services/relatorios.ts`        | `gerador` is typed by an **interface of the application** with no implementation found | **unresolved** — a gap, and it stays one |
 
-## Reference: 23 unadjusted FP
+## Reference: 27 unadjusted FP
 
 | function            | type | FTR/RET | DET | complexity | FP     | DET origin                                                                      |
 | ------------------- | ---- | ------- | --- | ---------- | ------ | ------------------------------------------------------------------------------- |
@@ -34,7 +34,8 @@ Three transactions and four call sites the walk cannot follow:
 | GET /pedidos        | EO   | 2       | 5   | low        | 4      | transformer `descricao`, `status`, `capaThumb` + `podeEditar` + `ajuda` (opaque: a package's value, reported as an unreadable delivery as before) |
 | GET /pedidos/resumo | EO   | 1       | 2   | low        | 4      | Pedido whole                                                                    |
 | POST /pedidos       | EI   | 1       | 1   | low        | 3      | `descricao`                                                                     |
-| **total**           |      |         |     |            | **23** |                                                                                 |
+| GET /painel/contagem | EO  | 1       | 1   | low        | 4      | `total` — `db.from('pedidos').count(…)` read as an access to Pedido since afp@1.10.0 (plan 0.12 §B) |
+| **total**           |      |         |     |            | **27** |                                                                                 |
 
 **Unchanged from 0.10.1** — no point moves. What changes is the coverage line and the lists:
 
@@ -51,10 +52,10 @@ Three more routes, none counted, each said in the report:
 | route                 | what it is                                                        | report                                                                            |
 | --------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `GET /sobre`          | a static page, no store                                           | listed under "reach no data store … not counted (§1)"                             |
-| `GET /painel/contagem`| `db.from('pedidos').count(…)` — the raw query builder             | the same list, **marked ⚑**: a data access the analysis does not read yet          |
+| `GET /painel/contagem`| `db.from('pedidos').count(…)` — the raw query builder             | under afp@1.9.0: the same list, **marked ⚑**; under afp@1.10.0 (§B): an EO, 4 FP |
 | `GET /ajuda`          | `router.on('/ajuda').redirect(…)`, no handler                     | the coverage line names it: `1 entry point without a handler: GET /ajuda`         |
 
-Under §B `GET /painel/contagem` becomes an EO and leaves the list; `GET /sobre` stays on it, which is right.
+Under §B `GET /painel/contagem` became an EO (23 → 27) and left the list; `GET /sobre` stays on it, which is right, and the list no longer speaks of ⚑ when nothing is marked.
 
 ## The rules
 

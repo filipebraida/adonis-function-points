@@ -15,13 +15,15 @@ import { appFixturePath } from '../helpers.js'
  * printed the same 23 FP with four unresolved calls.
  */
 const REFERENCE = {
-  total: 23,
+  total: 27,
   functions: {
     'Pedido': { type: 'ILF', det: 2, refs: 1, fp: 7 },
     'Usuario': { type: 'EIF', det: 1, refs: 1, fp: 5 },
     'GET /pedidos': { type: 'EO', det: 5, refs: 2, fp: 4 },
     'GET /pedidos/resumo': { type: 'EO', det: 2, refs: 1, fp: 4 },
     'POST /pedidos': { type: 'EI', det: 1, refs: 1, fp: 3 },
+    // afp@1.10.0: the raw query builder is a data access (plan 0.12 §B)
+    'GET /painel/contagem': { type: 'EO', det: 1, refs: 1, fp: 4 },
   },
 } as const
 
@@ -53,20 +55,18 @@ test.group('package boundary: the reference, function by function', () => {
 
 test.group('nothing falls out in silence', () => {
   /** a management area of a reviewed application fell out this way for three releases */
-  test('routes that reach no store are listed, and the ones passing through the raw query builder are marked', async ({
+  test('routes that reach no store are listed; the builder route is counted and off the list', async ({
     assert,
   }) => {
     const { count: result } = await analyzed()
     const block = result.confidence.warnings.join('\n')
     assert.include(
       block,
-      'route(s) with a handler reach no data store the analysis sees, and are not counted'
+      '1 route(s) with a handler reach no data store the analysis sees, and are not counted (counting-decisions §1). Most are static pages, redirects and forms:'
     )
     assert.include(block, '  GET /sobre')
-    assert.include(
-      block,
-      '  GET /painel/contagem ⚑ raw query builder on the way (1 call) — a data access the analysis does not read yet'
-    )
+    assert.notInclude(block, 'GET /painel/contagem')
+    assert.notInclude(block, '⚑')
   })
 
   test('the coverage line names the entry point without a handler', async ({ assert }) => {

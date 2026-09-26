@@ -364,7 +364,8 @@ function storelessRouteWarnings(
   const plain = storeless.filter((e) => behaviors.get(e.id)!.rawBuilderCalls === 0)
   return [
     `${storeless.length} route(s) with a handler reach no data store the analysis sees, and are not counted ` +
-      `(counting-decisions §1). Most are static pages, redirects and forms; ⚑ marks the ones passing through the raw query builder:`,
+      `(counting-decisions §1). Most are static pages, redirects and forms` +
+      (flagged.length > 0 ? `; ⚑ marks the ones passing through the raw query builder:` : `:`),
     ...flagged.map(line),
     ...plain.slice(0, 25 - Math.min(flagged.length, 25)).map(line),
     ...(storeless.length > 25
