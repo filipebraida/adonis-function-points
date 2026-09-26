@@ -14,7 +14,7 @@ import type { CollectedDataStore } from '../sources/data_stores.js'
 import { detectAccess, hooksFiredBy, rootSymbolOf } from '../detectors/lucid.js'
 import type { PersistenceAccess, RelationMap, StoreSymbols } from '../detectors/lucid.js'
 import { BUILTIN_CALL_RESOLVERS, isTechnicalWrite, resolveCall } from '../resolvers/index.js'
-import { isApplicationCode } from '../paths.js'
+import { isApplicationCode, isSeeder, toPosix } from '../paths.js'
 import type { EventBindings } from '../sources/event_bindings.js'
 import { isIterationCall, isNoise, isNoiseMember } from './noise.js'
 import { chainShapeOf, outputFieldsIn } from './output_fields.js'
@@ -498,6 +498,12 @@ export function createAnalyzer(
   for (const root of app.scanRoots) {
     project.addSourceFilesAtPaths(`${root}/**/*.ts`)
   }
+  /**
+   * Seeders under `database/` as well — not application code, and never followed
+   * from a handler, but an EIF only a seed populates is a fact the report needs
+   * (counting-decisions §11), and `make:seeder` puts them exactly there.
+   */
+  project.addSourceFilesAtPaths(`${toPosix(app.root)}/database/**/seeders/**/*.ts`)
 
   const storesByName = new Map(stores.map((store) => [store.name, store]))
   const relationsByStore: RelationMap = new Map(
@@ -769,12 +775,14 @@ export function createAnalyzer(
    * — `preload('itens')`, `related('itens').create()` — is read or written, but
    * not addressed: the user never sees it outside its parent.
    */
-  let projectWide: { written: Set<string>; addressed: Set<string> } | undefined
+  let projectWide: { written: Set<string>; addressed: Set<string>; seeded: Set<string> } | undefined
 
   const scanProject = () => {
     if (projectWide) return projectWide
     const written = new Set<string>()
     const addressed = new Set<string>()
+    /** written by a seeder: not maintenance, but a fact the report needs (an EIF only a seed populates) */
+    const seeded = new Set<string>()
 
     for (const file of project.getSourceFiles()) {
       /**
@@ -787,7 +795,18 @@ export function createAnalyzer(
        * depth — because a domain-module layout puts `tests/` and `seeders/` inside
        * `app/`, where the root filter never looks.
        */
-      if (!isApplicationCode(app.root, file.getFilePath())) continue
+      if (!isApplicationCode(app.root, file.getFilePath())) {
+        if (isSeeder(app.root, file.getFilePath())) {
+          const symbols = storeSymbolsFor(file, file, app, storesByName)
+          for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+            const access = symbols.size > 0 ? detectAccess(call, symbols, relationsByStore) : null
+            if (access?.mode !== 'write') continue
+            seeded.add(access.store)
+            if (access.viaRelation && access.relationWritten) seeded.add(access.viaRelation)
+          }
+        }
+        continue
+      }
 
       const symbols = storeSymbolsFor(file, file, app, storesByName)
       if (symbols.size === 0) continue
@@ -819,17 +838,19 @@ export function createAnalyzer(
       }
     }
 
-    projectWide = { written, addressed }
+    projectWide = { written, addressed, seeded }
     return projectWide
   }
 
   const writtenAnywhere = (): Set<string> => scanProject().written
   const addressedAnywhere = (): Set<string> => scanProject().addressed
+  const seededAnywhere = (): Set<string> => scanProject().seeded
 
   return {
     analyze: (handler: HandlerRef) => run(handler),
     writtenAnywhere,
     addressedAnywhere,
+    seededAnywhere,
     /** how many files the project loaded — used to prove it does not grow */
     fileCount: () => project.getSourceFiles().length,
   }

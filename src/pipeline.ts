@@ -177,6 +177,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
       jsonSchemas,
       writtenAnywhere: analyzer.writtenAnywhere(),
       addressedAnywhere: analyzer.addressedAnywhere(),
+      seededAnywhere: analyzer.seededAnywhere(),
     },
     options
   )

@@ -15,6 +15,17 @@ export default class LivrosController {
     return inertia.render('livros/index', { livros: LivroTransformer.transform(livros) })
   }
 
+  /**
+   * The same processing as `index` behind another URL: same stores, same keys,
+   * same transformers, another sort. The CPM counts identical processing logic
+   * once; the count cannot know whether the second screen is meaningful to the
+   * user on its own, so it says the two look alike and leaves the decision.
+   */
+  async lista({ inertia }: HttpContext) {
+    const livros = await Livro.query().preload('autor').orderBy('ano', 'desc')
+    return inertia.render('livros/lista', { livros: LivroTransformer.transform(livros) })
+  }
+
   /** the models, untouched: every column of both stores */
   async bruto({ inertia }: HttpContext) {
     const livros = await Livro.query().preload('autor').orderBy('titulo')

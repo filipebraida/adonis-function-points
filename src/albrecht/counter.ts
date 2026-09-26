@@ -71,6 +71,13 @@ export type CountInput = {
    * children fold into their parent as a RET (counting-decisions §10).
    */
   addressedAnywhere?: Set<string>
+  /**
+   * Stores written by a SEEDER — scaffolding, so not maintenance — kept apart
+   * because an EIF only a seed populates is one of two things the code cannot
+   * tell: code data the team maintains (not counted, CPM) or a mirror of data
+   * another system maintains in production (a legitimate EIF). Reported.
+   */
+  seededAnywhere?: Set<string>
 }
 
 export type CountOptions = {
@@ -256,6 +263,8 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
   )
   warnings.push(...unreadableInputWarnings(input))
   warnings.push(...unreadableOutputWarnings(input))
+  warnings.push(...lookAlikeWarnings(functions))
+  warnings.push(...seededOnlyWarnings(functions, grouping.members, input.seededAnywhere))
 
   return {
     ruleset: RULESET,
@@ -264,6 +273,91 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     totals: totalsOf(functions),
     confidence: confidenceOf(input, warnings),
   }
+}
+
+/**
+ * Transactions that look like the same elementary process.
+ *
+ * The CPM counts identical processing logic once. `GET /perfil` and
+ * `GET /perfil/editar` on a real application walk the same queries and the same
+ * transformers, touch the same stores and emit the same DETs, and were 7 FP each.
+ * Whether the second is a screen the user needs or a second URL for the same one
+ * is not derivable from code, so both stay counted and the pair is named with
+ * the FP at stake — a request to decide, answered with `boundary.ignoreEntryPoints`.
+ *
+ * The key is deliberately narrow: same type, same stores, same DET sources AND
+ * the same bodies below the entry point. Two fat controllers that merely read the
+ * same table are not flagged — with nothing followed, nothing says the logic is
+ * the same.
+ */
+function lookAlikeWarnings(functions: CountedFunction[]): string[] {
+  const groups = new Map<string, CountedFunction[]>()
+
+  for (const fn of functions) {
+    if (!fn.id.startsWith('tx:')) continue
+    const below = (fn.rationale.trace ?? [])
+      .filter((step) => step.depth > 0)
+      .map((step) => `${step.file}#${step.member ?? '*'}`)
+      .sort()
+    if (below.length === 0) continue
+
+    const key = [
+      fn.type,
+      [...fn.rationale.refSources].sort().join(','),
+      [...fn.rationale.detSources].sort().join(','),
+      below.join(','),
+    ].join('|')
+    groups.set(key, [...(groups.get(key) ?? []), fn])
+  }
+
+  const alike = [...groups.values()].filter((group) => group.length > 1)
+  if (alike.length === 0) return []
+
+  return [
+    `${alike.length} group(s) of transactions share the same stores, the same DETs and the same ` +
+      `bodies below the controller — the CPM counts identical processing logic once. Whether the ` +
+      `second is a screen of its own is not derivable from the code: decide, and record it with ` +
+      `\`boundary.ignoreEntryPoints\`:`,
+    ...alike.map((group) => {
+      const names = group.map((fn) => fn.name).sort()
+      const atStake = group.slice(1).reduce((total, fn) => total + fn.points, 0)
+      return `  ${names.join(' ≡ ')}   (${atStake} FP at stake)`
+    }),
+  ]
+}
+
+/**
+ * EIFs that only a seeder writes.
+ *
+ * After 0.5.0 a seeder's inserts are not maintenance, so a table only the seed
+ * populates is "used but not maintained" — an EIF. That is right for a table
+ * that mirrors data another system maintains in production, and wrong for a
+ * `roles` table: reference data the team maintains is code data under the CPM,
+ * and is not counted at all. The code cannot tell the two apart, and should not
+ * try; it names them and says what each answer costs.
+ */
+function seededOnlyWarnings(
+  functions: CountedFunction[],
+  members: Map<string, string[]>,
+  seeded: Set<string> | undefined
+): string[] {
+  if (!seeded || seeded.size === 0) return []
+
+  const named = functions.filter(
+    (fn) =>
+      fn.type === 'EIF' &&
+      fn.rationale.rule.includes('used but not maintained') &&
+      (members.get(fn.name) ?? [fn.name]).some((member) => seeded.has(member))
+  )
+  if (named.length === 0) return []
+
+  return [
+    `${named.length} EIF(s) are written by a seeder and by nothing else in the application. ` +
+      `Reference data the team maintains is code data (CPM) and is not counted — exclude it with ` +
+      `\`boundary.infrastructure\`; data another system maintains in production is a legitimate ` +
+      `EIF — keep it. The code cannot tell which:`,
+    ...named.map((fn) => `  ${fn.name} (${fn.points} FP)`),
+  ]
 }
 
 /**

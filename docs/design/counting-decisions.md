@@ -877,6 +877,34 @@ that still carries it is told so.
 
 ---
 
+## 11. What the count says it cannot decide
+
+Two questions came out of counting real applications that no rule should answer
+and no count should keep quiet about. Both are reported, with the amount at
+stake and the key that records the decision; neither moves the number.
+
+**Transactions that look like the same elementary process.** `GET /perfil` and
+`GET /perfil/editar` walked the same queries and the same transformers, touched
+the same stores, emitted the same DETs, and were 7 FP each. The CPM counts
+identical processing logic once. Whether the second URL is a screen the user
+needs or a second door to the same screen is not derivable from code, so the
+pair is named — `GET /perfil ≡ GET /perfil/editar (7 FP at stake)` — and the
+answer is `boundary.ignoreEntryPoints`. The key is narrow on purpose: same type,
+same stores, same DET sources **and** the same bodies below the entry point.
+Two fat controllers that merely read the same table are not flagged: with
+nothing followed, nothing says the logic is the same.
+
+**An EIF only a seeder writes.** Since 0.5.0 a seeder's inserts are not
+maintenance, so a table only the seed populates is "used but not maintained" —
+an EIF. That is right for a table mirroring data another system maintains in
+production, and wrong for `roles`: reference data the team maintains is code
+data under the CPM and is not counted at all. The code cannot tell the two apart
+and should not try. It names them — `Role (5 FP)` — and says what each answer
+costs; `boundary.infrastructure` records the first, keeping it records the
+second.
+
+---
+
 ## The total is more defensible than any single function
 
 Worth stating plainly, because it shapes how the output should be used.

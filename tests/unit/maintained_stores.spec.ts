@@ -169,6 +169,23 @@ test.group('maintenance is per store, and scaffolding does not maintain', () => 
     assert.equal(count.functions.find((f) => f.name === 'Country')!.type, 'EIF')
   })
 
+  /**
+   * An EIF only a seeder writes is one of two things the code cannot tell apart:
+   * code data the team maintains (not counted, CPM) or a mirror of data another
+   * system maintains in production (a legitimate EIF). So it is named, with what
+   * each answer costs, rather than decided.
+   */
+  test('a table only the seed writes is named, with the decision left to a person', async ({
+    assert,
+  }) => {
+    const { count } = await analyze(appFixturePath('job_maintained'))
+    const block = count.confidence.warnings.join('\n')
+
+    assert.include(block, 'written by a seeder and by nothing else')
+    assert.include(block, 'Country (5 FP)')
+    assert.notInclude(block, 'ExchangeRate (', 'written by the job: maintained, an ILF, not named')
+  })
+
   test('a store a route writes is still an ILF', async ({ assert }) => {
     const { count } = await analyze(appFixturePath('job_maintained'))
 

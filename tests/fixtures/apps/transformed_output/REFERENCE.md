@@ -16,6 +16,7 @@ and the shape is the only thing that differs between them:
 | route              | what leaves the boundary                                            |
 | ------------------ | ------------------------------------------------------------------- |
 | `GET /livros`      | `LivroTransformer.transform(livros)` — 4 keys, one nested transformer |
+| `GET /livros/lista` | the same, sorted differently — **reported as a look-alike** of `GET /livros` |
 | `GET /livros/bruto` | the models, untouched                                              |
 | `GET /livros/resumo` | `Livro.query().select(['titulo', 'ano'])`, untouched              |
 | `GET /livros/:id`  | `new LivroTransformer(livro).forDetalhe()` — spreads `toObject()`, adds 2 |
@@ -26,13 +27,14 @@ and the shape is the only thing that differs between them:
 | `GET /livros/recentes` | `RecenteTransformer` emitting `titulo` and one key derived from the preloaded author |
 | `POST /livros`     | validator with 3 fields, writes `Livro`                              |
 
-## Reference: 59 unadjusted FP
+## Reference: 63 unadjusted FP
 
 | function            | type | FTR/RET | DET | complexity | FP  | DET origin                                       |
 | ------------------- | ---- | ------- | --- | ---------- | --- | ------------------------------------------------ |
 | Livro               | ILF  | 1       | 9   | low        | 7   | columns, minus `id`                              |
 | Autor               | EIF  | 1       | 3   | low        | 5   | columns, minus `id` — `cpf` counts on the file   |
 | GET /livros         | EO   | 2       | 4   | low        | 4   | `titulo`, `isbn`, `autor.nome`, `autor.totalLivros` |
+| GET /livros/lista   | EO   | 2       | 4   | low        | 4   | the same four; counted, and the report names the pair with 4 FP at stake |
 | GET /livros/bruto   | EO   | 2       | 11  | average    | 5   | every column of both stores                      |
 | GET /livros/resumo  | EO   | 1       | 2   | low        | 4   | `titulo`, `ano`                                  |
 | GET /livros/:id     | EO   | 2       | 7   | average    | 5   | `:id` + the 4 above + `resumo`, `paginas`        |
@@ -43,7 +45,7 @@ and the shape is the only thing that differs between them:
 | Categoria           | EIF  | 1       | 2   | low        | 5   | columns, minus `id`                              |
 | GET /livros/recentes | EO  | 2       | 2   | low        | 4   | `titulo`, `autorNome`; the preloaded author is consumed, not shown |
 | POST /livros        | EI   | 1       | 3   | low        | 3   | `titulo`, `isbn`, `autorId`                      |
-| **total**           |      |         |     |            | **59** |                                               |
+| **total**           |      |         |     |            | **63** |                                               |
 
 ## Rules the reference applies
 
@@ -85,6 +87,12 @@ and the shape is the only thing that differs between them:
    marked `output:` in the rationale. This is the `afp@1.4.0` behaviour and it
    overestimates on purpose (AFP §6.1: repeatability over fidelity).
 6. Route parameters and validator fields are input DETs and count as before.
+7. **Two transactions of the same type that reach the same stores, emit the same
+   DETs and walk the same bodies below the controller are look-alikes.** The CPM
+   counts identical processing logic once; static analysis cannot tell a second
+   screen the user needs from a second URL for the same screen, so both are
+   counted and the report names the pair with the FP at stake. Not a rule that
+   moves the number: a request to decide, answered with `boundary.ignoreEntryPoints`.
 
 ## What `afp@1.4.0` says, predicted
 
@@ -100,8 +108,9 @@ Every read transaction is counted from the whole tables, so:
 | GET /livros/destaques | 14     | 5        | 5            |
 | GET /livros/painel | 12        | 5        | 4            |
 | GET /livros/recentes | 12      | 5        | 4            |
+| GET /livros/lista  | 11        | 5        | 4            |
 
-Predicted 1.4.0 total: **62 FP** (+3). Three of the eight reads move: an EO
+Predicted 1.4.0 total: **67 FP** (+4). Four of the nine reads move: an EO
 with 1 FTR is low up to 19 DETs, and with 2 FTRs it is average from 6. That is
 the granularity effect counting-decisions §7 describes — DETs change far more
 often than the points do — and it is why the fixture asserts DETs, not only FP.

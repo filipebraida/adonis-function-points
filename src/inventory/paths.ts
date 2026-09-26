@@ -66,6 +66,16 @@ export const samePath = (a: string | undefined, b: string | undefined) =>
  */
 const SCAFFOLDING = new Set(['tests', 'test', 'seeders', 'seeder', 'migrations', 'factories'])
 
+/** a seeder, by the directory `make:seeder` writes to — scaffolding, but a fact the report uses */
+export function isSeeder(root: string, file: string): boolean {
+  const relative = relativeTo(root, file)
+  if (relative.startsWith('..')) return false
+  return relative
+    .split('/')
+    .slice(0, -1)
+    .some((segment) => segment === 'seeders' || segment === 'seeder')
+}
+
 export function isApplicationCode(root: string, file: string): boolean {
   const relative = relativeTo(root, file)
   if (relative.startsWith('..')) return false

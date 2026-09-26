@@ -9,7 +9,7 @@ import { appFixturePath } from '../helpers.js'
  *
  * The reference (`fixtures/apps/transformed_output/REFERENCE.md`) was written
  * and committed before the code that narrows output DETs existed, with the
- * number the previous rule set produced predicted beside it (62 against 59).
+ * number the previous rule set produced predicted beside it (67 against 63).
  *
  * Eight transactions read the same tables in eight shapes. Only the shape
  * differs, and the shape is exactly what decides the DETs: a transformer's
@@ -17,9 +17,10 @@ import { appFixturePath } from '../helpers.js'
  * or — when nothing is visible — every column.
  */
 const REFERENCE = {
-  total: 59,
+  total: 63,
   functions: {
     'Livro': { type: 'ILF', det: 9, refs: 1, fp: 7 },
+    'GET /livros/lista': { type: 'EO', det: 4, refs: 2, fp: 4 },
     'Autor': { type: 'EIF', det: 3, refs: 1, fp: 5 },
     'GET /livros/recentes': { type: 'EO', det: 2, refs: 2, fp: 4 },
     'Categoria': { type: 'EIF', det: 2, refs: 1, fp: 5 },
@@ -196,6 +197,31 @@ test.group('output DETs: where each one came from', () => {
 
     assert.lengthOf(bruto.rationale.detSources, 11)
     assert.isTrue(bruto.rationale.detSources.every((source) => source.startsWith('output:')))
+  })
+})
+
+test.group('output DETs: what looks like the same elementary process', () => {
+  /**
+   * `GET /perfil` and `GET /perfil/editar` on a real application walked the same
+   * queries and transformers and were 7 FP each. The CPM counts identical
+   * processing logic once; whether the second is a screen of its own is not
+   * derivable from the code, so both stay counted and the pair is named.
+   */
+  test('two transactions with the same stores, DETs and followed bodies are named as a pair', async ({
+    assert,
+  }) => {
+    const result = await countFixture()
+    const block = result.confidence.warnings.join('\n')
+
+    assert.include(block, 'identical processing logic once')
+    assert.include(block, 'GET /livros ≡ GET /livros/lista   (4 FP at stake)')
+    assert.exists(fn(result, 'GET /livros/lista'), "still counted: the decision is not the tool's")
+  })
+
+  /** the control: same stores, different DETs (a `:id` and two more keys) is not a look-alike */
+  test('a transaction that differs in what it shows is not', async ({ assert }) => {
+    const result = await countFixture()
+    assert.notInclude(result.confidence.warnings.join('\n'), 'GET /livros/:param ≡')
   })
 })
 
