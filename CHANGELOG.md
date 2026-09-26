@@ -6,6 +6,65 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## 0.9.0
+
+**Rule set `afp@1.8.0`.** Two rules from a team's second review of their own count, one
+report fixed, and a rule about the library itself. A 0.8.0 baseline has to be recounted:
+the totals move 0, −3 and +1 FP — a writing transaction leaves EO for EI, two EIs gain an
+FTR — and the coverage line now means one thing in both reports.
+
+### Fixed
+
+- **The unresolved calls are listed, once each, and the inventory and the count show one
+  number.** The 0.8 CHANGELOG said `fp:inventory` listed them; it printed a total — and the
+  count printed a different total, because it summed each transaction's unresolved calls
+  (a body five routes reach counted five times) while the inventory added the route and
+  store problems. Now `inventory.unresolved` and `count.confidence.unresolved` are the same
+  list — one entry per site (`file:line expression — reason`, how many transactions reach
+  it), route and store problems included — and `unresolvedCalls` is its length in both.
+  `fp:inventory` prints every site, `fp:count` up to 25, `--json` / `--out` carry them. The
+  number changes without any code changing: it counts places to look at now, which is what
+  a person acts on.
+- **A method the model declares is application code.** `const items = await
+order.pendingItems().forUpdate()`, then `item.save()` in a loop: the rows come from a
+  method declared on the model class, and the chain was read as an access to the model at
+  its root — the write went to the wrong store, or was reported unreadable. The method's
+  return annotation (`typeof Item`), or its returns when every one is `Item.query()…`, names
+  the store; a builder chain after it hands the same rows on, an aggregate a number; the
+  chain is read from its innermost call outwards. On the reviewing team's application the
+  one writing transaction still counted as EO after 0.8 turns EI (7 → 4 FP).
+
+### New
+
+- **A listener written inline is a listener, and a string event is an event.**
+  `emitter.on('order:closed', async function ({ orderId }) { … })` binds a body to a
+  string, and the collector read only `emitter.on(EventClass, [ListenerClass])`: an
+  application that binds every listener this way had none followed, its jobs "reached by no
+  transaction", their writes nobody's FTR. The inline function or arrow is a handler located
+  by its line; the string is a binding key that `emitter.emit('…', payload)` / `emitSerial`
+  reach — the same decision as `Event.dispatch()`; a name built at runtime binds nothing;
+  `start/**` is scanned. Fixture `eventos_inline`: 27 FP where the previous rule set said 13.
+
+### The library itself
+
+- **The library names no application.** Its rules are found by recounting real
+  applications, and their names had leaked in: two heuristics keyed on one team's result
+  keys and one front-end's page layout, forty comments quoting somebody's routes and models,
+  a few shipped-doc lines. A heuristic keyed on one application's vocabulary is not a rule.
+  The result-key list keeps only framework and language conventions (one list page of one
+  application goes from 76 back to 83 DET, same FP); a module-scoped `pages/` directory is
+  read structurally; comments illustrate with the library's own domain; docs cite the
+  measurement, not the domain. `tests/unit/no_project_literals.spec.ts` holds the words that
+  belong to the validated applications — in the test, nowhere else — and fails when one
+  appears in `src`, `docs`, README or CHANGELOG.
+
+### Documented
+
+- counting-decisions §3 gains the model-method row of the bindings table; §9 gains "A
+  listener written inline is a listener; a string event is an event".
+- Fixtures: `escritas_indiretas` grows to 97 FP (a model's own query method);
+  `eventos_inline` (27 FP) is new.
+
 ## 0.8.0
 
 **Rule set `afp@1.7.0`.** One rule, wide, found by a team reviewing a 0.6.0 count of
