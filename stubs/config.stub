@@ -32,8 +32,8 @@ export default defineConfig({
    */
   // dataFunctions: { grouping: 'usage' },
 
-  /** How far to follow the call graph from the handler. */
-  maxDepth: 3,
+  /** How far to follow the call graph from the handler (default 3). */
+  // maxDepth: 3,
 
   /** Refuses to emit a count if tracing covers less than this. */
   minCoverage: 0.85,

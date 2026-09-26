@@ -73,13 +73,33 @@ of it is EOs losing DETs they never showed and one data function that was four.
   says so when it is present.
 - **`boundary.technicalPatterns`**, see above.
 
+### New
+
+- **The count names what it cannot decide.** Two transactions of the same type that
+  reach the same stores, emit the same DETs and walk the same bodies below the
+  controller are reported as look-alikes with the FP at stake — the CPM counts
+  identical processing logic once, and `boundary.ignoreEntryPoints` records the
+  decision. An EIF only a seeder writes is reported too: code data the team maintains
+  is not counted, a mirror of another system's data is a legitimate EIF, and the code
+  cannot tell which. Neither moves a number (counting-decisions §11).
+- **`diff.preset: 'sisp'`** prices change by the Roteiro de Métricas do SISP — inclusão
+  1,00, alteração 0,50, exclusão 0,30 — instead of AEP; `fp:diff` prints which preset
+  produced the billable total, and `factors` still overrides it field by field. Check the
+  three values against the revision of the guide the contract names.
+- **`ignoreCalls({ name, methods | matching })`** builds a "this reaches no data"
+  strategy without the ceremony a real configuration had to carry — a helper to read
+  the method name off a ts-morph node, a `resolve` that returns nothing, one comparison.
+  The strategy is still named, and its volume is still reported.
+- The configuration stub no longer echoes defaults.
+
 ### Documented
 
 - counting-decisions §6 now describes what the code does for output DETs, row by row,
   and records the two refinements the recounts forced; §4 says plainly that only the
   naming mechanism of the technical filter exists, and why the lookup-structure rule
   was rejected; §9 gains "Declared by origin, not by function"; §10 is the master-detail
-  rule, with the cascade measurement that rejected the structural signal.
+  rule, with the cascade measurement that rejected the structural signal; §11 is what
+  the count reports because it cannot decide.
 - Five reference fixtures were written before their rules: `transformed_output` (59 FP,
   eight output shapes), `system_timestamps` (18), `mestre_detalhe` (41; 51 with
   grouping off), and additions to `edges_boundary` and `open_object`.

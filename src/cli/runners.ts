@@ -231,6 +231,7 @@ export async function runDiff(
       output: renderDiff(
         diffCounts(previous, current, {
           labels: { from: options.previous, to },
+          preset: config.diff?.preset,
           factors: config.diff?.factors,
           reasonFactors: config.diff?.reasonFactors,
         })

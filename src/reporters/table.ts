@@ -1,4 +1,5 @@
 import type { CountResult, CountedFunction, DiffEntry, Inventory } from '../types.js'
+import { FACTOR_PRESETS } from '../albrecht/diff.js'
 import type { FunctionPointDiff } from '../albrecht/diff.js'
 import type { Conformance, StructureMetrics } from '../metrics/structure.js'
 
@@ -258,6 +259,8 @@ export function renderDiff(diff: FunctionPointDiff): string {
 
   lines.push('')
   lines.push(`Billable FP: ${diff.billable}`)
+  /** the total is quoted under a set of factors, so the set is named beside it */
+  lines.push(`Factors: ${diff.preset} — ${FACTOR_PRESETS[diff.preset].label}`)
 
   /**
    * Before the per-function list, not after it.

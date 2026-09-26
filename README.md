@@ -180,6 +180,7 @@ invented would be worse, so the number comes from the contract:
 ```ts
 export default defineConfig({
   diff: {
+    preset: 'sisp', // Roteiro de Métricas do SISP: 1,00 / 0,50 / 0,30 — the default is `aep`
     reasonFactors: { implementation: 0.25 },
   },
 })
@@ -392,22 +393,25 @@ over a rate limiter or an attachment variant is a real example. Without a way
 to say so, such a call stays unresolved and drags the coverage gate down.
 
 ```ts
-const limiterIsDataFree: CallResolver = {
-  name: 'login-limiter',
-  order: 1,
-  resolve: () => [],
-  ignores(call) {
-    // true means: this is mine, and it touches no data store
-    return call.getExpression().getText().startsWith('this.loginLimiter.')
+import { ignoreCalls } from '@filipebraida/adonis-function-points'
+
+export default defineConfig({
+  resolvers: {
+    call: [
+      ignoreCalls({ name: 'login-limiter', matching: /^this\.loginLimiter\./ }),
+      ignoreCalls({ name: 'attachment-variants', methods: ['getUrl', 'getVariant'] }),
+    ],
   },
-}
+})
 ```
 
-`ignores` is asked before `resolve`, in the same order, so a later and more
-generic strategy cannot follow the call into a body it has no business reading.
-It is deliberately more expensive than a list of method names to silence: the
-volume still appears in the confidence block of `fp:count`, because a silent
-drop is the worst defect this package can have — whoever writes it.
+Or, for a shape the factory does not cover, a strategy with `ignores(call)`
+returning `true` — "this is mine, and it touches no data store". `ignores` is
+asked before `resolve`, in the same order, so a later and more generic strategy
+cannot follow the call into a body it has no business reading. It stays a
+**named** strategy on purpose: the volume it declared data-free still appears in
+the confidence block of `fp:count`, because a silent drop is the worst defect
+this package can have — whoever writes it.
 
 ## Support
 

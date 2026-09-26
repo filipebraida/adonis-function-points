@@ -34,6 +34,8 @@ export type { TechnicalPattern } from './src/albrecht/technical_filter.js'
 /** Change, and what it bills at — AEP §6.3 and §6.5. */
 export {
   AEP_FACTORS,
+  SISP_FACTORS,
+  FACTOR_PRESETS,
   diffCounts,
   IncomparableRulesetsError,
   IncomparableSourcesError,
@@ -42,6 +44,7 @@ export type {
   ChangeFactors,
   ChangeReasonFactors,
   DiffOptions,
+  FactorPreset,
   FunctionPointDiff,
 } from './src/albrecht/diff.js'
 
@@ -54,5 +57,6 @@ export { calibrate, parseSamples } from './src/albrecht/calibration.js'
 export type { Calibration, CalibrationSample, TypeCalibration } from './src/albrecht/calibration.js'
 
 /** Tracing strategies: the one public extension point. */
-export { BUILTIN_CALL_RESOLVERS } from './src/inventory/resolvers/index.js'
+export { BUILTIN_CALL_RESOLVERS, ignoreCalls } from './src/inventory/resolvers/index.js'
+export type { IgnoreCallsOptions } from './src/inventory/resolvers/index.js'
 export type { CallResolver, ResolverContext } from './src/inventory/resolvers/types.js'

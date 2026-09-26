@@ -70,3 +70,49 @@ export function resolveCall(
   }
   return null
 }
+
+export type IgnoreCallsOptions = {
+  /** the strategy's name — printed in the report beside the volume it declared data-free */
+  name: string
+  /** method names, matched on the callee: `getUrl` matches `x.getUrl(...)` */
+  methods?: string[]
+  /** a pattern over the callee's text: `/\bauthz\.can$/` */
+  matching?: RegExp
+  /** lower runs first; defaults to 1, before every built-in */
+  order?: number
+}
+
+/**
+ * A strategy that recognises a family of calls and knows they reach no data
+ * store — a rate limiter, an attachment's URL, an authorisation check.
+ *
+ * Read from a real configuration, every such strategy was the same eight lines:
+ * a helper to get the method name off the ts-morph node (the app does not depend
+ * on ts-morph), a `resolve` that returns nothing, and one comparison. What the
+ * design wants is kept — it is still a NAMED strategy, and `fp:count` still
+ * reports the volume it declared data-free — and the ceremony is not.
+ */
+export function ignoreCalls(options: IgnoreCallsOptions): CallResolver {
+  if (!options.methods?.length && !options.matching) {
+    throw new Error(
+      `ignoreCalls("${options.name}"): say what it ignores — \`methods\` or \`matching\``
+    )
+  }
+  const methods = new Set(options.methods ?? [])
+
+  return {
+    name: options.name,
+    order: options.order ?? 1,
+    /** follows nothing: the whole point */
+    resolve: () => [],
+    ignores(call) {
+      const callee = call.getExpression()
+      const text = callee.getText()
+      if (options.matching?.test(text)) return true
+      if (methods.size === 0) return false
+      const method =
+        callee.getKindName() === 'PropertyAccessExpression' ? text.split('.').pop() : text
+      return method !== undefined && methods.has(method)
+    },
+  }
+}

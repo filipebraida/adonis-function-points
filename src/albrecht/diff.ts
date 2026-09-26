@@ -62,6 +62,30 @@ export const AEP_FACTORS: ChangeFactors = {
 }
 
 /**
+ * The Roteiro de Métricas de Software do SISP — what a Brazilian public contract
+ * usually names instead of AEP: inclusão 1,00, alteração 0,50, exclusão 0,30.
+ *
+ * Transcribed from the guide's published tables, and the number a contract binds
+ * to is the revision of the guide IT names — so a project that bills under SISP
+ * must check these three against that revision before the first invoice, and
+ * override with `diff.factors` if they differ. The report prints which preset
+ * priced the total for exactly that reason.
+ */
+export const SISP_FACTORS: ChangeFactors = {
+  added: 1,
+  changed: 0.5,
+  removed: 0.3,
+  unchanged: 0,
+}
+
+export type FactorPreset = 'aep' | 'sisp'
+
+export const FACTOR_PRESETS: Record<FactorPreset, { label: string; factors: ChangeFactors }> = {
+  aep: { label: 'OMG Automated Enhancement Points 1.0, §6.5', factors: AEP_FACTORS },
+  sisp: { label: 'Roteiro de Métricas de Software do SISP', factors: SISP_FACTORS },
+}
+
+/**
  * Factors for a modified function, by WHAT changed about it.
  *
  * The distinction is already measured — `type`, `size` and `implementation` come
@@ -77,6 +101,8 @@ export const AEP_FACTORS: ChangeFactors = {
 export type ChangeReasonFactors = Partial<Record<ChangeReason, number>>
 
 export type DiffOptions = {
+  /** which published set of factors to start from; `factors` overrides it field by field */
+  preset?: FactorPreset
   factors?: Partial<ChangeFactors>
   /** per-reason factors for modified functions; each falls back to `factors.changed` */
   reasonFactors?: ChangeReasonFactors
@@ -87,6 +113,8 @@ export type DiffOptions = {
 export type FunctionPointDiff = DiffResult & {
   /** function points weighted by the factors — this is what gets billed */
   billable: number
+  /** the preset the factors started from — printed, because the total is quoted under it */
+  preset: FactorPreset
   factors: ChangeFactors
   /** what the modified functions were actually billed at, by reason */
   reasonFactors: ChangeReasonFactors
@@ -130,7 +158,8 @@ export function diffCounts(
     throw new IncomparableSourcesError(from.source.app, to.source.app)
   }
 
-  const factors = { ...AEP_FACTORS, ...options.factors }
+  const preset = options.preset ?? 'aep'
+  const factors = { ...FACTOR_PRESETS[preset].factors, ...options.factors }
   const reasonFactors = options.reasonFactors ?? {}
 
   /** the factor a single entry is billed at, which is the per-reason one when set */
@@ -244,6 +273,7 @@ export function diffCounts(
     billable: round2(
       entries.reduce((total, entry) => total + entry.function.points * factorFor(entry), 0)
     ),
+    preset,
     factors,
     reasonFactors,
     warnings,

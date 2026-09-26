@@ -1,5 +1,5 @@
 import type { ComplexityTable } from './albrecht/tables.js'
-import type { ChangeFactors, ChangeReasonFactors } from './albrecht/diff.js'
+import type { ChangeFactors, ChangeReasonFactors, FactorPreset } from './albrecht/diff.js'
 import type { TechnicalPattern } from './albrecht/technical_filter.js'
 import type { OpaqueDeclaration } from './albrecht/opaque.js'
 import type { CallResolver } from './inventory/resolvers/types.js'
@@ -132,6 +132,14 @@ export type FunctionPointsConfig = {
    * this package invented would be worse. So the number comes from the contract.
    */
   diff?: {
+    /**
+     * Which published set of factors prices the change: `aep` (the default —
+     * added 1, changed 1, removed 0.4) or `sisp` (Roteiro de Métricas do SISP —
+     * inclusão 1,00, alteração 0,50, exclusão 0,30, what a Brazilian public
+     * contract usually names). Check the values against the revision of the
+     * guide the contract names, and override with `factors` if they differ.
+     */
+    preset?: FactorPreset
     factors?: Partial<ChangeFactors>
     reasonFactors?: ChangeReasonFactors
   }
