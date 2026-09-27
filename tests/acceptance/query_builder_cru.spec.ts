@@ -14,7 +14,7 @@ import { appFixturePath } from '../helpers.js'
  * REFERENCE.md`) was written first; afp@1.9.0 printed 0 FP and eight marked routes.
  */
 const REFERENCE = {
-  total: 38,
+  total: 42,
   functions: {
     'Pedido': { type: 'ILF', det: 5, refs: 1, fp: 7 },
     'Usuario': { type: 'EIF', det: 3, refs: 1, fp: 5 },
@@ -25,6 +25,8 @@ const REFERENCE = {
     'POST /painel/lote': { type: 'EI', det: 1, refs: 1, fp: 3 },
     'GET /painel/pares': { type: 'EO', det: 1, refs: 2, fp: 4 },
     'GET /painel/sql': { type: 'EO', det: 2, refs: 1, fp: 4 },
+    // 0.13 §C: the subquery a local function returns, its joinRaw read
+    'GET /painel/acoes': { type: 'EO', det: 1, refs: 2, fp: 4 },
   },
 } as const
 
@@ -89,6 +91,18 @@ test.group('raw query builder: what each DET is', () => {
       'reaches:Pedido',
       'reaches:Usuario',
     ])
+  })
+
+  /** plan 0.13 §C: `db.from(acoesQuery(id))`, `acoesQuery` returning a builder with a `joinRaw` */
+  test('a subquery a local function returns is read as its builder, joinRaw included', async ({
+    assert,
+  }) => {
+    const { count: result, inventory } = await analyzed()
+    assert.includeMembers(fn(result, 'GET /painel/acoes').rationale.refSources, [
+      'reaches:Pedido',
+      'reaches:Usuario',
+    ])
+    assert.notInclude(inventory.unresolved.map((u) => u.expression).join('\n'), 'acoesQuery')
   })
 
   test('literal SQL names its table and its columns', async ({ assert }) => {

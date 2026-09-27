@@ -1,6 +1,8 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 
+import { acoesQuery } from '#queries/acoes_query'
+
 /**
  * A management panel written against Lucid's RAW query builder — `db.from('t')`, never
  * `Model.query()`. Until 0.12 none of these touched a store: the pages fell out of the
@@ -62,6 +64,15 @@ export default class PainelController {
   async arquivo({ request, response }: HttpContext) {
     const tabela = request.input('arquivados') ? 'pedidos_arquivados' : 'pedidos'
     const [{ total }] = await db.from(tabela).count('* as total')
+    return response.json({ total })
+  }
+
+  /**
+   * A subquery built by a function of the application: `acoesQuery` returns a builder over
+   * `pedidos`, joined by `joinRaw` to `usuarios`. Read as the builder it returns.
+   */
+  async acoes({ params, response }: HttpContext) {
+    const [{ total }] = await db.from(acoesQuery(params.id)).count('* as total')
     return response.json({ total })
   }
 

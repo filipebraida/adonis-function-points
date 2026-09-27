@@ -9,5 +9,6 @@ router.post('/painel/:id/reatribuir', [PainelController, 'reatribuir']).as('pain
 router.post('/painel/lote', [PainelController, 'lote']).as('painel.lote')
 router.get('/painel/pares', [PainelController, 'pares']).as('painel.pares')
 router.get('/painel/config', [PainelController, 'config']).as('painel.config')
-router.get('/painel/arquivo', [PainelController, 'arquivo']).as('painel.sql')
+router.get('/painel/arquivo', [PainelController, 'arquivo']).as('painel.arquivo')
+router.get('/painel/acoes', [PainelController, 'acoes']).as('painel.acoes')
 router.get('/painel/sql', [PainelController, 'sql']).as('painel.sql')

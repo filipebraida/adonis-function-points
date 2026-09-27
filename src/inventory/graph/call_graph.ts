@@ -13,7 +13,7 @@ import type { AppContext } from '../app_context.js'
 import type { CollectedDataStore } from '../sources/data_stores.js'
 import { detectAccess, hooksFiredBy, rootSymbolOf } from '../detectors/lucid.js'
 import { detectRawAccess } from '../detectors/raw_builder.js'
-import type { TableMap } from '../detectors/raw_builder.js'
+import type { FunctionLookup, TableMap } from '../detectors/raw_builder.js'
 import type { PersistenceAccess, RelationMap, StoreSymbols } from '../detectors/lucid.js'
 import { BUILTIN_CALL_RESOLVERS, isTechnicalWrite, resolveCall } from '../resolvers/index.js'
 import { isApplicationCode, isSeeder, toPosix } from '../paths.js'
@@ -593,6 +593,20 @@ export function createAnalyzer(
   }
 
   /**
+   * `db.from(actionsQuery(org))`: the function a subquery comes from, found through the
+   * import map when the type checker cannot follow the application's aliases.
+   */
+  const functionLookup: FunctionLookup = (callee) => {
+    const { imports, exportedAs } = importsFor(callee.getSourceFile())
+    const local = callee.getText()
+    const path = imports.get(local)
+    const target = path ? project.getSourceFile(path) : undefined
+    if (!target) return undefined
+    const name = exportedAs.get(local) ?? local
+    return target.getFunction(name) ?? target.getVariableDeclaration(name)?.getInitializer()
+  }
+
+  /**
    * Facts about a body: what it accesses and where it calls into.
    *
    * They are INDEPENDENT of the caller — only the decision to follow depends on
@@ -1152,7 +1166,7 @@ export function createAnalyzer(
        * is not a store the count knows, and says so; a SQL string the analysis cannot read
        * says so too. Never silence.
        */
-      const raw = detectRawAccess(call, tablesByName)
+      const raw = detectRawAccess(call, tablesByName, functionLookup)
       if (raw) {
         // declared data-free (`ignoreCalls` over a package's table): believed, like any other call
         if (resolvers.some((resolver) => resolver.ignores?.(call, context))) continue
@@ -1354,7 +1368,7 @@ export function createAnalyzer(
         if (isSeeder(app.root, file.getFilePath())) {
           const symbols = storeSymbolsFor(file, file, app, storesByName, relationsByStore)
           for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-            const raw = detectRawAccess(call, tablesByName)
+            const raw = detectRawAccess(call, tablesByName, functionLookup)
             if (raw?.mode === 'write') for (const store of raw.stores) seeded.add(store)
             if (raw) continue
             const access = symbols.size > 0 ? detectAccess(call, symbols, relationsByStore) : null
@@ -1376,7 +1390,7 @@ export function createAnalyzer(
          * by its parent's key, is how a parent's rows get rewritten, not evidence that the
          * user handles them apart from it.
          */
-        const raw = detectRawAccess(call, tablesByName)
+        const raw = detectRawAccess(call, tablesByName, functionLookup)
         if (raw) {
           if (raw.mode === 'write') for (const store of raw.stores) written.add(store)
           continue

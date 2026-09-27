@@ -1,5 +1,5 @@
-import { Node, VariableDeclarationKind } from 'ts-morph'
-import type { CallExpression } from 'ts-morph'
+import { Node, SyntaxKind, VariableDeclarationKind } from 'ts-morph'
+import type { CallExpression, Identifier } from 'ts-morph'
 
 /**
  * Lucid's RAW query builder as a data access — plan 0.12 §B, counting-decisions §6.
@@ -32,6 +32,8 @@ export type RawAccess = {
   stores: string[]
   /** the other tables read on the way (joins, SQL joins), resolved to stores */
   joined: string[]
+  /** the same, as table names — what a subquery hands its outer query */
+  joinedTables: string[]
   /** tables named that no model declares, in the order met */
   unmodelled: string[]
   /** columns named in a select, by store (qualified and aliased names resolve to their table) */
@@ -69,6 +71,11 @@ const WRITES = new Set([
   'multiInsert',
 ])
 const AGGREGATES = new Set(['count', 'countDistinct', 'sum', 'avg', 'min', 'max', 'exists'])
+/**
+ * Fragments of SQL a chain carries: `joinRaw('inner join users as u on …')`, `fromRaw(…)`,
+ * `whereRaw('exists (select 1 from messages m …)')`. The tables they name are read on the way.
+ */
+const RAW_FRAGMENTS = new Set(['joinRaw', 'fromRaw', 'whereRaw', 'orWhereRaw', 'havingRaw'])
 /** statements that execute; `db.raw(…)` is a fragment inside another call, not a query */
 const RAW_STATEMENTS = new Set(['rawQuery', 'knexRawQuery'])
 /** the roots a builder chain hangs off: the database service, a transaction client */
@@ -78,7 +85,19 @@ const HOLE = '__expr__'
 
 const camelCase = (value: string) => value.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
 
-export function detectRawAccess(call: CallExpression, tables: TableMap): RawAccess | null {
+/**
+ * Finds the function a name calls when the type checker cannot: an import through the
+ * application's aliases (`#queries/…`). The call graph provides it from the import map
+ * it already keeps; without it, only functions of the same file are opened.
+ */
+export type FunctionLookup = (callee: Identifier) => Node | undefined
+
+export function detectRawAccess(
+  call: CallExpression,
+  tables: TableMap,
+  lookup?: FunctionLookup,
+  depth = 0
+): RawAccess | null {
   // one chain, one access: only the outermost link answers
   const parent = call.getParent()
   if (
@@ -103,6 +122,8 @@ export function detectRawAccess(call: CallExpression, tables: TableMap): RawAcce
   const joinedTables: string[] = []
   const aliases = new Map<string, string>()
   const selectedByTable = new Map<string, string[]>()
+  /** columns a subquery selected, already resolved to their stores */
+  const selectedByStore = new Map<string, string[]>()
   let aggregate = false
   let mode: 'read' | 'write' = 'read'
   const select = (owner: string, column: string) =>
@@ -121,6 +142,15 @@ export function detectRawAccess(call: CallExpression, tables: TableMap): RawAcce
       if (parsed) {
         table = parsed.table
         if (parsed.alias) aliases.set(parsed.alias, parsed.table)
+        continue
+      }
+      // a subquery: inline, or the builder a function of the application returns
+      const inner = subqueryOf(first, tables, lookup, depth)
+      if (inner) {
+        table = inner.table
+        joinedTables.push(...inner.joinedTables)
+        for (const [store, columns] of inner.selected)
+          selectedByStore.set(store, [...(selectedByStore.get(store) ?? []), ...columns])
       } else unreadableTable = first.getText()
       continue
     }
@@ -130,7 +160,21 @@ export function detectRawAccess(call: CallExpression, tables: TableMap): RawAcce
       if (parsed) {
         joinedTables.push(parsed.table)
         if (parsed.alias) aliases.set(parsed.alias, parsed.table)
+        continue
       }
+      const inner = subqueryOf(first, tables, lookup, depth)
+      if (inner) joinedTables.push(inner.table, ...inner.joinedTables)
+      continue
+    }
+    if (RAW_FRAGMENTS.has(method) && first) {
+      const fragment = textOf(first)
+      if (fragment === null) continue
+      const named = tablesIn(fragment)
+      for (const [alias, aliased] of named.aliases) aliases.set(alias, aliased)
+      if (method === 'fromRaw' && !table && named.found.length > 0) {
+        table = named.found[0]
+        joinedTables.push(...named.found.slice(1))
+      } else joinedTables.push(...named.found)
       continue
     }
     if (WRITES.has(method)) {
@@ -190,7 +234,7 @@ export function detectRawAccess(call: CallExpression, tables: TableMap): RawAcce
   const joined = [...new Set(joinedTables.flatMap((t) => tables.get(t) ?? []))].filter(
     (store) => !stores.includes(store)
   )
-  const selected = new Map<string, string[]>()
+  const selected = new Map<string, string[]>(selectedByStore)
   for (const [owner, columns] of selectedByTable) {
     const owners = owner === '?' ? stores : (resolve(owner) ?? [])
     for (const store of owners) selected.set(store, [...(selected.get(store) ?? []), ...columns])
@@ -201,6 +245,7 @@ export function detectRawAccess(call: CallExpression, tables: TableMap): RawAcce
     table: table ?? '?',
     stores,
     joined,
+    joinedTables: [...new Set(joinedTables)],
     unmodelled: [...new Set(unmodelled)],
     selected,
     aggregate,
@@ -364,15 +409,7 @@ type ParsedSql = {
  * pg_advisory_xact_lock(?)`) is no data access ('no-table').
  */
 function parseSql(sql: string): ParsedSql | null | 'no-table' {
-  const text = sql
-    .replace(/--[^\n]*/g, ' ')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/'(?:[^']|'')*'/g, "''")
-    .replace(/\bextract\s*\(\s*\w+\s+from\b/gi, 'extract(')
-    .replace(/\bdistinct\s+from\b/gi, 'distinct_from')
-    .replace(/\bon\s+conflict\b[\s\S]*$/i, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+  const text = normalisedSql(sql)
 
   const ctes = new Set(
     [
@@ -381,26 +418,7 @@ function parseSql(sql: string): ParsedSql | null | 'no-table' {
       ),
     ].map((m) => m[1].toLowerCase())
   )
-  const aliases = new Map<string, string>()
-  const found: string[] = []
-  let hole = false
-  const TABLE = new RegExp(
-    `\\b(from|join|update|into)\\s+((?:"?[a-z_][\\w]*"?\\.)?"?[a-z_][\\w]*"?)(\\s*\\()?(?:\\s+(?:as\\s+)?${IDENT})?`,
-    'gi'
-  )
-  for (const match of text.matchAll(TABLE)) {
-    const [, , raw, call, alias] = match
-    const table = raw.replace(/"/g, '').split('.').pop()!
-    if (table.toLowerCase() === HOLE) {
-      hole = true
-      continue
-    }
-    if (call) continue
-    const lower = table.toLowerCase()
-    if (ctes.has(lower) || NOT_ALIASES.has(lower)) continue
-    found.push(table)
-    if (alias && !NOT_ALIASES.has(alias.toLowerCase())) aliases.set(alias, table)
-  }
+  const { found, aliases, hole } = tablesIn(text, ctes)
 
   const statement = new RegExp(
     `^(?:with\\b.*?\\)\\s*)?(?:update|insert\\s+into|delete\\s+from)\\s+(?:"?[a-z_][\\w]*"?\\.)?${IDENT}`,
@@ -449,4 +467,117 @@ function splitTopLevel(list: string): string[] {
   }
   if (current.trim()) items.push(current.trim())
   return items
+}
+
+/** the SQL text normalised for reading tables: comments, strings and `extract(x from …)` out */
+function normalisedSql(sql: string): string {
+  return sql
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/'(?:[^']|'')*'/g, "''")
+    .replace(/\bextract\s*\(\s*\w+\s+from\b/gi, 'extract(')
+    .replace(/\bdistinct\s+from\b/gi, 'distinct_from')
+    .replace(/\bon\s+conflict\b[\s\S]*$/i, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Every table a piece of SQL names after `from`, `join`, `update` or `into`, with its
+ * alias — names a `with` defines and `from now()` left out. `hole`: a template
+ * expression sits where a table goes.
+ */
+function tablesIn(
+  sql: string,
+  ctes: Set<string> = new Set()
+): { found: string[]; aliases: Map<string, string>; hole: boolean } {
+  const text = normalisedSql(sql)
+  const aliases = new Map<string, string>()
+  const found: string[] = []
+  let hole = false
+  const TABLE = new RegExp(
+    `\\b(from|join|update|into)\\s+((?:"?[a-z_][\\w]*"?\\.)?"?[a-z_][\\w]*"?)(\\s*\\()?(?:\\s+(?:as\\s+)?${IDENT})?`,
+    'gi'
+  )
+  for (const match of text.matchAll(TABLE)) {
+    const [, , raw, call, alias] = match
+    const table = raw.replace(/"/g, '').split('.').pop()!
+    if (table.toLowerCase() === HOLE) {
+      hole = true
+      continue
+    }
+    if (call) continue
+    const lower = table.toLowerCase()
+    if (ctes.has(lower) || NOT_ALIASES.has(lower)) continue
+    found.push(table)
+    if (alias && !NOT_ALIASES.has(alias.toLowerCase())) aliases.set(alias, table)
+  }
+  return { found, aliases, hole }
+}
+
+/**
+ * A builder standing where a table goes: inline (`db.from(db.from('t').as('s'))`), or
+ * the chain a function OF THE APPLICATION returns (`db.from(actionsQuery(org))`, with
+ * `actionsQuery` returning `db.from('audits').joinRaw(…)`). Read in place: its table,
+ * its joins, its columns. One level, and never through a package.
+ */
+function subqueryOf(
+  node: Node,
+  tables: TableMap,
+  lookup: FunctionLookup | undefined,
+  depth: number
+): { table: string; joinedTables: string[]; selected: Map<string, string[]> } | null {
+  if (depth > 1 || !Node.isCallExpression(node)) return null
+  const read = (chain: CallExpression) => {
+    const access = detectRawAccess(chain, tables, lookup, depth + 1)
+    if (!access || access.table === '?' || access.unreadableSql) return null
+    return {
+      table: access.table,
+      joinedTables: access.joinedTables,
+      selected: access.selected,
+    }
+  }
+  const inline = read(node)
+  if (inline) return inline
+
+  const callee = node.getExpression()
+  if (!Node.isIdentifier(callee)) return null
+  const symbol = callee.getSymbol()
+  const target = symbol?.getAliasedSymbol() ?? symbol
+  const candidates: Node[] = []
+  for (const declaration of target?.getDeclarations() ?? []) {
+    if (Node.isFunctionDeclaration(declaration)) candidates.push(declaration)
+    else if (Node.isVariableDeclaration(declaration)) {
+      const initializer = declaration.getInitializer()
+      if (initializer) candidates.push(initializer)
+    }
+  }
+  const imported = lookup?.(callee)
+  if (imported) candidates.push(imported)
+
+  for (const fn of candidates) {
+    if (fn.getSourceFile().isInNodeModules()) continue // never through a package
+    if (!(
+      Node.isFunctionDeclaration(fn) ||
+      Node.isArrowFunction(fn) ||
+      Node.isFunctionExpression(fn)
+    ))
+      continue
+    const body = fn.getBody()
+    const returned = !body
+      ? []
+      : Node.isBlock(body)
+        ? body
+            .getDescendantsOfKind(SyntaxKind.ReturnStatement)
+            .filter((r) => r.getFirstAncestor((a) => Node.isFunctionLikeDeclaration(a)) === fn)
+            .map((r) => r.getExpression())
+        : [body]
+    for (const expression of returned) {
+      if (expression && Node.isCallExpression(expression)) {
+        const chain = read(expression)
+        if (chain) return chain
+      }
+    }
+  }
+  return null
 }

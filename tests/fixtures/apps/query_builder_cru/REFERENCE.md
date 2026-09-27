@@ -29,8 +29,9 @@ Eight routes, one builder shape each:
 | `GET /painel/config`          | `db.from('configuracoes').first()` — a table no model declares                                  |
 | `GET /painel/arquivo`         | `db.from(tabela).count(…)` — a table named by an expression                                      |
 | `GET /painel/sql`             | `db.rawQuery('select status, count(*) as total from pedidos group by status')` — literal SQL    |
+| `GET /painel/acoes`           | `db.from(acoesQuery(id)).count(…)` — `acoesQuery` returns `db.from('pedidos').joinRaw('inner join usuarios as u …')` |
 
-## Reference: 38 unadjusted FP
+## Reference: 42 unadjusted FP
 
 | function                    | type | FTR/RET | DET | complexity | FP     | DET origin                                                                  |
 | --------------------------- | ---- | ------- | --- | ---------- | ------ | --------------------------------------------------------------------------- |
@@ -43,7 +44,8 @@ Eight routes, one builder shape each:
 | POST /painel/lote           | EI   | 1       | 1   | low        | 3      | `descricao`                                                                 |
 | GET /painel/pares           | EO   | 2       | 1   | low        | 4      | `aggregate` over the pivot: both stores are FTRs                            |
 | GET /painel/sql             | EO   | 1       | 2   | low        | 4      | `select:Pedido.status` + `count(*) as total` from the SQL literal           |
-| **total**                   |      |         |     |            | **38** |                                                                             |
+| GET /painel/acoes           | EO   | 2       | 1   | low        | 4      | `total`; FTR Pedido + Usuario — the subquery a local function returns, its `joinRaw` read (0.13 §C) |
+| **total**                   |      |         |     |            | **42** |                                                                             |
 
 `GET /painel/config` is **not counted** — `configuracoes` is no store the count knows —
 and is **1 unresolved call**: "raw query on a table no model declares: configuracoes".
@@ -91,3 +93,17 @@ was either read or said.
 models drop out under §6.5.4; the eight routes are listed by §A as "reach no data store …
 not counted", every one marked ⚑ raw query builder (nine, with `arquivo`). That is the reviewed application's
 management area, in miniature.
+
+## Plan 0.13 §C — a subquery a function of the application returns
+
+Added after 0.12. `GET /painel/acoes` runs `db.from(acoesQuery(id)).count(…)`. Under
+`afp@1.10.0` it counted **EO, 1 FTR**: the walk followed `acoesQuery` and read its chain over
+`pedidos`, but not the `joinRaw('inner join usuarios as u …')`, and the outer `from(…)` was a
+third unresolved call ("raw query over an expression"). Now:
+
+- a `from`/`join` whose argument is a call to a function of the application that returns a
+  builder chain reads that chain in place — its table and its joins; no gap;
+- `joinRaw`, `fromRaw`, `whereRaw` with a literal name tables the way SQL does: `join <t> [as a]`
+  and `from <t>` are read on the way.
+
+**EO, 2 FTR (Pedido, Usuario), 1 DET — 4 FP.** Unresolved calls: **2** (`configuracoes`, `tabela`).

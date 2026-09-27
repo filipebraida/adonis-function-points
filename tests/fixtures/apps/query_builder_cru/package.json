@@ -5,6 +5,7 @@
   "imports": {
     "#models/*": "./app/models/*.js",
     "#controllers/*": "./app/controllers/*.js",
+    "#queries/*": "./app/queries/*.js",
     "#start/*": "./start/*.js"
   }
 }
