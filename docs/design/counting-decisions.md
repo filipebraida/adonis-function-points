@@ -493,9 +493,11 @@ join adds the joined store as FTR; the pivot of a declared `@manyToMany`
 both stores. Literal SQL is read the same way, as far as a reader of SQL needs:
 the statement's table, the other tables after `from` and `join`, the names a
 `with` defines left out, the select list's columns. What cannot be read is said,
-per site, as an unresolved call: a table no model declares ("declare a model, or
-the table is not counted"), a table named by an expression or a subquery, SQL
-whose table is where a template has an expression. `ignoreCalls` covers these
+per site, as an unresolved call: a table no model declares (the message names
+the three `boundary` keys that say what it is), a table named by an expression or
+a subquery, SQL whose table is where a template has an expression. No message of
+the library asks for a change in the application's code: nobody writes a model so
+that a counter can see a table (0.13 §A). `ignoreCalls` covers these
 sites like any other call — a package's table (auditing, authorisation) the team
 knows is data-free is declared once. Measured on the three validated
 applications: +2, +35 and +1 FP; the +35 is the management area §1 above

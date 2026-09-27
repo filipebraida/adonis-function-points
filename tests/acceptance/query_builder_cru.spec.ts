@@ -116,7 +116,7 @@ test.group('raw query builder: what the count does not know, it says', () => {
     assert.isTrue(
       reasons.some((r) =>
         r.includes(
-          'raw query over an expression the analysis cannot read (tabela): a subquery or a computed table name'
+          'raw query over an expression the analysis cannot read (tabela): a subquery or a computed table name — what it reaches is not counted here'
         )
       ),
       reasons.join('\n')

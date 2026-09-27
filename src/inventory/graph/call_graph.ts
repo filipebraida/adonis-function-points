@@ -1156,13 +1156,19 @@ export function createAnalyzer(
       if (raw) {
         // declared data-free (`ignoreCalls` over a package's table): believed, like any other call
         if (resolvers.some((resolver) => resolver.ignores?.(call, context))) continue
-        // what it cannot read or map is said, one gap per site; what it can is counted
+        /**
+         * What it cannot read or map is said, one gap per site; what it can is counted.
+         * The words point at the CONFIGURATION, never at the application's code: nobody
+         * changes code so that a counter can see it (plan 0.13 §A).
+         */
         const gap = raw.unreadableSql
-          ? 'raw SQL whose table the analysis cannot read: name the table in a literal'
+          ? 'raw SQL whose tables the analysis cannot read: what it reaches is not counted here'
           : raw.unreadableTable !== undefined
-            ? `raw query over an expression the analysis cannot read (${raw.unreadableTable}): a subquery or a computed table name`
+            ? `raw query over an expression the analysis cannot read (${raw.unreadableTable}): a subquery or a computed table name — what it reaches is not counted here`
             : raw.unmodelled.length > 0
-              ? `raw query on a table no model declares: ${raw.unmodelled.join(', ')} — declare a model, or the table is not counted`
+              ? `raw query on a table no model declares: ${raw.unmodelled.join(', ')} — not a data function the count knows. ` +
+                `Say what it is in the configuration: boundary.business (the user's data), ` +
+                `boundary.infrastructure (technical), boundary.externallyMaintained (another system's)`
               : null
         if (gap)
           unresolved.push({
