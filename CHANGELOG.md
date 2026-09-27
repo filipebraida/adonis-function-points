@@ -6,6 +6,51 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## 0.13.0
+
+Rule set **`afp@1.11.0`**. A count saved under `afp@1.10.0` is refused by `fp:diff`; recount the
+baseline. On the three validated applications no number moves for unchanged code and
+configuration; what moves is code that builds a subquery in a function (fixture
+`query_builder_cru`, one EO from 1 to 2 FTR).
+
+The rule this release is built on: **nobody changes the application's code so that the count can
+see it.** The library counts the code as it is, or says what it cannot read and points at the
+configuration.
+
+### Changed — `afp@1.11.0`
+
+- **A subquery a function of the application returns is read as its builder.**
+  `db.from(actionsQuery(org))`, with `actionsQuery` returning `db.from('t').joinRaw(…)`, reads `t`
+  and the joined tables in place — found through the import map when the type checker cannot
+  follow the application's aliases, never through a package. `joinRaw` / `fromRaw` / `whereRaw`
+  with a literal name tables the way SQL does.
+
+### Added
+
+- **A table no model reads, named in the boundary, is a data function.** `boundary.business`,
+  `boundary.externallyMaintained` and `boundary.infrastructure` now accept a table no model reads
+  — typically a package's — and make it a store from its generated-schema class: its columns
+  from the schema, ILF or EIF by §6.5.4, EIF, or excluded. Its raw accesses stop being gaps. The
+  report lists every table counted by declaration with the source of its DETs, reports a
+  declaration the code contradicts, and says when a declared table has no structure anywhere.
+  `externallyMaintained` now matches a table name, as the other two keys already did. Fixture
+  `fronteira_tabela`.
+
+### Fixed
+
+- **No message asks for code.** "raw query on a table no model declares … declare a model" now
+  names the boundary keys that say what the table is; "name the table in a literal" is gone. A
+  unit test reads every string of the library and refuses phrasings that ask the application to
+  change.
+
+### Known limits
+
+- A declared `business` table that only a package writes (an audit trail) is an EIF, and the
+  application's writing transactions do not gain it as FTR: the library never follows a package.
+  Measured at +11 FP over 793 on the application concerned; not built until asked.
+- A declared pivot (a table of keys only) becomes a data function of its own, where the CPM calls
+  it a relationship. Measured at +8 FP on the application concerned.
+
 ## 0.12.0
 
 Rule set **`afp@1.10.0`** — numbers move. A count saved under `afp@1.9.0` is refused by

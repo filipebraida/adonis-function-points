@@ -264,6 +264,41 @@ no name, no list, and works for a package nobody anticipated.
 > applications. `boundary.technicalPatterns` replaces the list, as §6.5.2.1.3
 > intends for user input; `boundary.business` restores one table.
 
+### A package's table the application reads: declared, never modelled (0.13)
+
+The raw query builder (§6, 0.12) made the inverse visible too: a package's table
+the application **does** read — the audit trail a management screen turns into
+productivity figures, the roles an administrator edits. No model reads it, so the
+count does not know it, and 0.12 said so as an unresolved call. What it must not
+say is "write a model": nobody changes the application's code so that a counter
+can see a table. The library counts the code as it is, or says what it cannot read
+and points at the configuration — and no message of it asks for code (a test reads
+every string of the library for that).
+
+The structure is known already: the generated schema has a class for every table
+the database has, a package's included. What the table **is** — the user's data,
+another system's, or technical — is a business decision, and the three keys that
+say it exist: `boundary.business`, `boundary.externallyMaintained`,
+`boundary.infrastructure`. A table named in one of them that no model reads becomes
+a store from its schema class: `business` → ILF or EIF by §6.5.4,
+`externallyMaintained` → EIF, `infrastructure` → excluded; in every case its raw
+accesses stop being gaps. The report lists every table counted this way with where
+its DETs came from, and a declaration the code contradicts — an external table the
+application writes, an infrastructure table a transaction shows — is honoured and
+reported.
+
+**Two limits, stated.** (1) A package that maintains the table on the application's
+behalf — the auditing mixin writing `audits` on every save of an auditable model —
+is invisible (§4: the library never follows a package), so a declared `business`
+table only a package writes comes out as an **EIF**, and the application's writing
+transactions do not gain it as FTR. Measured on the application that reads its
+audit trail: +11 FP over 793 if it did, in seven functions. Not built until a team
+asks: the answer ready is a `boundary.maintained` key, the symmetric counterpart of
+`externallyMaintained`. (2) A declared **pivot** — a table of keys only, the
+relation between users and roles — becomes a data function of its own, where the
+CPM calls it a relationship. Measured: +8 FP on the application that has one.
+Declaring it as a relationship is the next key to design.
+
 ### AFP's closing rule
 
 And there is a normative safety net above all of them:

@@ -148,6 +148,8 @@ export default defineConfig({
     infrastructure: ['access_tokens', 'audits'], // excluded, with the reason in the report
     externallyMaintained: ['erp_customers'], // counted as EIF instead of ILF
     business: ['chat_sessions'], // the AFP naming filter caught it by accident
+    // a table no model reads (a package's) is named here too: its columns come from the
+    // generated schema, and the report lists it as counted by declaration
     // technicalPatterns: [...DEFAULT_TECHNICAL_PATTERNS], // replaces the filter's naming list
     ignoreEntryPoints: ['prometheus.metrics'],
   },
