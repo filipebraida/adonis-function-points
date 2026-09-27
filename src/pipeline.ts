@@ -1,5 +1,6 @@
 import { discoverApp } from './inventory/app_context.js'
 import { collectDataStores } from './inventory/sources/data_stores.js'
+import type { DeclaredTable } from './inventory/sources/data_stores.js'
 import { collectEntryPoints } from './inventory/sources/routes_ast.js'
 import { collectCommands } from './inventory/sources/commands.js'
 import { collectJobs } from './inventory/sources/jobs.js'
@@ -106,7 +107,20 @@ function packageCallNotes(
 
 export async function analyze(root: string, options: AnalysisOptions = {}): Promise<Analysis> {
   const app = await discoverApp(root)
-  const { stores, unresolved: storeProblems, notes: storeNotes } = await collectDataStores(app)
+  /**
+   * The tables the boundary names: one no model reads becomes a store when the generated
+   * schema describes it (plan 0.13 §B). The configuration says what a table IS; nobody
+   * writes a model so that the count can see it.
+   */
+  const declaredTables: DeclaredTable[] = (
+    ['business', 'externallyMaintained', 'infrastructure'] as const
+  ).flatMap((key) => (options.boundary?.[key] ?? []).map((table) => ({ table, key })))
+  const {
+    stores,
+    unresolved: storeProblems,
+    notes: storeNotes,
+    undescribed,
+  } = await collectDataStores(app, declaredTables)
   const routes = await collectEntryPoints(app)
   const routeProblems = routes.unresolved
   // ace commands are elementary processes too — counting-decisions §5, plan 0.7 §C
@@ -263,6 +277,12 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
     },
     options
   )
+
+  for (const { table, key } of undescribed)
+    counted.confidence.warnings.push(
+      `declared in boundary.${key}: '${table}' — no model and no generated-schema class ` +
+        `describes it, so the count cannot know its columns`
+    )
 
   return {
     inventory,

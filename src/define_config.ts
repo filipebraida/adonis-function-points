@@ -22,6 +22,15 @@ export type FunctionPointsConfig = {
   /**
    * The application boundary. A business decision, not a technical one — review
    * it with whoever signs the contract, not only with the team.
+   *
+   * `infrastructure`, `externallyMaintained` and `business` take a model's name or a
+   * table name. A TABLE NO MODEL READS — one a package's migration created, read and
+   * written through the raw query builder — becomes a data function when named in any
+   * of the three and the generated schema describes it: its columns come from the
+   * schema class, and the report lists it as counted by declaration. A declaration the
+   * code contradicts (an external table this application writes, an infrastructure
+   * table a transaction shows) is honoured and reported. Nothing in the application's
+   * code has to change for the count to see a table (plan 0.13 §B).
    */
   boundary: {
     /**

@@ -3,7 +3,7 @@ import type { ClassDeclaration, SourceFile, ClassExpression } from 'ts-morph'
 
 import type { AppContext } from '../app_context.js'
 import { samePath } from '../paths.js'
-import type { Attribute, DataStore, UnresolvedCall } from '../../types.js'
+import type { Attribute, BoundaryKey, DataStore, UnresolvedCall } from '../../types.js'
 
 /**
  * Collects the logical data stores — ILF/EIF candidates.
@@ -44,6 +44,8 @@ export type DataStoreCollection = {
    * model's own columns and the schema decide. Listed, never counted in coverage.
    */
   notes: string[]
+  /** tables declared in the boundary that neither a model nor the generated schema describes */
+  undescribed: DeclaredTable[]
 }
 
 const LUCID_ORM = '@adonisjs/lucid/orm'
@@ -55,7 +57,16 @@ const COMPOSITION_RELATIONS = new Set(['hasMany', 'hasOne'])
 /** every Lucid relation decorator */
 const ALL_RELATIONS = new Set(['belongsTo', 'hasMany', 'hasOne', 'manyToMany', 'hasManyThrough'])
 
-export async function collectDataStores(app: AppContext): Promise<DataStoreCollection> {
+/**
+ * `declared`: tables the configuration names in a boundary key (plan 0.13 §B). One no
+ * model reads becomes a store when the generated schema describes it — nobody writes a
+ * model so that a counter can see a table; the structure is in the schema already, and
+ * what the table IS is the configuration's to say.
+ */
+export async function collectDataStores(
+  app: AppContext,
+  declared: DeclaredTable[] = []
+): Promise<DataStoreCollection> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
     skipFileDependencyResolution: true,
@@ -94,7 +105,47 @@ export async function collectDataStores(app: AppContext): Promise<DataStoreColle
   }
 
   const stores = candidates.filter((store) => !ancestors.has(store.id))
-  return { stores: stores.sort(byName), unresolved, notes }
+
+  const undescribed: DeclaredTable[] = []
+  const schema = app.generated.dataSchema
+    ? project.getSourceFile(app.generated.dataSchema)
+    : undefined
+  for (const declaration of declared) {
+    const known = stores.some(
+      (store) => store.table === declaration.table || store.name === declaration.table
+    )
+    if (known) continue // a model's store: the key keeps the meaning it always had
+    const cls = schema?.getClasses().find((c) => tablesOfSchemaClass(c).includes(declaration.table))
+    const described = cls ? describeStore(cls, app, project, unresolved, notes) : null
+    if (!cls || !described) {
+      undescribed.push(declaration)
+      continue
+    }
+    stores.push({
+      ...described.store,
+      id: `${described.store.id}@${declaration.table}`,
+      name: cls.getName()!.replace(/Schema$/, ''),
+      table: declaration.table,
+      declaredIn: declaration.key,
+    })
+  }
+
+  return { stores: stores.sort(byName), unresolved, notes, undescribed }
+}
+
+export type DeclaredTable = { table: string; key: BoundaryKey }
+
+/**
+ * The tables a generated-schema class may stand for. The generator names the class
+ * after the table, singularised: `audits` -> `AuditSchema`, `authz_user_role` ->
+ * `AuthzUserRoleSchema`, `categories` -> `CategorySchema`. Read back, the name is the
+ * table with or without the plural.
+ */
+function tablesOfSchemaClass(cls: ClassDeclaration): string[] {
+  const name = cls.getName()?.replace(/Schema$/, '')
+  if (!name) return []
+  const snake = name.replace(/([a-z\d])([A-Z])/g, '$1_$2').toLowerCase()
+  return [snake, `${snake}s`, `${snake}es`, snake.replace(/y$/, 'ies')]
 }
 
 /** stable identity of a class, to separate a base from a store */

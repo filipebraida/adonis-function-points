@@ -50,8 +50,16 @@ export type DataStore = {
   relations: Record<string, string>
   /** maintained by this application, or by an external system? */
   maintainedExternally: boolean
+  /**
+   * A table no model reads, made a store because the configuration named it in one
+   * of the boundary keys — its structure read off the generated schema (plan 0.13 §B).
+   */
+  declaredIn?: BoundaryKey
   provenance: Provenance
 }
+
+/** the boundary keys that say what a table is — the three a table with no model can be declared in */
+export type BoundaryKey = 'business' | 'externallyMaintained' | 'infrastructure'
 
 export type Attribute = {
   name: string

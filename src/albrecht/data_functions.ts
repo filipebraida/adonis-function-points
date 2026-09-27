@@ -256,7 +256,12 @@ export function countDataFunctions(
      */
     const maintained =
       use.written || group.some((member) => options.writtenAnywhere.has(member.name))
-    const declaredExternal = group.some((member) => options.externallyMaintained.has(member.name))
+    // by store name or by table, like `infrastructure` and `business`
+    const declaredExternal = group.some(
+      (member) =>
+        options.externallyMaintained.has(member.name) ||
+        options.externallyMaintained.has(member.table ?? '')
+    )
     const external = declaredExternal || !maintained
     const type: FunctionType = external ? 'EIF' : 'ILF'
 

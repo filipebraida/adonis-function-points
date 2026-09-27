@@ -235,6 +235,8 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
    * folded into a counted root counts too: a transaction reaching it reaches the
    * group, and its columns are the group's output.
    */
+  warnings.push(...declaredTableWarnings(input, dataFunctions))
+
   const countedRoots = new Set(dataFunctions.map((fn) => fn.name))
   const countedStores = new Map(
     countable
@@ -339,6 +341,61 @@ function unreadableDeliveryWarnings(input: CountInput): string[] {
       ),
     ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
   ]
+}
+
+/**
+ * Tables no model reads, made stores by a boundary declaration (plan 0.13 §B): said,
+ * with where their columns came from, and checked against the code. A declaration is
+ * honoured — only a person knows what a table is — but a fact of the code that
+ * contradicts it goes in the report: an external table this application writes, a
+ * technical table a transaction reads and hands on.
+ */
+function declaredTableWarnings(input: CountInput, dataFunctions: CountedFunction[]): string[] {
+  const declared = input.stores.filter((store) => store.declaredIn)
+  if (declared.length === 0) return []
+  const identityOf = new Map(input.entryPoints.map((entry) => [entry.id, entry.identity]))
+  const routes = (keep: (behavior: Behavior, store: string) => boolean, store: string) =>
+    [...input.behaviors]
+      .filter(([, behavior]) => keep(behavior, store))
+      .map(([id]) => identityOf.get(id) ?? id)
+      .sort()
+  const label = (store: CollectedDataStore) => `${store.name} (${store.table})`
+  const warnings: string[] = []
+
+  for (const key of ['business', 'externallyMaintained'] as const) {
+    const counted = declared.filter((store) => store.declaredIn === key)
+    if (counted.length === 0) continue
+    const described = counted.map((store) => {
+      const det = dataFunctions.find((fn) => fn.name === store.name)?.det
+      return `${store.name} (${store.table}${det === undefined ? '' : `, ${det} DET from the generated schema`})`
+    })
+    warnings.push(
+      `${counted.length} table(s) no model declares, counted by declaration in boundary.${key}: ` +
+        described.join('; ')
+    )
+  }
+
+  for (const store of declared) {
+    if (store.declaredIn === 'externallyMaintained') {
+      const writers = routes((b, s) => b.writtenStores.includes(s), store.name)
+      if (writers.length > 0 || input.writtenAnywhere?.has(store.name))
+        warnings.push(
+          `declared in boundary.externallyMaintained, but this application writes it: ${label(store)} — ` +
+            (writers.length > 0 ? writers.join(', ') : 'code outside the routes')
+        )
+    }
+    if (store.declaredIn === 'infrastructure') {
+      const readers = routes(
+        (b, s) => b.touches.includes(s) && !b.writtenStores.includes(s),
+        store.name
+      )
+      if (readers.length > 0)
+        warnings.push(
+          `declared in boundary.infrastructure, but it is shown to the user by: ${label(store)} — ${readers.join(', ')}`
+        )
+    }
+  }
+  return warnings
 }
 
 /**
