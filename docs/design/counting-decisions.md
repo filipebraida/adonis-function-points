@@ -299,6 +299,34 @@ relation between users and roles — becomes a data function of its own, where t
 CPM calls it a relationship. Measured: +8 FP on the application that has one.
 Declaring it as a relationship is the next key to design.
 
+### A logical file the analysis cannot see: declared by name (0.14)
+
+0.13 declared a TABLE no model reads. The next review found three data the user
+recognises that are not reachable as tables at all: roles a package maintains through
+its own API (`authz.store.createRole(…)` — the application never names the table),
+settings kept in a persistent cache (the cache call serves two different settings and
+only the key tells them apart), and appointments read from another system's HTTP API.
+The transactions that maintain or show them reached no store and were not counted.
+
+`logicalFiles` names each one, in the CPM's own terms. **Structure** comes from where it
+already is — a `table` (the model reading it, or its generated-schema class), or a
+`type` (the members of a type, an interface or a DTO class the application declares;
+`exclude` drops what the user does not recognise). **Who reads and who writes** is
+declared per entry: a RegExp over the callee (a package's API), or an application body
+the walk reaches (`SettingsService.update`) — the body is what distinguishes two files
+that share a call. From there nothing is special: a declared write makes an EI and an
+ILF, a read an FTR, an incidental write stays incidental.
+
+Declaring about the CALL is what makes it work. The first answer to the roles, left in
+0.13, was to declare the table maintained; that gives the ILF and leaves the three
+screens that maintain it outside the count, because no transaction knows it writes.
+
+The report lists every declared file with the origin of its DETs, the FP it
+contributes and the transactions reaching it; an entry that matches nothing, a type
+nobody declares and a table nothing describes are said and not counted. Measured on
+the application that asked: 793 → 862 FP with its declarations, 11 → 0 unresolved
+calls, 33 → 25 routes not counted.
+
 ### AFP's closing rule
 
 And there is a normative safety net above all of them:
@@ -1085,6 +1113,22 @@ the same fact with no method to name.
 It does NOT hide the write: the store stays maintained by this application, stays an
 ILF, and stays an FTR of the transaction. Only the classification changes. A
 declaration meant to make the write disappear would be `ignores`, and would be wrong.
+
+**Asked, and answered in one line (0.14).** For six releases nobody used it: declaring
+it meant writing a resolver. Measured across the three validated applications, 17
+`GET` routes came out as EIs — 3 rightly (an account linked on a login callback), 1
+ambiguous, 13 because a page counted its visit, created a default on first read, or
+ensured an organisation existed. The shapes are the same in the code as a deliberate
+write, so the count now **lists** every `GET` counted as EI, with the stores it writes
+and the bodies that write them, and `incidentalWrites({ name, methods | matching })` —
+the sibling of `ignoreCalls` — is the answer. The report says what a declaration
+reclassified, and a declaration that matched nothing had no effect and is told so.
+
+One limit, measured: the declaration is about a call, everywhere. A method that is
+incidental on one route and the point of another — the last organisation remembered
+when a page opens, and remembered because the user switched — cannot be declared for
+one and not the other. Declaring it anyway turns the switch into an EO; the answer
+today is not to declare it.
 
 ### Three outcomes, where a resolver had two
 

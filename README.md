@@ -154,6 +154,23 @@ export default defineConfig({
     ignoreEntryPoints: ['prometheus.metrics'],
   },
 
+  // data the user recognises, reached by a path the analysis never follows — declared, never modelled
+  logicalFiles: {
+    Role: {
+      table: 'authz_roles', // structure from the generated schema
+      writes: [/\bauthz\.store\.(createRole|deleteRole)$/], // a package's API
+      reads: [/\bauthz\.store\.listRoles$/],
+      reason: 'roles the administrator maintains through the authorization package',
+    },
+    Settings: {
+      type: 'Settings', // a type, an interface or a DTO class of the application
+      exclude: ['updatedAt'],
+      reads: ['SettingsService.get'], // an application body
+      writes: ['SettingsService.update'], // declared where the intent is
+      reason: 'deadlines set by the administrator, kept in a persistent cache',
+    },
+  },
+
   dataFunctions: { grouping: 'usage' }, // 'none' keeps every table its own data function
   maxDepth: 3, // how far to follow the call graph
   messageDet: 0, // 1 restores the IFPUG confirmation-message DET
@@ -229,6 +246,31 @@ cannot follow the call into a body it has no business reading. It stays a
 **named** strategy on purpose: the volume it declared data-free still appears in
 the confidence block of `fp:count`, because a silent drop is the worst defect
 this package can have — whoever writes it.
+
+### Declaring that a write does not decide the type
+
+The CPM classifies a transaction by its primary intent. A page that counts its own
+visit, or creates a default the first time anybody reads it, writes — and is still a
+page. `fp:count` lists every `GET` it counted as an EI, with the stores written and the
+bodies writing them; where the write only supports the page, say so once, about the call:
+
+```ts
+import { incidentalWrites } from '@filipebraida/adonis-function-points'
+
+export default defineConfig({
+  resolvers: {
+    call: [
+      incidentalWrites({ name: 'visits and defaults', methods: ['recordVisit', 'ensureDefaults'] }),
+    ],
+  },
+})
+```
+
+The store stays maintained — an ILF, an FTR — and only the classification changes. The
+report says which transactions the declaration reclassified, and a declaration that
+matched nothing had no effect and is told so. It holds for the call everywhere: a method
+that is the point of one route (a user switching organisation) and incidental on another
+is not declared.
 
 ## Support
 

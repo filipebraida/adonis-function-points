@@ -6,6 +6,49 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## 0.14.0
+
+Rule set unchanged (`afp@1.11.0`): code and configuration unchanged give the same number. What
+is new moves a number only under a new declaration, and every declaration's effect is in the
+report. From a reviewing team's report on 0.13, checked against their code: four requests, all
+confirmed, and one point they did not raise.
+
+### Added
+
+- **`logicalFiles`: a logical file the analysis cannot see, declared by name.** Roles a package
+  maintains through its own API, settings kept in a persistent cache, appointments read from
+  another system: data the user recognises, reached by paths the analysis never follows. Structure
+  from a `table` (the model reading it, or its generated-schema class) or a `type` (a type, an
+  interface or a DTO class; `exclude` drops what is not user-recognisable). Reads and writes per
+  entry: a RegExp over the callee, or an application body the walk reaches (`Class.method`). A
+  declared write makes an EI and an ILF. The report lists each file with the origin of its DETs,
+  the FP it contributes and the transactions reaching it; an entry that matches nothing is said.
+  Fixture `arquivo_declarado`. On the application that asked: 793 → 862 FP with its
+  declarations, 11 → 0 unresolved calls.
+- **Primary intent: `incidentalWrites()`, and every `GET` counted as EI listed.** The CPM
+  classifies by what a transaction is for; a page that counts its visit or creates a default on
+  first read is still a page. Measured: 17 `GET` routes counted as EI across the validated
+  applications — 3 rightly, 1 ambiguous, 13 incidental. The count lists them with the stores and
+  bodies that write; `incidentalWrites({ name, methods | matching })`, the sibling of
+  `ignoreCalls`, declares the writes that do not decide the type (the store stays an ILF and an
+  FTR). The report says what a declaration reclassified. Fixture `escrita_incidental`.
+
+### Fixed
+
+- **The whole list of routes not counted.** The warning showed 25 and said "fp:inventory lists
+  every entry point"; `fp:inventory` listed none. `count.confidence.notCounted` and
+  `inventory.notCounted` carry every entry point that did not become a function, with the
+  reason; `fp:inventory` prints them all. Fixture `rotas_estaticas`.
+- **`--json` on every command the help lists.** `inventory`, `explain`, `diff` and `calibrate`
+  printed text. The test reads the command list off the help.
+
+### Known limits
+
+- `incidentalWrites` holds for a call everywhere: a method that is the point of one route and
+  incidental on another cannot be declared for one only.
+- A declared table is matched to its generated-schema class by the class name read back (`Audit`
+  → `audit`, `audits`); an irregular English plural is not found, and the report says so.
+
 ## 0.13.0
 
 Rule set **`afp@1.11.0`**. A count saved under `afp@1.10.0` is refused by `fp:diff`; recount the
