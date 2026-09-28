@@ -269,14 +269,14 @@ export function diffCounts(
   }
 
   /**
-   * What each line is billed at, on the line (plan 0.15 §A). A team consolidating many
-   * diffs re-applied the preset and the per-reason factors themselves — repeating a rule
-   * of this library outside it. Unrounded, so the total below is the rounded sum.
+   * What each line is billed at, on the line, in cents — and the cents add up to the total.
+   * A team consolidating many diffs re-applied the preset and the per-reason factors
+   * themselves; then read `2.8000000000000003` for a deletion of 7 FP at 0.4, and had to
+   * round every line on its own. Rounding each line independently would let the lines drift
+   * from the total by a cent; the remainder goes to the lines whose fraction was largest.
    */
-  for (const entry of entries) {
-    entry.factor = factorFor(entry)
-    entry.billable = entry.function.points * entry.factor
-  }
+  for (const entry of entries) entry.factor = factorFor(entry)
+  const totalCents = allocateCents(entries)
 
   return {
     from: options.labels?.from ?? 'previous',
@@ -291,7 +291,7 @@ export function diffCounts(
      * the same number and it is not the same document: this value is quoted in
      * an invoice, and a reader who sees that tail stops trusting the rest.
      */
-    billable: round2(entries.reduce((total, entry) => total + entry.billable!, 0)),
+    billable: totalCents / 100,
     preset,
     factors,
     reasonFactors,
@@ -370,3 +370,33 @@ function totalsOf(entries: DiffEntry[]): DiffResult['totals'] {
 
 /** two decimals: this number is quoted in an invoice */
 const round2 = (value: number) => Math.round(value * 100) / 100
+
+/**
+ * Each entry's `points × factor` in cents, so that the cents of the lines add up to the
+ * cents of the exact total. Largest remainder: every line gets its floor, and the cents
+ * left over go one each to the lines with the largest fractional part — ties broken by
+ * function name, so the same diff always bills the same lines. Returns the total in cents.
+ */
+function allocateCents(entries: DiffEntry[]): number {
+  // six decimals first: `0.333 * 100` is 33.300000000000004, and its floor must be 33
+  const exact = entries.map(
+    (entry) => Math.round(entry.function.points * entry.factor! * 1e8) / 1e6
+  )
+  const total = Math.round(exact.reduce((sum, cents) => sum + cents, 0))
+  const floors = exact.map((cents) => Math.floor(cents))
+  let left = total - floors.reduce((sum, cents) => sum + cents, 0)
+  const byFraction = exact
+    .map((cents, index) => ({ index, fraction: cents - floors[index] }))
+    .sort(
+      (a, b) =>
+        b.fraction - a.fraction ||
+        entries[a.index].function.name.localeCompare(entries[b.index].function.name)
+    )
+  for (const { index } of byFraction) {
+    if (left <= 0) break
+    floors[index]++
+    left--
+  }
+  entries.forEach((entry, index) => (entry.billable = floors[index] / 100))
+  return total
+}

@@ -351,10 +351,52 @@ test.group('diff: what each line is billed at', () => {
     assert.equal(line('d').factor, diff.factors.added)
     assert.equal(line('c').factor, diff.factors.removed)
     for (const entry of diff.entries)
-      assert.equal(entry.billable, entry.function.points * entry.factor!, entry.function.name)
+      assert.closeTo(
+        entry.billable!,
+        entry.function.points * entry.factor!,
+        0.01,
+        entry.function.name
+      )
 
-    const sum = diff.entries.reduce((total, entry) => total + entry.billable!, 0)
-    assert.equal(diff.billable, Math.round(sum * 100) / 100)
+    const cents = diff.entries.reduce(
+      (total, entry) => total + Math.round(entry.billable! * 100),
+      0
+    )
+    assert.equal(cents, Math.round(diff.billable * 100))
+  })
+
+  /**
+   * A team reading the JSON got `2.8000000000000003` for a deletion of 7 FP at 0.4, and
+   * every consumer had to round it — each in its own way. A line is money: cents, and the
+   * lines still add up to the total, the rounding remainder going to the line whose
+   * fraction was largest.
+   */
+  test('each line is in cents, and the cents add up to the total exactly', async ({ assert }) => {
+    const previous = result([
+      fn({ id: 'a', name: 'a', points: 1 }),
+      fn({ id: 'b', name: 'b', points: 1 }),
+      fn({ id: 'c', name: 'c', points: 1 }),
+      fn({ id: 'x', name: 'x', points: 7 }),
+    ])
+    const current = result([
+      fn({ id: 'a', name: 'a', points: 1, scopeHash: 'h2' }),
+      fn({ id: 'b', name: 'b', points: 1, scopeHash: 'h2' }),
+      fn({ id: 'c', name: 'c', points: 1, scopeHash: 'h2' }),
+    ])
+    // three lines of 0.333 each and a deletion of 7 × 0.4 = 2.8000000000000003
+    const diff = diffCounts(previous, current, { reasonFactors: { implementation: 0.333 } })
+
+    for (const entry of diff.entries)
+      assert.equal(entry.billable, Math.round(entry.billable! * 100) / 100, entry.function.name)
+    assert.equal(diff.entries.find((e) => e.function.name === 'x')!.billable, 2.8)
+    const lines = diff.entries.filter((e) => e.function.name !== 'x').map((e) => e.billable)
+    assert.sameMembers(lines, [0.33, 0.33, 0.34])
+    const cents = diff.entries.reduce(
+      (total, entry) => total + Math.round(entry.billable! * 100),
+      0
+    )
+    assert.equal(cents, Math.round(diff.billable * 100))
+    assert.equal(diff.billable, 3.8)
   })
 
   test("the text report shows each line's factor", async ({ assert }) => {

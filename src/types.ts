@@ -383,8 +383,9 @@ export type DiffEntry = {
   /** the factor this line is billed at — the per-reason one when set (plan 0.15 §A) */
   factor?: number
   /**
-   * `function.points × factor`, NOT rounded: the diff's `billable` is the rounded sum of
-   * these, so the lines always add up to the total. Absent on a diff built by hand.
+   * `function.points × factor` in cents. The cents of the lines add up to the diff's
+   * `billable` exactly: the rounding remainder goes to the lines with the largest fraction.
+   * Absent on a diff built by hand.
    */
   billable?: number
 }
