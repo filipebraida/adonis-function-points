@@ -159,7 +159,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
   const behaviors = new Map(
     entryPoints
       .filter((entry) => entry.handler)
-      .map((entry) => [entry.id, analyzer.analyze(entry.handler!)])
+      .map((entry) => [entry.id, analyzer.analyze(entry.handler!, entry.identity)])
   )
 
   const resolved = [...behaviors.values()].filter(
@@ -307,11 +307,19 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
       counted.confidence.warnings.push(`${matcher.label} matched nothing: it had no effect`)
 
   // a declaration that matched nothing had no effect, and whoever wrote it believes it did
-  for (const resolver of options.resolvers?.call ?? [])
-    if (resolver.declaration && resolver.declaration.hits() === 0)
+  const identities = new Set(entryPoints.map((entry) => entry.identity))
+  for (const resolver of options.resolvers?.call ?? []) {
+    if (!resolver.declaration) continue
+    if (resolver.declaration.hits() === 0)
       counted.confidence.warnings.push(
         `${resolver.declaration.kind}("${resolver.name}") matched no call: it had no effect`
       )
+    for (const identity of resolver.declaration.in ?? [])
+      if (!identities.has(identity))
+        counted.confidence.warnings.push(
+          `${resolver.declaration.kind}("${resolver.name}") in: '${identity}' matched no transaction: it had no effect`
+        )
+  }
 
   for (const { table, key } of undescribed)
     counted.confidence.warnings.push(

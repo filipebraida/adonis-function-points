@@ -51,7 +51,26 @@ export function isTechnicalWrite(
   ctx: import('./types.js').ResolverContext,
   resolvers: CallResolver[] = BUILTIN_CALL_RESOLVERS
 ): boolean {
-  return resolvers.some((resolver) => resolver.technicalWrite?.(call, ctx) === true)
+  return resolvers.some(
+    (resolver) => !resolver.declaration?.in && resolver.technicalWrite?.(call, ctx) === true
+  )
+}
+
+/**
+ * The transactions in which this call's writes are incidental, by declarations scoped with
+ * `in` (plan 0.15 §B). Asked once per call like `isTechnicalWrite`; the walk of each
+ * transaction decides whether its own identity is on the list.
+ */
+export function technicalWriteScopes(
+  call: import('ts-morph').CallExpression,
+  ctx: import('./types.js').ResolverContext,
+  resolvers: CallResolver[] = BUILTIN_CALL_RESOLVERS
+): string[] {
+  return resolvers.flatMap((resolver) =>
+    resolver.declaration?.in && resolver.technicalWrite?.(call, ctx) === true
+      ? resolver.declaration.in
+      : []
+  )
 }
 
 export function resolveCall(
@@ -140,6 +159,12 @@ export type IncidentalWritesOptions = {
   methods?: string[]
   /** a pattern over the callee's text */
   matching?: RegExp
+  /**
+   * The transactions where the write is incidental, by identity (`'GET /intakes/:param'`,
+   * the key `overrides` uses). Absent: everywhere. A call that is incidental on a page and
+   * the point of another route is declared for the page only (plan 0.15 §B).
+   */
+  in?: string[]
 }
 
 /**
@@ -174,6 +199,10 @@ export function incidentalWrites(options: IncidentalWritesOptions): CallResolver
       if (matched) hits++
       return matched
     },
-    declaration: { kind: 'incidentalWrites', hits: () => hits },
+    declaration: {
+      kind: 'incidentalWrites',
+      hits: () => hits,
+      ...(options.in ? { in: options.in } : {}),
+    },
   }
 }

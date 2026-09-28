@@ -15,7 +15,12 @@ import { detectAccess, hooksFiredBy, rootSymbolOf } from '../detectors/lucid.js'
 import { detectRawAccess } from '../detectors/raw_builder.js'
 import type { FunctionLookup, TableMap } from '../detectors/raw_builder.js'
 import type { PersistenceAccess, RelationMap, StoreSymbols } from '../detectors/lucid.js'
-import { BUILTIN_CALL_RESOLVERS, isTechnicalWrite, resolveCall } from '../resolvers/index.js'
+import {
+  BUILTIN_CALL_RESOLVERS,
+  isTechnicalWrite,
+  resolveCall,
+  technicalWriteScopes,
+} from '../resolvers/index.js'
 import { isApplicationCode, isSeeder, toPosix } from '../paths.js'
 import type { EventBindings } from '../sources/event_bindings.js'
 import { isIterationCall, isNoise, isNoiseMember } from './noise.js'
@@ -463,7 +468,7 @@ const pathOf = (file: string) => file.split('/').pop()?.replace(/\.ts$/, '') ?? 
 
 /** facts about a body, independent of who called it */
 type BodyFacts = {
-  accesses: { store: string; write: boolean; technical?: boolean }[]
+  accesses: { store: string; write: boolean; technical?: boolean; technicalIn?: string[] }[]
   /** validators used in this body */
   validators: string[]
   /** calls whose target resolves to a package: outside the boundary, noted */
@@ -487,7 +492,7 @@ type BodyFacts = {
   reads: StoreRead[]
   /** what this body hands to a renderer or a response, and what its `return` hands back */
   deliveries: import('./deliveries.js').BodyDeliveries
-  followUps: { ref: HandlerRef; by: string; technical?: boolean }[]
+  followUps: { ref: HandlerRef; by: string; technical?: boolean; technicalIn?: string[] }[]
   unresolved: UnresolvedCall[]
   bodyHash: string
 }
@@ -1067,8 +1072,18 @@ export function createAnalyzer(
     const injected = injectedFor(owner, file, app)
     const symbols = storeSymbolsFor(body, file, app, storesByName, relationsByStore)
 
-    const accesses: { store: string; write: boolean; technical?: boolean }[] = []
-    const followUps: { ref: HandlerRef; by: string; technical?: boolean }[] = []
+    const accesses: {
+      store: string
+      write: boolean
+      technical?: boolean
+      technicalIn?: string[]
+    }[] = []
+    const followUps: {
+      ref: HandlerRef
+      by: string
+      technical?: boolean
+      technicalIn?: string[]
+    }[] = []
     const unresolved: UnresolvedCall[] = []
     const packageCalls: PackageCall[] = []
     let rawBuilderCalls = 0
@@ -1123,6 +1138,7 @@ export function createAnalyzer(
             store: matcher.store,
             write,
             technical: write && isTechnicalWrite(call, context, resolvers),
+            technicalIn: write ? technicalWriteScopes(call, context, resolvers) : [],
           })
         }
         continue
@@ -1140,8 +1156,15 @@ export function createAnalyzer(
          * differently.
          */
         const technical = access.mode === 'write' && isTechnicalWrite(call, context, resolvers)
+        const technicalIn =
+          access.mode === 'write' ? technicalWriteScopes(call, context, resolvers) : []
 
-        accesses.push({ store: access.store, write: access.mode === 'write', technical })
+        accesses.push({
+          store: access.store,
+          write: access.mode === 'write',
+          technical,
+          technicalIn,
+        })
 
         /**
          * How the chain reads the store decides what leaves when nothing transforms
@@ -1243,8 +1266,9 @@ export function createAnalyzer(
         const write = raw.mode === 'write'
         // a raw write can be incidental too: the same declaration as any write (plan 0.14 §C)
         const technical = write && isTechnicalWrite(call, context, resolvers)
+        const technicalIn = write ? technicalWriteScopes(call, context, resolvers) : []
         for (const store of raw.stores) {
-          accesses.push({ store, write, technical })
+          accesses.push({ store, write, technical, technicalIn })
           if (!write) {
             const columns = raw.selected.get(store) ?? []
             reads.push({
@@ -1277,7 +1301,9 @@ export function createAnalyzer(
          * covers all of them.
          */
         const technical = isTechnicalWrite(call, context, resolvers)
-        for (const next of resolved.refs) followUps.push({ ref: next, by: resolved.by, technical })
+        const technicalIn = technicalWriteScopes(call, context, resolvers)
+        for (const next of resolved.refs)
+          followUps.push({ ref: next, by: resolved.by, technical, technicalIn })
         followedCalls.set(call, resolved.refs)
         continue
       }
@@ -1482,7 +1508,7 @@ export function createAnalyzer(
   const seededAnywhere = (): Set<string> => scanProject().seeded
 
   return {
-    analyze: (handler: HandlerRef) => run(handler),
+    analyze: (handler: HandlerRef, identity?: string) => run(handler, identity),
     writtenAnywhere,
     addressedAnywhere,
     seededAnywhere,
@@ -1490,7 +1516,11 @@ export function createAnalyzer(
     fileCount: () => project.getSourceFiles().length,
   }
 
-  function run(handler: HandlerRef): Behavior {
+  /**
+   * `identity`: the transaction being walked (`GET /intakes/:param`) — what a write
+   * declared incidental only IN some transactions is checked against (plan 0.15 §B).
+   */
+  function run(handler: HandlerRef, identity?: string): Behavior {
     const touches = new Set<string>()
     const writtenStores = new Set<string>()
     const inputFields = new Set<string>()
@@ -1654,7 +1684,16 @@ export function createAnalyzer(
       }
     }
 
-    const visit = (ref: HandlerRef, depth: number, technical = false) => {
+    /** is a write incidental in THIS transaction — everywhere, or by a declaration naming it */
+    const incidentalHere = (scopes: readonly string[] | undefined) =>
+      identity !== undefined && (scopes ?? []).includes(identity)
+
+    const visit = (
+      ref: HandlerRef,
+      depth: number,
+      technical = false,
+      technicalIn: readonly string[] = []
+    ) => {
       const key = `${ref.file}#${ref.member ?? ref.line ?? '*'}`
       if (visited.has(key) || depth > maxDepth) return
       visited.add(key)
@@ -1722,7 +1761,12 @@ export function createAnalyzer(
          */
         writtenStores.add(access.store)
         bodyWrites = true
-        if (!technical && !access.technical) writes = true
+        const incidental =
+          technical ||
+          access.technical === true ||
+          incidentalHere(technicalIn) ||
+          incidentalHere(access.technicalIn)
+        if (!incidental) writes = true
       }
 
       unresolved.push(...facts.unresolved)
@@ -1777,7 +1821,10 @@ export function createAnalyzer(
 
       for (const followUp of facts.followUps) {
         const before = trace.length
-        visit(followUp.ref, depth + 1, technical || followUp.technical === true)
+        visit(followUp.ref, depth + 1, technical || followUp.technical === true, [
+          ...technicalIn,
+          ...(followUp.technicalIn ?? []),
+        ])
         // record which strategy resolved the step that just entered the trace
         if (trace.length > before) trace[before].by = followUp.by
       }

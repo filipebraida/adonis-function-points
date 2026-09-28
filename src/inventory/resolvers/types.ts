@@ -126,5 +126,10 @@ export interface CallResolver {
    * Set by the configuration helpers (`incidentalWrites`): what was declared, and how many
    * calls it matched — a declaration that matched nothing had no effect, and is told so.
    */
-  declaration?: { kind: 'incidentalWrites'; hits(): number }
+  declaration?: {
+    kind: 'incidentalWrites'
+    hits(): number
+    /** the transactions it applies to; absent = everywhere (plan 0.15 §B) */
+    in?: string[]
+  }
 }
