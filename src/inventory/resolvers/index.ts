@@ -118,3 +118,62 @@ export function ignoreCalls(options: IgnoreCallsOptions): CallResolver {
     },
   }
 }
+
+/** the callee's method name, the way `ignoreCalls` reads it */
+function calleeMatches(
+  call: import('ts-morph').CallExpression,
+  methods: Set<string>,
+  matching?: RegExp
+): boolean {
+  const callee = call.getExpression()
+  const text = callee.getText()
+  if (matching?.test(text)) return true
+  if (methods.size === 0) return false
+  const method = callee.getKindName() === 'PropertyAccessExpression' ? text.split('.').pop() : text
+  return method !== undefined && methods.has(method)
+}
+
+export type IncidentalWritesOptions = {
+  /** the declaration's name — printed when it had no effect */
+  name: string
+  /** method or function names: `['recordVisit', 'ensureDefaultCatalogue']` */
+  methods?: string[]
+  /** a pattern over the callee's text */
+  matching?: RegExp
+}
+
+/**
+ * Writes that do not decide what a transaction IS — plan 0.14 §C, counting-decisions §9.
+ *
+ * The CPM classifies an elementary process by its primary intent. A page that counts its
+ * own visit, or creates a default catalogue the first time anybody reads it, writes — and
+ * is still a page; a callback that links an external account is a `GET` too, and writing
+ * is its point. The shapes are the same in the code, so the library lists every `GET`
+ * counted as EI and the team answers here, once per call, not once per route.
+ *
+ * The write is NOT hidden: the store is still maintained by this application — an ILF,
+ * an FTR of the transaction. Only the transaction's classification changes. This is the
+ * `technicalWrite` a hand-written resolver could always declare, without the resolver.
+ */
+export function incidentalWrites(options: IncidentalWritesOptions): CallResolver {
+  if (!options.methods?.length && !options.matching) {
+    throw new Error(
+      `incidentalWrites("${options.name}"): say which calls — \`methods\` or \`matching\``
+    )
+  }
+  const methods = new Set(options.methods ?? [])
+  let hits = 0
+
+  return {
+    name: options.name,
+    order: 1,
+    /** follows nothing: another strategy knows where the call goes */
+    resolve: () => [],
+    technicalWrite(call) {
+      const matched = calleeMatches(call, methods, options.matching)
+      if (matched) hits++
+      return matched
+    },
+    declaration: { kind: 'incidentalWrites', hits: () => hits },
+  }
+}

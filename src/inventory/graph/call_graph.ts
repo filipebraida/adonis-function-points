@@ -1192,8 +1192,10 @@ export function createAnalyzer(
             reason: gap,
           })
         const write = raw.mode === 'write'
+        // a raw write can be incidental too: the same declaration as any write (plan 0.14 §C)
+        const technical = write && isTechnicalWrite(call, context, resolvers)
         for (const store of raw.stores) {
-          accesses.push({ store, write })
+          accesses.push({ store, write, technical })
           if (!write) {
             const columns = raw.selected.get(store) ?? []
             reads.push({

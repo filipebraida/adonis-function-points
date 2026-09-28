@@ -122,4 +122,9 @@ export interface CallResolver {
    * `ignores`, and would be wrong to.
    */
   technicalWrite?(call: CallExpression, ctx: ResolverContext): boolean
+  /**
+   * Set by the configuration helpers (`incidentalWrites`): what was declared, and how many
+   * calls it matched — a declaration that matched nothing had no effect, and is told so.
+   */
+  declaration?: { kind: 'incidentalWrites'; hits(): number }
 }

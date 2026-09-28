@@ -57,6 +57,13 @@ export { calibrate, parseSamples } from './src/albrecht/calibration.js'
 export type { Calibration, CalibrationSample, TypeCalibration } from './src/albrecht/calibration.js'
 
 /** Tracing strategies: the one public extension point. */
-export { BUILTIN_CALL_RESOLVERS, ignoreCalls } from './src/inventory/resolvers/index.js'
-export type { IgnoreCallsOptions } from './src/inventory/resolvers/index.js'
+export {
+  BUILTIN_CALL_RESOLVERS,
+  ignoreCalls,
+  incidentalWrites,
+} from './src/inventory/resolvers/index.js'
+export type {
+  IgnoreCallsOptions,
+  IncidentalWritesOptions,
+} from './src/inventory/resolvers/index.js'
 export type { CallResolver, ResolverContext } from './src/inventory/resolvers/types.js'

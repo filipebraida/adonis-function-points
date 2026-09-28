@@ -307,6 +307,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     transactionalFunctions
   )
   warnings.push(...storelessRouteWarnings(notCounted))
+  warnings.push(...primaryIntentWarnings(input, transactionalFunctions))
   warnings.push(...lookAlikeWarnings(functions))
   warnings.push(...seededOnlyWarnings(functions, grouping.members, input.seededAnywhere))
 
@@ -430,6 +431,60 @@ function storelessRouteWarnings(notCounted: NotCounted[]): string[] {
       ? [`  … and ${storeless.length - 25} more — fp:inventory lists every one under "not counted"`]
       : []),
   ]
+}
+
+/**
+ * Primary intent — plan 0.14 §C, counting-decisions §9. A `GET` counted as EI is listed
+ * with what it writes and where: a page that counts its visit or creates a default on first
+ * read is still a page, a callback that links an account is not, and the code cannot tell
+ * them apart. The list asks; `incidentalWrites()` answers. What an answer reclassified is
+ * said too, so a declaration never moves a number unseen.
+ */
+function primaryIntentWarnings(input: CountInput, functions: CountedFunction[]): string[] {
+  const byIdentity = new Map(input.entryPoints.map((entry) => [entry.identity, entry]))
+  const reading = (identity: string) => /^(GET|HEAD) /.test(identity)
+  const lines: string[] = []
+
+  const writingGets = functions
+    .filter((fn) => fn.type === 'EI' && reading(fn.name))
+    .map((fn) => {
+      const entry = byIdentity.get(fn.name)
+      const behavior = entry && input.behaviors.get(entry.id)
+      const bodies = (behavior?.trace ?? [])
+        .filter((step) => step.writes)
+        .map(
+          (step) =>
+            `${toPosix(relativeTo(input.app.root, step.file))}${step.member ? `#${step.member}` : ''}`
+        )
+      return (
+        `  ${fn.name} — writes ${(behavior?.writtenStores ?? []).join(', ')}` +
+        (bodies.length > 0 ? ` (${[...new Set(bodies)].join(', ')})` : '')
+      )
+    })
+    .sort()
+  if (writingGets.length > 0)
+    lines.push(
+      `${writingGets.length} GET route(s) counted as EI because they write — the CPM classifies by ` +
+        `primary intent; a write that only supports the page (a visit counted, a default created on ` +
+        `first read) can be declared with incidentalWrites():`,
+      ...writingGets
+    )
+
+  const reclassified = functions
+    .filter((fn) => fn.type !== 'EI' && fn.id.startsWith('tx:'))
+    .filter((fn) => {
+      const entry = byIdentity.get(fn.name)
+      const behavior = entry && input.behaviors.get(entry.id)
+      return behavior !== undefined && !behavior.writes && behavior.writtenStores.length > 0
+    })
+    .map((fn) => fn.name)
+    .sort()
+  if (reclassified.length > 0)
+    lines.push(
+      `${reclassified.length} transaction(s) write only incidentally (declared) and are classified ` +
+        `by what they show: ${reclassified.join(', ')}`
+    )
+  return lines
 }
 
 /**

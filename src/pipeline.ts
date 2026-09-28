@@ -278,6 +278,13 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
     options
   )
 
+  // a declaration that matched nothing had no effect, and whoever wrote it believes it did
+  for (const resolver of options.resolvers?.call ?? [])
+    if (resolver.declaration && resolver.declaration.hits() === 0)
+      counted.confidence.warnings.push(
+        `${resolver.declaration.kind}("${resolver.name}") matched no call: it had no effect`
+      )
+
   for (const { table, key } of undescribed)
     counted.confidence.warnings.push(
       `declared in boundary.${key}: '${table}' — no model and no generated-schema class ` +
