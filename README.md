@@ -1,19 +1,18 @@
 # @filipebraida/adonis-function-points
 
-Automated function point counting and code metrics for AdonisJS applications.
+Function point counting for AdonisJS applications, straight from the source code.
 
-Counts IFPUG function points straight from the source, following the OMG
-**Automated Function Points** standard (ISO/IEC 19515). Every number it prints
-says where it came from: the file, the line, the rule from the standard, and the
-origin of each DET and each FTR.
-
-```bash
-node ace fp:count
-```
+It reads an AdonisJS 7 + Lucid application and produces an IFPUG unadjusted function point
+count, following the OMG **Automated Function Points** standard (ISO/IEC 19515). Nothing runs:
+no database, no `.env`, no boot. Every number it prints says where it came from — the file, the
+rule of the standard, and the origin of each DET and each FTR — because a function point count
+that gets invoiced will be disputed, and a number without provenance cannot be defended.
 
 ```
+$ node ace fp:count
+
 Unadjusted count: 46 FP
-Ruleset: afp@1.9.0
+Ruleset: afp@1.11.0
 
 type      n     FP
 ILF       2     14
@@ -30,68 +29,58 @@ POST /apontamentos                      EI        3    1    3
 PUT /apontamentos/:param                EI        5    2    4
 DELETE /apontamentos/:param             EI        1    2    3
 POST /apontamentos/justificar           EI        4    2    3
-GET /presenca                           EO       13    3    5
-GET /presenca/relatorio                 EO       13    3    5
+GET /presenca                           EO       14    3    5
+GET /presenca/relatorio                 EO       14    3    5
 ```
 
-## Install
+## Quick start
 
 ```bash
-npm i @filipebraida/adonis-function-points
+npm i -D @filipebraida/adonis-function-points
 node ace configure @filipebraida/adonis-function-points
+
+node ace fp:count                        # the count
+node ace fp:explain "POST /apontamentos" # why one function came out that way
 ```
 
-Requires **AdonisJS 7** and **Lucid 22** (see [Support](#support)). In CI, or
-for a one-off count on a project you do not want to touch, the standalone
-binary needs no install, no `.env` and no database:
+For CI, or a one-off count of a project you do not want to touch, the standalone binary needs no
+install in the application:
 
 ```bash
 npx @filipebraida/adonis-function-points count --root ./my-app
 ```
 
-Both front-ends call the same code and cannot disagree about a number. Which
-one to use where, what a saved count records, and how a pull request becomes
+Both front-ends run the same code and cannot disagree about a number. How a pull request becomes
 two counts and a comparison: [`docs/ci.md`](docs/ci.md).
 
-## Commands
+## What it counts, and how it reads the application
 
-| command                               | what it does                                               |
-| ------------------------------------- | ---------------------------------------------------------- |
-| `node ace fp:count`                   | counts unadjusted function points                          |
-| `node ace fp:inventory`               | the raw facts: stores, routes, tracing coverage            |
-| `node ace fp:metrics`                 | density, coupling and conformance, from the same run       |
-| `node ace fp:explain <name>`          | why one function was counted that way                      |
-| `node ace fp:diff <previous.json>`    | additions / modifications / deletions, and the billable FP |
-| `node ace fp:calibrate <samples.csv>` | correction factors against a manual count                  |
+- **Data functions** are the Lucid models, with their columns from the model or from the
+  generated schema. A table the application writes is an **ILF**; one it only reads is an
+  **EIF**. A `hasMany`/`hasOne` child that no code addresses on its own folds into its parent as
+  a **RET**. Technical tables (sessions, tokens, lookups) are left out by the standard's naming
+  filter, with the reason in the report.
+- **Transactions** are the HTTP routes and the ace commands. From each handler the analysis walks
+  the call graph — actions, services, events and their listeners, dispatched jobs, transformers,
+  local and imported functions — and records every store it reads or writes, through the models
+  or through the raw query builder (`db.from('orders')`, `db.rawQuery(sql)`). A transaction that
+  writes is an **EI**, one that only reads is an **EO**. A route that reaches no data is not a
+  transaction, and is listed, not dropped.
+- **DETs** come from what crosses the boundary: the validator's fields and what is read off the
+  request on the way in; on the way out, what the transaction delivers — the props handed to the
+  page, the response payload, the keys a transformer returns, the columns a `select` names.
+  Identifiers and framework timestamps are not DETs.
+- **Packages are outside the boundary.** Their code is never followed: what a package does with
+  its own tables is technical, and what it hands back is a value.
 
-`fp:count --out count.json` saves a count; `fp:diff count.json` compares that
-saved count against the current state of the application. It deliberately does
-**not** take a git ref: booting an older checkout, with possibly different
-dependencies, is a problem not worth solving.
+The reasoning behind each of these, with the rule of the standard that settles it:
+[`docs/design/counting-decisions.md`](docs/design/counting-decisions.md).
 
-```
-adonis-function-points <command> [options]
-
-  count                    count the unadjusted function points
-  inventory                the raw facts: stores, routes, tracing coverage
-  explain <name>           why one function was counted that way
-  metrics                  density, coupling and conformance, from the same run
-  diff <previous.json>     additions / modifications / deletions, and billable FP
-  calibrate <samples.csv>  correction factors against a manual count
-
-  --root <path>            application to analyse (default: the current directory)
-  --out <path>             write the result as JSON to this path
-  --json                   print JSON instead of a table
-  --min-coverage <0..1>    fail below this tracing coverage
-```
-
-Every command exits non-zero when the count cannot be produced — coverage
-below the minimum, an unreadable configuration, a saved count from a different
-rule set — so a CI job fails instead of publishing a number nobody can defend.
-
-### `fp:explain` — the number has to be defensible
+## Every number is explained
 
 ```
+$ node ace fp:explain "POST /apontamentos"
+
 POST /apontamentos  —  EI, low complexity, 3 FP
 module: ponto
 
@@ -110,52 +99,79 @@ Path walked:
     actions/registrar_ponto.ts#handle  (action-object) [writes]
 ```
 
-If function points get invoiced, someone will dispute a number — and a number
-without provenance is indefensible.
+What the analysis could not read is not hidden. Below the count, a **confidence** block lists it:
 
-### `fp:metrics` — the counterweight
+- calls it could not follow, one per site, with the reason — they lower the coverage;
+- routes that did not become a function, and why (no handler, reaches no data store);
+- values counted as a floor (a JSON column, an open validator, a page it could not read);
+- `GET` routes counted as EI because they write — for a person to confirm (see
+  [a write that does not decide the type](#a-write-that-does-not-decide-the-type));
+- every declaration in the configuration and what it changed.
 
-If function points pay, the team optimises function points: more models, more
-endpoints, less reuse. Density, coupling, instability and conformance come free
-from the same inventory and are reported beside the number — what each metric
-means and what it deliberately does not measure: [`docs/metrics.md`](docs/metrics.md).
+`fp:inventory` prints the full lists; `--json` gives them to a script.
 
-### `fp:diff` — what change is worth
+## Commands
 
-Additions, modifications and deletions between two saved counts, priced by the
-factors the contract names: AEP by default, or `diff: { preset: 'sisp' }` for the
-Roteiro de Métricas do SISP v3.0 (inclusão 1,00, alteração × FI 0,63, exclusão
-0,50; `factors: { changed: 0.84 }` when the contractor did not develop the function). A modification is split by **why** it changed —
-type, size, or implementation only — so a refactor is visible before it is
-billed at full value. The reasoning, and what the default leaves on the table:
-[counting-decisions §5](docs/design/counting-decisions.md#5-identity-of-a-function-across-versions-fpdiff).
+| command                               | what it does                                                  |
+| ------------------------------------- | ------------------------------------------------------------- |
+| `node ace fp:count`                   | the unadjusted function point count                           |
+| `node ace fp:explain <name>`          | why one function was counted that way                         |
+| `node ace fp:inventory`               | the raw facts: stores, routes, coverage, what was not counted |
+| `node ace fp:metrics`                 | density, coupling and conformance, from the same run          |
+| `node ace fp:diff <a.json> [b.json]`  | additions, modifications and deletions, and the billable FP   |
+| `node ace fp:calibrate <samples.csv>` | correction factors against a manual count                     |
 
-Every line of the diff carries the factor it was billed at and its weighted value
-(`entries[].factor`, `entries[].billable`); the total is their rounded sum.
+The standalone binary takes the same commands (`count`, `explain`, `inventory`, …) and these
+options:
 
-**Measuring a piece of work — an issue, a sprint — is a net change per function**, and how to
-get it depends on how the work landed:
+```
+--root <path>            application to analyse (default: the current directory)
+--out <path>             write the result as JSON to this path
+--json                   print JSON instead of text
+--min-coverage <0..1>    fail below this tracing coverage
+```
 
-- **Contiguous work** (a branch, a merge request): `fp:count --out` at its base and at its
-  head, then `fp:diff base.json head.json`.
-- **Commits interleaved with other work** (straight to the main branch): the span from the
-  first commit to the last includes whatever else landed in between — on a measured issue, 121
-  FP with 24 functions of other issues, against 35 FP of its own. Diff each of its commits
-  against its parent, and consolidate each function by its ends: its state before the first
-  commit that touched it, and after the last.
+Every command exits non-zero when it cannot produce a number it can stand behind — coverage below
+the minimum, an unreadable configuration, two counts made under different rules — so a CI job
+fails instead of publishing it.
 
-Either way, never the plain sum of per-commit diffs: a function created in one commit and
-changed in the next is, for the piece of work, one inclusion; summed, it is billed as an
-inclusion **and** a modification.
+`fp:metrics` is the counterweight: if function points pay, a team is paid to add models and
+endpoints. Density, coupling and conformance come from the same run and sit beside the number —
+[`docs/metrics.md`](docs/metrics.md).
+
+## Measuring change
+
+`fp:count --out count.json` saves a count; `fp:diff` compares two of them, or one against the
+current code. Functions are matched by identity, so moving a controller between modules is not a
+deletion plus an addition.
+
+Each difference is priced by the factors the contract names: OMG **AEP** by default, or
+`diff: { preset: 'sisp' }` for the Roteiro de Métricas do SISP (inclusão 1,00, alteração × 0,63,
+exclusão 0,50). A modification is split by **why** it changed — type, size, or implementation only
+— so a refactor is visible before it is billed at full value, and `diff.reasonFactors` prices each
+reason by the contract. Every line carries the factor it was billed at and its weighted value; the
+total is their rounded sum.
+
+**Measuring a piece of work** — an issue, a sprint — means the net change of each function it
+touched:
+
+- **contiguous work** (a branch, a merge request): count its base and its head, then
+  `fp:diff base.json head.json`;
+- **commits interleaved with other work** on the main branch: the span from the first commit to
+  the last includes everything else that landed in between. Diff each of its commits against its
+  parent, and consolidate each function by its ends — its state before the first commit that
+  touched it, and after the last.
+
+Never the plain sum of per-commit diffs: a function created in one commit and changed in the next
+is one inclusion, not an inclusion and a modification.
 
 ## Configuration
 
-Discovery does the technical work — subpath aliases, generated artefacts,
-layout, scan roots are all read from the application, never assumed. What stays
-configurable is what is a **business decision** that no heuristic should make.
-
-**Every option here has an effect, and a test proving it.** Configuration the
-code does not honour is worse than none at all.
+Everything technical — aliases, layout, generated files, where the models live — is discovered
+from the application. What is configurable is what only a person can decide: the boundary of the
+application, and what the analysis cannot see. **Nothing in the application's code has to change
+for the count:** where the analysis cannot see something, it says so, and the configuration
+answers.
 
 ```ts
 // config/function_points.ts
@@ -163,86 +179,61 @@ import { defineConfig } from '@filipebraida/adonis-function-points'
 
 export default defineConfig({
   boundary: {
-    infrastructure: ['access_tokens', 'audits'], // excluded, with the reason in the report
-    externallyMaintained: ['erp_customers'], // counted as EIF instead of ILF
-    business: ['chat_sessions'], // the AFP naming filter caught it by accident
-    // a table no model reads (a package's) is named here too: its columns come from the
-    // generated schema, and the report lists it as counted by declaration
-    // technicalPatterns: [...DEFAULT_TECHNICAL_PATTERNS], // replaces the filter's naming list
-    ignoreEntryPoints: ['prometheus.metrics'],
+    infrastructure: ['audits'], // technical: excluded, with the reason in the report
+    externallyMaintained: ['erp_customers'], // another system maintains it: an EIF
+    business: ['chat_sessions'], // user data the naming filter caught by mistake
+    ignoreEntryPoints: ['GET /health'],
   },
-
-  // data the user recognises, reached by a path the analysis never follows — declared, never modelled
-  logicalFiles: {
-    Role: {
-      table: 'authz_roles', // structure from the generated schema
-      writes: [/\bauthz\.store\.(createRole|deleteRole)$/], // a package's API
-      reads: [/\bauthz\.store\.listRoles$/],
-      reason: 'roles the administrator maintains through the authorization package',
-    },
-    Settings: {
-      type: 'Settings', // a type, an interface or a DTO class of the application
-      exclude: ['updatedAt'],
-      reads: ['SettingsService.get'], // an application body
-      writes: ['SettingsService.update'], // declared where the intent is
-      reason: 'deadlines set by the administrator, kept in a persistent cache',
-    },
-  },
-
-  dataFunctions: { grouping: 'usage' }, // 'none' keeps every table its own data function
   maxDepth: 3, // how far to follow the call graph
-  messageDet: 0, // 1 restores the IFPUG confirmation-message DET
-  minCoverage: 0.85, // below this, the analysis fails
+  minCoverage: 0.85, // below this, the count fails
+  messageDet: 0, // 1 adds the confirmation-message DET a manual count includes
 })
 ```
 
-`complexityTables` and `weights` are also accepted, for calibrating the bands
-against a manual count.
+Every run prints which configuration produced it. A configuration file that exists and fails to
+load is an error: the count is not produced, rather than silently falling back to the defaults.
+Every option has an effect, and a declaration that matched nothing is reported.
 
-Both front-ends load this file from the application root, and every run prints
-which configuration produced it — the file path, or `defaults` when there is
-none. A configuration file that exists and fails to load is an **error**: the
-count is not produced. Falling back to the defaults with a warning would change
-the number without telling anyone, and the number becomes an invoice.
+### A table no model reads
 
-### Custom code pattern
+A package's migration may create a table the application reads or writes through the raw query
+builder, with no model for it. Name it in `boundary.business`, `boundary.externallyMaintained` or
+`boundary.infrastructure`: its columns come from the generated schema, and the report lists it as
+counted by declaration. Undeclared, each access to it is listed as an unresolved call.
+
+### Data the analysis cannot see at all
+
+Some data the user recognises is reached by a path static analysis does not follow: a table a
+package maintains through its own API, settings kept in a persistent cache, records read from
+another system over HTTP. Declare each one as a logical file — where its structure comes from,
+and which calls read or write it:
 
 ```ts
-import type { CallResolver } from '@filipebraida/adonis-function-points'
-
-const repositoryResolver: CallResolver = {
-  name: 'my-repository',
-  order: 5, // lower runs first; custom strategies run before the built-ins
-  resolve(call, ctx) {
-    // return the bodies to follow, or [] if this is not your pattern
-    return []
+logicalFiles: {
+  Role: {
+    table: 'authz_roles', // structure from the generated schema
+    writes: [/\bauthz\.store\.(createRole|deleteRole)$/], // a package's API, by callee
+    reads: [/\bauthz\.store\.listRoles$/],
+    reason: 'roles the administrator maintains through the authorization package',
   },
-}
-
-export default defineConfig({
-  resolvers: { call: [repositoryResolver] },
-})
+  Settings: {
+    type: 'Settings', // a type, an interface or a DTO class of the application
+    exclude: ['updatedAt'],
+    reads: ['SettingsService.get'], // an application method, by name
+    writes: ['SettingsService.update'], // declare the write where the intent is
+    reason: 'deadlines set by the administrator, kept in a persistent cache',
+  },
+},
 ```
 
-The **first** strategy that claims a call wins. That is not an implementation
-detail: `CreateUserJob.dispatch(p)`, `UserService.create(p)` and `User.find(p)`
-are all `Identifier.method(args)`, and only ordering tells them apart.
+A declared write makes the transaction an EI and the file an ILF; a read makes it an FTR. The
+report lists every declared file, where its DETs came from, and the function points it
+contributes.
 
-Built-in strategies, most specific first: `same-class-method`, `action-object`,
-`event-dispatch`, `job-dispatch`, `transformer`, `static-service`,
-`property-service`, `module-function`.
+### A call that reaches no data
 
-A job dispatch and an event dispatch are followed as part of the **same**
-transaction: the user clicks and the effect happens, whatever thread runs it.
-Event bindings are read from `emitter.on(event, [listeners])`, so a listener's
-reads and writes count towards the transaction that dispatched the event.
-
-### Declaring that a call reaches no data
-
-`resolve` has two outcomes — _followed_ and _not mine_ — and sometimes a third
-is the truth: the call is recognised, and it reaches no data store. A wrapper
-over a rate limiter or an attachment variant is a real example. Without a way
-to say so, such a call stays unresolved and drags the coverage gate down.
+A call the analysis cannot follow lowers the coverage. When it is known to reach no data — a rate
+limiter, an attachment's URL — say so:
 
 ```ts
 import { ignoreCalls } from '@filipebraida/adonis-function-points'
@@ -257,150 +248,121 @@ export default defineConfig({
 })
 ```
 
-Or, for a shape the factory does not cover, a strategy with `ignores(call)`
-returning `true` — "this is mine, and it touches no data store". `ignores` is
-asked before `resolve`, in the same order, so a later and more generic strategy
-cannot follow the call into a body it has no business reading. It stays a
-**named** strategy on purpose: the volume it declared data-free still appears in
-the confidence block of `fp:count`, because a silent drop is the worst defect
-this package can have — whoever writes it.
+### A write that does not decide the type
 
-### Declaring that a write does not decide the type
-
-The CPM classifies a transaction by its primary intent. A page that counts its own
-visit, or creates a default the first time anybody reads it, writes — and is still a
-page. `fp:count` lists every `GET` it counted as an EI, with the stores written and the
-bodies writing them; where the write only supports the page, say so once, about the call:
+A transaction is classified by its primary intent. A page that counts its own visit, or creates a
+default the first time it is opened, writes — and is still a page. The count lists every `GET`
+counted as EI with what it writes; where the write only supports the page, declare it:
 
 ```ts
 import { incidentalWrites } from '@filipebraida/adonis-function-points'
 
-export default defineConfig({
-  resolvers: {
-    call: [
-      incidentalWrites({ name: 'visits and defaults', methods: ['recordVisit', 'ensureDefaults'] }),
-    ],
-  },
-})
-```
+incidentalWrites({ name: 'visits', methods: ['recordVisit'] })
 
-The store stays maintained — an ILF, an FTR — and only the classification changes. The
-report says which transactions the declaration reclassified, and a declaration that
-matched nothing had no effect and is told so. A method that is the point of one route (a
-user switching organisation) and incidental on another is declared for the pages only:
-
-```ts
+// incidental on these pages, but the point of another route (a user switching organisation):
 incidentalWrites({
   name: 'remembered organisation',
   methods: ['rememberOrganisation'],
-  in: ['GET /orders/:param', 'GET /customers/:param'], // transaction identities, as in `overrides`
+  in: ['GET /orders/:param', 'GET /customers/:param'],
 })
 ```
 
-A route not listed — including one added later — stays an EI and shows in the list.
+The store stays maintained — an ILF and an FTR — and only the classification changes. A route not
+listed in `in`, including one added later, stays an EI and keeps appearing in the list.
+
+### A value the analysis cannot read
+
+A JSON column whose fields live in a schema, an open validator: each counts as 1 DET, a floor, and
+is named in the report. Declare where the fields are, by origin, and the declaration reaches every
+function that carries it:
+
+```ts
+opaque: {
+  'Survey.answers': { schemas: 'surveySchema', reason: 'the form is a JSON Schema in the seed' },
+},
+```
+
+`overrides.<function>.det` remains for a structure that exists only in the database. Both require
+a reason, printed by `fp:explain` beside the number.
+
+### A code pattern the analysis does not know
+
+The call graph is followed by a list of strategies, most specific first: `same-class-method`,
+`action-object`, `event-dispatch`, `job-dispatch`, `transformer`, `static-service`,
+`property-service`, `local-function`, `module-function`. A project with its own convention adds
+one; the first strategy that claims a call wins.
+
+```ts
+import type { CallResolver } from '@filipebraida/adonis-function-points'
+
+const repositoryResolver: CallResolver = {
+  name: 'my-repository',
+  order: 5, // lower runs first; custom strategies run before the built-ins
+  resolve(call, ctx) {
+    return [] // the bodies to follow, or [] when the call is not this pattern
+  },
+}
+
+export default defineConfig({ resolvers: { call: [repositoryResolver] } })
+```
 
 ## Support
 
-|                       | v1                                                           |
+| application           | supported                                                    |
 | --------------------- | ------------------------------------------------------------ |
 | AdonisJS 7 + Lucid 22 | **yes** — generated schema, `codegen`, with or without Tuyau |
 | AdonisJS 6 / Lucid 21 | no — detected and reported                                   |
 | Kysely and other ORMs | no — detected and reported                                   |
 
-Out of scope, the package says it does not support the application. It never
-counts zero in silence.
+An unsupported application is told so. The package never counts zero in silence.
 
 ## Known limitations
 
-Inherited from the AFP standard itself, not from this implementation:
+Most come from the AFP standard itself:
 
-- **EQ is collapsed into EO.** Telling an inquiry from an output requires
-  knowing whether there is derived data or calculation, which static analysis
-  cannot see. AFP mandates the collapse.
-- **RET comes from usage, not from the user's view.** A `hasMany`/`hasOne`
-  child that no application code addresses directly folds into its parent as a
-  RET; one that has its own queries stays its own data function. That is the
-  only signal static analysis has, and it is conservative: it groups only when
-  the code cannot see the child apart from the parent. A child hanging off two
-  parents stays apart and is reported.
-- **Confirmation and error messages** count 1 DET in a manual count and are
-  invisible here — a known systematic divergence of −1 DET per transaction.
-  `messageDet: 1` restores it.
-- **VAF is not calculated.** The 14 general system characteristics require human
-  judgement. AFP fixes VAF = 1, and the unadjusted count is what public
-  contracts in Brazil use anyway.
-- **The modification factor in `fp:diff` is 1.** AEP grades it from 0.25 to
-  1.75 through Effort Complexity, which needs cyclomatic complexity this package
-  does not measure. A flat 1 prices a one-line fix and a rewrite the same, and
-  the report says so with the amount at stake. What it does discriminate is
-  **why** a function changed — type, size, or implementation only — and
-  `diff.reasonFactors` prices a refactor by the contract rather than by a number
-  the tool invented. See counting-decisions §5.
-- **Schema-driven applications undercount their input.** When the fields a user
-  fills live in a JSON column whose schema is stored in the database, there is
-  nothing for static analysis to read: the column counts as 1 DET — a floor,
-  and `fp:count` names it on every run. The way out is to declare where the
-  fields live, by origin, and the declaration reaches every function that
-  carries the column:
-
-  ```ts
-  opaque: {
-    'Survey.answers': { schemas: 'surveySchema', reason: 'the form is a JSON Schema in the seed' },
-  }
-  ```
-
-  The reason is required, `fp:explain` prints it beside the number, and
-  `fp:count` reports what share of the total came from a declaration.
-  `overrides.<fn>.det` remains for a schema that lives only in the database.
-  See counting-decisions §8.
-
-- **Only HTTP routes are collected as entry points.** An ace command that
-  imports a spreadsheet and a scheduled job are transactional functions under
-  IFPUG; they are out of v1.
+- **EQ is counted as EO.** Telling an inquiry from an output needs to know whether the output
+  derives data, which static analysis cannot see; AFP mandates the collapse.
+- **RET comes from usage.** A child table folds into its parent only when no code addresses it on
+  its own — the only signal the code gives. A child of two parents stays apart, and is reported.
+- **Confirmation and error messages** count 1 DET in a manual count and are invisible here;
+  `messageDet: 1` restores them.
+- **VAF is not calculated.** The general system characteristics need human judgement; AFP fixes
+  VAF = 1, and the unadjusted count is what public contracts in Brazil use.
+- **A modification is priced by a flat factor.** AEP grades it by effort complexity, which needs
+  cyclomatic complexity this package does not measure. What it does separate is why a function
+  changed, and `diff.reasonFactors` prices that by the contract.
+- **Structure that lives only in the database** — a form stored as data, a schema in a seed — is a
+  floor until declared (`opaque`, `overrides`).
 
 ## Benchmark
 
-The only reference in this project not produced by its own authors is the case
-study in **Vazquez, Simões & Albert (2011)**: 46 FP by hand, **46 FP** here, 8 of
-10 functions exact and the two that differ predicted in writing before the run.
-How the fixture was frozen, what Ligeiro got, and why the total is more
-defensible than any single function: [`docs/benchmark.md`](docs/benchmark.md).
+The one reference in this project not produced by its authors is the case study in **Vazquez,
+Simões & Albert (2011)**: 46 FP by hand, **46 FP** here, 8 of 10 functions exact, and the two that
+differ predicted in writing before the run — [`docs/benchmark.md`](docs/benchmark.md).
 
 ## References
 
-- **OMG Automated Function Points (AFP) 1.0** — ISO/IEC 19515:2019. The
-  normative basis for the count: technical data filter (§6.5.2.1.1), transaction
-  detection (§6.5.3), ILF vs EIF by maintenance (§6.5.4), DET/RET/FTR (§7.2,
-  §7.3).
-- **OMG Automated Enhancement Points (AEP) 1.0** — the basis for `fp:diff`:
-  added / modified / deleted (§6.3) and the complexity factors (§6.5).
-- **IFPUG Counting Practices Manual (CPM) 4.3** — the underlying method AFP
-  automates.
-- **Vazquez, C. E., Simões, G. S., Albert, R. M. (2011).** _Análise de Pontos de
-  Função: Medição, Estimativas e Gerenciamento de Projetos de Software._ Érica.
-  The benchmark case study.
-- **Pinel, B. (2012).** _Ligeiro: uma ferramenta para contagem automática de
-  pontos de função._ COPPE/UFRJ.
-  [pesc.coppe.ufrj.br](https://pesc.coppe.ufrj.br/uploadfile/1343153707.pdf)
+- **OMG Automated Function Points (AFP) 1.0** — ISO/IEC 19515:2019: technical data (§6.5.2.1),
+  transaction detection (§6.5.3), ILF vs EIF by maintenance (§6.5.4), DET/RET/FTR (§7.2, §7.3).
+- **OMG Automated Enhancement Points (AEP) 1.0** — added, modified and deleted functions (§6.3)
+  and their factors (§6.5), the basis for `fp:diff`.
+- **IFPUG Counting Practices Manual (CPM) 4.3** — the method AFP automates.
+- **Roteiro de Métricas de Software do SISP 3.0** — the `sisp` preset of `fp:diff`.
+- **Vazquez, C. E., Simões, G. S., Albert, R. M. (2011).** _Análise de Pontos de Função: Medição,
+  Estimativas e Gerenciamento de Projetos de Software._ Érica.
+- **Pinel, B. (2012).** _Ligeiro: uma ferramenta para contagem automática de pontos de função._
+  COPPE/UFRJ. [pesc.coppe.ufrj.br](https://pesc.coppe.ufrj.br/uploadfile/1343153707.pdf)
 
 ## Design documents
 
-The reasoning behind the count lives with the code:
-
-- [`docs/design/architecture.md`](docs/design/architecture.md) — why the package
-  exists, its principles, the layers, and what is discovered instead of configured
-- [`docs/design/counting-decisions.md`](docs/design/counting-decisions.md) —
-  each edge case, with the AFP rule that settles it
-- [`docs/design/resolvers.md`](docs/design/resolvers.md) — the catalogue of code
-  patterns and how each is followed
-- [`docs/benchmark.md`](docs/benchmark.md), [`docs/ci.md`](docs/ci.md),
-  [`docs/metrics.md`](docs/metrics.md)
-
-Three further documents are kept as a **dated record** of how the design was
-arrived at, in Portuguese, and are not a reference for current behaviour:
-[`implementation-plan.md`](docs/design/implementation-plan.md),
-[`adonisjs-variation.md`](docs/research/adonisjs-variation.md) and
-[`external-validation.md`](docs/research/external-validation.md).
+- [`docs/design/counting-decisions.md`](docs/design/counting-decisions.md) — each edge case, and
+  the rule of the standard that settles it
+- [`docs/design/architecture.md`](docs/design/architecture.md) — principles, layers, and what is
+  discovered instead of configured
+- [`docs/design/resolvers.md`](docs/design/resolvers.md) — the code patterns and how each is
+  followed
+- [`docs/ci.md`](docs/ci.md), [`docs/metrics.md`](docs/metrics.md),
+  [`docs/benchmark.md`](docs/benchmark.md)
 
 ## Contributing
 
@@ -410,9 +372,8 @@ pnpm test                                    # lint + the suite, from source
 pnpm run compile && pnpm run test:package    # the packed tarball, installed and used
 ```
 
-Two house rules: a fixture with a known answer comes **before** the code, and a
-silent drop is the worst possible defect. The rest is in
-[`CONTRIBUTING.md`](CONTRIBUTING.md).
+A fixture with a hand-written reference count comes **before** the code, and nothing is dropped
+in silence. The rest is in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 

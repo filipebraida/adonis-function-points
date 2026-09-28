@@ -2,7 +2,7 @@
 
 ```bash
 pnpm install
-pnpm test              # lint + 427 tests, from source
+pnpm test              # lint + the suite, from source
 pnpm run typecheck
 pnpm run compile && pnpm run test:package   # the packed tarball, installed and used
 ```
