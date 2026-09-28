@@ -206,15 +206,15 @@ function describeLogicalFiles(
       continue
     }
     if (declaration.type) {
-      const found = project
-        .getSourceFiles()
-        .flatMap((file) => [
-          ...file.getInterfaces().filter((i) => i.getName() === declaration.type),
-          ...file.getTypeAliases().filter((t) => t.getName() === declaration.type),
-        ])
+      const found = project.getSourceFiles().flatMap((file) => [
+        ...file.getInterfaces().filter((i) => i.getName() === declaration.type),
+        ...file.getTypeAliases().filter((t) => t.getName() === declaration.type),
+        // a DTO class: its declared properties are the members
+        ...file.getClasses().filter((c) => c.getName() === declaration.type),
+      ])
       if (found.length === 0) {
         problems.push(
-          `logicalFiles.${name}: the application declares no type '${declaration.type}' — not counted`
+          `logicalFiles.${name}: the application declares no type '${declaration.type}' (a type, an interface or a class) — not counted`
         )
         continue
       }
@@ -226,9 +226,22 @@ function describeLogicalFiles(
         continue
       }
       const [node] = found
-      const members = node
+      // a class's instance type: its declared properties — methods and getters are behaviour and derived values
+      const properties = node
         .getType()
         .getProperties()
+        .filter(
+          (p) =>
+            !p
+              .getDeclarations()
+              .some(
+                (d) =>
+                  Node.isMethodDeclaration(d) ||
+                  Node.isGetAccessorDeclaration(d) ||
+                  Node.isSetAccessorDeclaration(d)
+              )
+        )
+      const members = properties
         .filter((p) => !exclude.has(p.getName()))
         .map((p) => {
           const where = p.getDeclarations()[0] ?? node

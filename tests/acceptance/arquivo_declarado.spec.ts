@@ -102,6 +102,29 @@ test.group('declared logical files: declared', () => {
   })
 })
 
+test.group('declared logical files: a DTO class', () => {
+  test('its declared properties are the DETs — not its methods', async ({ assert }) => {
+    const { count } = await analyze(root, {
+      logicalFiles: {
+        Agendamento: {
+          type: 'AgendamentoDto',
+          reads: ['AgendaService.listarPorPessoa'],
+          reason: 'r',
+        },
+      },
+    })
+    const file = fn(count, 'Agendamento')
+    assert.equal(file.type, 'EIF')
+    assert.includeMembers(file.rationale.detSources, [
+      'declared-type:Agendamento.data',
+      'declared-type:Agendamento.local',
+      'declared-type:Agendamento.situacao',
+    ])
+    assert.notInclude(file.rationale.detSources.join(' '), 'descrever')
+    assert.notInclude(file.rationale.detSources.join(' '), 'resumo')
+  })
+})
+
 test.group('declared logical files: a declaration without effect', () => {
   test('an entry that matches nothing, a type nobody declares: said, and nothing counted for them', async ({
     assert,
@@ -119,7 +142,7 @@ test.group('declared logical files: a declaration without effect', () => {
     )
     assert.include(
       warnings,
-      "logicalFiles.Fantasma: the application declares no type 'TipoQueNaoExiste' — not counted"
+      "logicalFiles.Fantasma: the application declares no type 'TipoQueNaoExiste' (a type, an interface or a class) — not counted"
     )
     assert.isUndefined(count.functions.find((f) => f.name === 'Fantasma'))
   })

@@ -218,7 +218,7 @@ export type FunctionPointsConfig = {
 export type LogicalFileDeclaration = {
   /** a table: its structure from the model that reads it, or from the generated schema */
   table?: string
-  /** a type or interface the application declares: its members are the DETs */
+  /** a type, an interface or a DTO class the application declares: its members are the DETs */
   type?: string
   /** members that are not user-recognisable (a stamp, a technical id) */
   exclude?: string[]
