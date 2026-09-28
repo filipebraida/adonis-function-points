@@ -268,6 +268,16 @@ export function diffCounts(
     )
   }
 
+  /**
+   * What each line is billed at, on the line (plan 0.15 §A). A team consolidating many
+   * diffs re-applied the preset and the per-reason factors themselves — repeating a rule
+   * of this library outside it. Unrounded, so the total below is the rounded sum.
+   */
+  for (const entry of entries) {
+    entry.factor = factorFor(entry)
+    entry.billable = entry.function.points * entry.factor
+  }
+
   return {
     from: options.labels?.from ?? 'previous',
     to: options.labels?.to ?? 'current',
@@ -281,9 +291,7 @@ export function diffCounts(
      * the same number and it is not the same document: this value is quoted in
      * an invoice, and a reader who sees that tail stops trusting the rest.
      */
-    billable: round2(
-      entries.reduce((total, entry) => total + entry.function.points * factorFor(entry), 0)
-    ),
+    billable: round2(entries.reduce((total, entry) => total + entry.billable!, 0)),
     preset,
     factors,
     reasonFactors,

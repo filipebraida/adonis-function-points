@@ -308,7 +308,11 @@ export function renderDiff(diff: FunctionPointDiff): string {
       const label = entry.reason ? `${entry.change} (${entry.reason})` : entry.change
       lines.push(
         `  ${pad(label, 26)} ${pad(entry.function.name.slice(0, 40), 41)}` +
-          `${padStart(entry.function.points, 4)} PF${movementOf(entry)}`
+          `${padStart(entry.function.points, 4)} PF` +
+          (entry.factor === undefined
+            ? ''
+            : ` × ${entry.factor} = ${Math.round(entry.billable! * 100) / 100}`) +
+          movementOf(entry)
       )
     }
   }

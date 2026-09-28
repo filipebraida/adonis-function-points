@@ -1,6 +1,7 @@
 import { test } from '@japa/runner'
 
 import { AEP_FACTORS, IncomparableRulesetsError, diffCounts } from '../../src/albrecht/diff.js'
+import { renderDiff } from '../../src/reporters/table.js'
 import type { CountResult, CountedFunction } from '../../src/types.js'
 
 /** synthetic count: the diff is arithmetic over identity, so this isolates it */
@@ -319,6 +320,50 @@ test.group('diff: factors and billing', () => {
 
     assert.equal(String(diff.billable), String(Math.round(diff.billable * 100) / 100))
     assert.notInclude(String(diff.billable), '000000')
+  })
+})
+
+test.group('diff: what each line is billed at', () => {
+  /**
+   * plan 0.15 §A: a team measuring points per issue consolidates many diffs, and had to
+   * re-apply the preset, the factors and the per-reason factors themselves — repeating a
+   * rule of this library outside it. Each line carries its factor and its weighted value,
+   * and the total is, by construction, the rounded sum of the lines.
+   */
+  test('each entry carries the factor it was billed at, and the lines add up to the total', async ({
+    assert,
+  }) => {
+    const previous = result([
+      fn({ id: 'a', name: 'a', points: 7 }),
+      fn({ id: 'b', name: 'b', points: 4 }),
+      fn({ id: 'c', name: 'c', points: 3 }),
+    ])
+    const current = result([
+      fn({ id: 'a', name: 'a', points: 7, scopeHash: 'h2' }), // implementation only
+      fn({ id: 'b', name: 'b', points: 4, det: 9, scopeHash: 'h2' }), // size
+      fn({ id: 'd', name: 'd', points: 6 }), // added; c removed
+    ])
+    const diff = diffCounts(previous, current, { reasonFactors: { implementation: 0.35 } })
+
+    const line = (name: string) => diff.entries.find((e) => e.function.name === name)!
+    assert.equal(line('a').factor, 0.35)
+    assert.equal(line('b').factor, diff.factors.changed)
+    assert.equal(line('d').factor, diff.factors.added)
+    assert.equal(line('c').factor, diff.factors.removed)
+    for (const entry of diff.entries)
+      assert.equal(entry.billable, entry.function.points * entry.factor!, entry.function.name)
+
+    const sum = diff.entries.reduce((total, entry) => total + entry.billable!, 0)
+    assert.equal(diff.billable, Math.round(sum * 100) / 100)
+  })
+
+  test("the text report shows each line's factor", async ({ assert }) => {
+    const diff = diffCounts(
+      result([fn({ id: 'a', name: 'a', points: 7 })]),
+      result([fn({ id: 'a', name: 'a', points: 7, scopeHash: 'h2' })]),
+      { reasonFactors: { implementation: 0.35 } }
+    )
+    assert.match(renderDiff(diff), /a\s+7 PF × 0\.35 = 2\.45/)
   })
 })
 

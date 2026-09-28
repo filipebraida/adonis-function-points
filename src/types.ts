@@ -380,6 +380,13 @@ export type DiffEntry = {
   previous?: CountedFunction
   /** present only when `change` is 'changed' */
   reason?: ChangeReason
+  /** the factor this line is billed at — the per-reason one when set (plan 0.15 §A) */
+  factor?: number
+  /**
+   * `function.points × factor`, NOT rounded: the diff's `billable` is the rounded sum of
+   * these, so the lines always add up to the total. Absent on a diff built by hand.
+   */
+  billable?: number
 }
 
 export type DiffResult = {
