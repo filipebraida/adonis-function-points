@@ -451,6 +451,23 @@ export default defineConfig({
 })
 ```
 
+### Measuring a piece of work: a net change per function (0.15, corrected)
+
+What an issue or a sprint is worth is the NET change of each function it touched: added,
+modified or removed once, between the state before the work and the state after it. The
+plain sum of per-commit diffs is wrong — a function created in one commit and changed in the
+next is billed as an inclusion and a modification, where the work was one inclusion.
+
+How to get the net change depends on how the work landed. For contiguous work (a branch, a
+merge request) the diff of its base against its head is the answer. The 0.15 documentation
+said only that, and a reviewing team showed where it breaks: with commits straight to the main
+branch, the span from an issue's first commit to its last includes every other issue that
+landed in between — 121 FP with 24 functions of other issues, against 35 FP measured on the
+issue's own commits. The method that holds in both cases: diff each of the issue's commits
+against its parent, and consolidate each function by its ends — its state before the first
+commit that touched it, its state after the last. Each line of a diff carries its factor and
+weighted value (0.15), so a consolidation never re-applies the contract's factors itself.
+
 ### What the inventory therefore carries
 
 - `EntryPoint.identity`: the key above, computed at collection time

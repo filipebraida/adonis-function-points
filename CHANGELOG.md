@@ -6,6 +6,16 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## Unreleased
+
+### Documented
+
+- **Measuring an issue, corrected.** 0.15 said to compare an issue's start with its end. That
+  holds for contiguous work (a branch, a merge request); with commits interleaved on the main
+  branch, the span includes other work — measured at 121 FP against 35 FP of the issue's own.
+  The method that holds in both cases: diff each of the issue's commits against its parent and
+  consolidate each function by its ends (counting-decisions §5).
+
 ## 0.15.0
 
 Rule set unchanged (`afp@1.11.0`); no number moves for unchanged code and configuration. Two

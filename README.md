@@ -133,11 +133,20 @@ billed at full value. The reasoning, and what the default leaves on the table:
 Every line of the diff carries the factor it was billed at and its weighted value
 (`entries[].factor`, `entries[].billable`); the total is their rounded sum.
 
-**Measuring a piece of work — an issue, a sprint — compare its start with its end**, not the
-sum of its commits: `fp:count --out` at the base and at the head, then
-`fp:diff base.json head.json`. A function created in one commit and changed in the next is,
-for the issue, one inclusion; summed commit by commit it is billed as an inclusion **and** a
-modification.
+**Measuring a piece of work — an issue, a sprint — is a net change per function**, and how to
+get it depends on how the work landed:
+
+- **Contiguous work** (a branch, a merge request): `fp:count --out` at its base and at its
+  head, then `fp:diff base.json head.json`.
+- **Commits interleaved with other work** (straight to the main branch): the span from the
+  first commit to the last includes whatever else landed in between — on a measured issue, 121
+  FP with 24 functions of other issues, against 35 FP of its own. Diff each of its commits
+  against its parent, and consolidate each function by its ends: its state before the first
+  commit that touched it, and after the last.
+
+Either way, never the plain sum of per-commit diffs: a function created in one commit and
+changed in the next is, for the piece of work, one inclusion; summed, it is billed as an
+inclusion **and** a modification.
 
 ## Configuration
 
