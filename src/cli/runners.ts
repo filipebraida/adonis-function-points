@@ -71,7 +71,9 @@ async function configFor(root: string) {
   return { config: { ...config, configFile: file }, notes }
 }
 
-export async function runInventory(options: Common & { out?: string }): Promise<RunResult> {
+export async function runInventory(
+  options: Common & { out?: string; json?: boolean }
+): Promise<RunResult> {
   const { config, notes } = await configFor(options.root)
   const { inventory } = await analyze(options.root, config)
   const notCounted = inventory.notCounted ?? []
@@ -87,6 +89,7 @@ export async function runInventory(options: Common & { out?: string }): Promise<
     await writeFile(options.out, JSON.stringify(inventory, null, 2))
     return { output: `inventory written to ${options.out}`, notes }
   }
+  if (options.json) return { notes, output: JSON.stringify(inventory, null, 2) }
 
   const { coverage } = inventory
   return {
@@ -192,7 +195,9 @@ export async function runMetrics(
   }
 }
 
-export async function runExplain(options: Common & { name: string }): Promise<RunResult> {
+export async function runExplain(
+  options: Common & { name: string; json?: boolean }
+): Promise<RunResult> {
   const { config, notes } = await configFor(options.root)
   const { count } = await analyze(options.root, config)
 
@@ -215,6 +220,7 @@ export async function runExplain(options: Common & { name: string }): Promise<Ru
     return { output: '', notes, errors: [`no function matching "${options.name}"`] }
   }
 
+  if (options.json) return { notes, output: JSON.stringify(matched, null, 2) }
   return { notes, output: matched.map(renderExplain).join('\n\n' + '-'.repeat(70) + '\n\n') }
 }
 
@@ -230,7 +236,7 @@ const readCount = async (file: string) => JSON.parse(await readFile(file, 'utf8'
  * application, counting an older revision is a `git worktree` away.
  */
 export async function runDiff(
-  options: Common & { previous: string; current?: string }
+  options: Common & { previous: string; current?: string; json?: boolean }
 ): Promise<RunResult> {
   const { config, notes } = await configFor(options.root)
   const previous = await readCount(options.previous)
@@ -259,17 +265,13 @@ export async function runDiff(
   }
 
   try {
-    return {
-      notes,
-      output: renderDiff(
-        diffCounts(previous, current, {
-          labels: { from: options.previous, to },
-          preset: config.diff?.preset,
-          factors: config.diff?.factors,
-          reasonFactors: config.diff?.reasonFactors,
-        })
-      ),
-    }
+    const diff = diffCounts(previous, current, {
+      labels: { from: options.previous, to },
+      preset: config.diff?.preset,
+      factors: config.diff?.factors,
+      reasonFactors: config.diff?.reasonFactors,
+    })
+    return { notes, output: options.json ? JSON.stringify(diff, null, 2) : renderDiff(diff) }
   } catch (error) {
     if (error instanceof IncomparableRulesetsError || error instanceof IncomparableSourcesError) {
       return { output: '', notes, errors: [error.message] }
@@ -278,7 +280,9 @@ export async function runDiff(
   }
 }
 
-export async function runCalibrate(options: Common & { samples: string }): Promise<RunResult> {
+export async function runCalibrate(
+  options: Common & { samples: string; json?: boolean }
+): Promise<RunResult> {
   const { config, notes } = await configFor(options.root)
   const samples = parseSamples(await readFile(options.samples, 'utf8'))
   const { count } = await analyze(options.root, config)
@@ -299,5 +303,8 @@ export async function runCalibrate(options: Common & { samples: string }): Promi
     )
   }
 
-  return { notes: [...notes, ...calibration.warnings], output: lines.join('\n') }
+  return {
+    notes: [...notes, ...calibration.warnings],
+    output: options.json ? JSON.stringify(calibration, null, 2) : lines.join('\n'),
+  }
 }

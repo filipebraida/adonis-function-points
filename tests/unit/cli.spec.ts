@@ -8,7 +8,7 @@ import { analyze } from '../../src/pipeline.js'
 import { ConfigLoadError, loadConfig } from '../../src/cli/load_config.js'
 import { printResult } from '../../src/cli/print.js'
 import { runCount, runDiff, runExplain, runInventory, runMetrics } from '../../src/cli/runners.js'
-import { packageVersion, parseArgv, run } from '../../src/cli.js'
+import { USAGE, packageVersion, parseArgv, run } from '../../src/cli.js'
 import type { CountResult } from '../../src/types.js'
 import { appFixturePath, fixturePath } from '../helpers.js'
 
@@ -371,6 +371,55 @@ test.group('cli: exit codes', () => {
     assert.exists(parsed.structure)
     assert.exists(parsed.conformance)
     assert.exists(parsed.source, 'a metric without its revision cannot be compared to another')
+  })
+
+  /**
+   * plan 0.14 §B: the help promises `--json` for every command, and inventory and diff
+   * printed text anyway — a CI job had to parse a table. The list of commands is read
+   * off the help itself, so a command added there is covered here.
+   */
+  test('every command the help lists honours --json', async ({ assert }) => {
+    const root = appFixturePath('minimal_flat')
+    const dir = await mkdtemp(path.join(tmpdir(), 'fp-json-'))
+    const saved = path.join(dir, 'count.json')
+    const samples = path.join(dir, 'samples.csv')
+    await run(['count', '--root', root, '--out', saved], capture().printer)
+    await writeFile(samples, 'function,fp\nBook,7\n')
+
+    const argsFor: Record<string, string[]> = {
+      explain: ['Book'],
+      diff: [saved],
+      calibrate: [samples],
+    }
+    const commands = [
+      ...USAGE.split('Commands')[1]
+        .split('Options')[0]
+        .matchAll(/^ {2}(\w+)/gm),
+    ].map((m) => m[1])
+    assert.includeMembers(commands, [
+      'count',
+      'inventory',
+      'metrics',
+      'explain',
+      'diff',
+      'calibrate',
+    ])
+
+    for (const command of commands) {
+      const { out, printer } = capture()
+      const code = await run(
+        [command, ...(argsFor[command] ?? []), '--root', root, '--json'],
+        printer
+      )
+      assert.equal(code, 0, `${command} exited ${code}: ${out.join('\n').slice(0, 200)}`)
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(out.join('\n'))
+      } catch {
+        assert.fail(`${command} --json printed text, not JSON: ${out.join('\n').slice(0, 120)}`)
+      }
+      assert.exists(parsed, command)
+    }
   })
 
   test('metrics refuses a root that is not the application', async ({ assert }) => {

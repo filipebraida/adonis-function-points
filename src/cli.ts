@@ -27,7 +27,7 @@ import type { RunResult } from './cli/runners.js'
  * analysed project.
  */
 
-const USAGE = `adonis-function-points — automated function point counting for AdonisJS
+export const USAGE = `adonis-function-points — automated function point counting for AdonisJS
 
 Usage
   adonis-function-points <command> [options]
@@ -191,7 +191,11 @@ export async function run(argv: string[], printer: Printer = CONSOLE): Promise<n
       break
 
     case 'inventory':
-      result = await runInventory({ root, out: text(flags.get('out')) })
+      result = await runInventory({
+        root,
+        out: text(flags.get('out')),
+        json: flags.get('json') === true,
+      })
       break
 
     case 'metrics':
@@ -203,7 +207,11 @@ export async function run(argv: string[], printer: Printer = CONSOLE): Promise<n
       break
 
     case 'explain':
-      result = await runExplain({ root, name: need('a function name', positional[0]) })
+      result = await runExplain({
+        root,
+        name: need('a function name', positional[0]),
+        json: flags.get('json') === true,
+      })
       break
 
     case 'diff':
@@ -211,11 +219,16 @@ export async function run(argv: string[], printer: Printer = CONSOLE): Promise<n
         root,
         previous: need('a saved count', positional[0]),
         current: positional[1],
+        json: flags.get('json') === true,
       })
       break
 
     case 'calibrate':
-      result = await runCalibrate({ root, samples: need('a samples CSV', positional[0]) })
+      result = await runCalibrate({
+        root,
+        samples: need('a samples CSV', positional[0]),
+        json: flags.get('json') === true,
+      })
       break
 
     /* c8 ignore next 2 -- unreachable: KNOWN is checked above */
