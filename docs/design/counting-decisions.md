@@ -1124,11 +1124,15 @@ and the bodies that write them, and `incidentalWrites({ name, methods | matching
 the sibling of `ignoreCalls` — is the answer. The report says what a declaration
 reclassified, and a declaration that matched nothing had no effect and is told so.
 
-One limit, measured: the declaration is about a call, everywhere. A method that is
-incidental on one route and the point of another — the last organisation remembered
-when a page opens, and remembered because the user switched — cannot be declared for
-one and not the other. Declaring it anyway turns the switch into an EO; the answer
-today is not to declare it.
+**Per transaction (0.15).** The CPM classifies each elementary process by its own intent,
+and a call is not a process: the last organisation remembered when a page opens, and
+remembered because the user switched; a verification polled when its status is read,
+and when the user asks for it. Declared about the call everywhere, the switch turned
+into an EO. `in: ['GET /intakes/:param', …]` names the transactions where the write is
+incidental, by the identity `overrides` uses; each transaction's walk decides for
+itself. `in`, not `except`: a new route that starts calling the method stays an EI and
+shows in the list of `GET`s counted as EI, where somebody sees it — `except` would turn
+it into an EO in silence.
 
 ### Three outcomes, where a resolver had two
 

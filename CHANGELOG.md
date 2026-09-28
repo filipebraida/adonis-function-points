@@ -6,6 +6,30 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
+## 0.15.0
+
+Rule set unchanged (`afp@1.11.0`); no number moves for unchanged code and configuration. Two
+requests from a reviewing team's report on 0.14.
+
+### Added
+
+- **`incidentalWrites({ …, in: [...] })`: a write incidental in some transactions only.** The CPM
+  classifies each elementary process by its own intent; the same call can be a side effect of a
+  page and the point of another route (the organisation remembered when a page opens, and when the
+  user switches). `in` lists transaction identities, the key `overrides` uses; each transaction's
+  walk decides for itself. Without `in`, 0.14's behaviour. An identity no transaction has is
+  reported. Fixture `incidental_por_transacao`.
+- **Each diff line carries its factor and its weighted value** (`entries[].factor`,
+  `entries[].billable`, unrounded); the diff's `billable` is their rounded sum, so the lines always
+  add up to the total. `fp:diff` prints `× factor = value` on each line. A team consolidating diffs
+  no longer re-applies the preset and per-reason factors outside the library.
+
+### Documented
+
+- Measuring an issue or a sprint: compare its start with its end (`fp:diff base.json head.json`),
+  not the sum of its commits — a function created and then changed inside the same piece of work is
+  one inclusion.
+
 ## 0.14.0
 
 Rule set unchanged (`afp@1.11.0`): code and configuration unchanged give the same number. What

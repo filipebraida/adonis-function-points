@@ -130,6 +130,15 @@ type, size, or implementation only — so a refactor is visible before it is
 billed at full value. The reasoning, and what the default leaves on the table:
 [counting-decisions §5](docs/design/counting-decisions.md#5-identity-of-a-function-across-versions-fpdiff).
 
+Every line of the diff carries the factor it was billed at and its weighted value
+(`entries[].factor`, `entries[].billable`); the total is their rounded sum.
+
+**Measuring a piece of work — an issue, a sprint — compare its start with its end**, not the
+sum of its commits: `fp:count --out` at the base and at the head, then
+`fp:diff base.json head.json`. A function created in one commit and changed in the next is,
+for the issue, one inclusion; summed commit by commit it is billed as an inclusion **and** a
+modification.
+
 ## Configuration
 
 Discovery does the technical work — subpath aliases, generated artefacts,
@@ -268,9 +277,18 @@ export default defineConfig({
 
 The store stays maintained — an ILF, an FTR — and only the classification changes. The
 report says which transactions the declaration reclassified, and a declaration that
-matched nothing had no effect and is told so. It holds for the call everywhere: a method
-that is the point of one route (a user switching organisation) and incidental on another
-is not declared.
+matched nothing had no effect and is told so. A method that is the point of one route (a
+user switching organisation) and incidental on another is declared for the pages only:
+
+```ts
+incidentalWrites({
+  name: 'remembered organisation',
+  methods: ['rememberOrganisation'],
+  in: ['GET /orders/:param', 'GET /customers/:param'], // transaction identities, as in `overrides`
+})
+```
+
+A route not listed — including one added later — stays an EI and shows in the list.
 
 ## Support
 
