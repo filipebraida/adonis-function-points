@@ -285,7 +285,8 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
     )
 
   return {
-    inventory,
+    // the list only the count knows, where people look for a function the count lost (plan 0.14 §A)
+    inventory: { ...inventory, notCounted: counted.confidence.notCounted },
     count: { ...counted, source },
   }
 }

@@ -69,6 +69,15 @@ test.group('nothing falls out in silence', () => {
     assert.notInclude(block, '⚑')
   })
 
+  /** plan 0.14 §A: the list itself, structured — a route with no handler included, with its reason */
+  test('the routes not counted are carried in the count, with the reason', async ({ assert }) => {
+    const { count: result } = await analyzed()
+    assert.deepEqual(result.confidence.notCounted, [
+      { entryPoint: 'GET /ajuda', reason: 'no handler' },
+      { entryPoint: 'GET /sobre', reason: 'reaches no data store' },
+    ])
+  })
+
   test('the coverage line names the entry point without a handler', async ({ assert }) => {
     const { count: result } = await analyzed()
     assert.equal(result.confidence.entryPointsWithoutHandler, 1)

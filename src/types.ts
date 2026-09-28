@@ -247,6 +247,12 @@ export type Inventory = {
    * package, whose additions are technical. Listed for the reader; never in coverage.
    */
   notes: string[]
+  /**
+   * The entry points that did not become a function, and why (plan 0.14 §A). Only the
+   * count knows it; the pipeline copies it here because this is where people look for
+   * a function the count lost. Absent on an inventory built without a count.
+   */
+  notCounted?: NotCounted[]
 }
 
 // ---------------------------------------------------------------------------
@@ -328,7 +334,21 @@ export type CountResult = {
     warnings: string[]
     /** the sites themselves, so the report can list them; absent on a count built by hand */
     unresolved?: UnresolvedSite[]
+    /**
+     * Every entry point that did not become a function, and why — plan 0.14 §A. The
+     * warning shows 25; this is where a person finds a function the count lost.
+     */
+    notCounted?: NotCounted[]
   }
+}
+
+/** an entry point that did not become a transactional function */
+export type NotCounted = {
+  /** identity, as the configuration keys it (`GET /intakes/:param`) */
+  entryPoint: string
+  reason: 'reaches no data store' | 'no handler'
+  /** raw query-builder calls met on the way and not read (plan 0.12 §A) */
+  rawBuilderCalls?: number
 }
 
 /** Maintenance type, for enhancement-project counting. */

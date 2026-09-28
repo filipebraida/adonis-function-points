@@ -12,6 +12,7 @@ import type {
   CountResult,
   CountedFunction,
   FunctionType,
+  NotCounted,
   UnresolvedSite,
 } from '../types.js'
 import { DEFAULT_TABLES, DEFAULT_WEIGHTS, complexityOf, pointsOf } from './tables.js'
@@ -299,7 +300,13 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
   warnings.push(...commandWarnings(entryPoints, transactionalFunctions))
   warnings.push(...undispatchedJobWarnings(input))
   warnings.push(...unreadablePageWarnings(input))
-  warnings.push(...storelessRouteWarnings(entryPoints, input.behaviors, transactionalFunctions))
+  const notCounted = notCountedOf(
+    input.entryPoints,
+    entryPoints,
+    input.behaviors,
+    transactionalFunctions
+  )
+  warnings.push(...storelessRouteWarnings(notCounted))
   warnings.push(...lookAlikeWarnings(functions))
   warnings.push(...seededOnlyWarnings(functions, grouping.members, input.seededAnywhere))
 
@@ -308,7 +315,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
     rulesetVersion: RULESET_VERSION,
     functions,
     totals: totalsOf(functions),
-    confidence: confidenceOf(input, warnings),
+    confidence: { ...confidenceOf(input, warnings), notCounted },
   }
 }
 
@@ -406,22 +413,13 @@ function declaredTableWarnings(input: CountInput, dataFunctions: CountedFunction
  * and is marked. A whole management area of a reviewed application fell out this way
  * for three releases (plan 0.12 §A).
  */
-function storelessRouteWarnings(
-  entryPoints: CollectedEntryPoint[],
-  behaviors: Map<string, Behavior>,
-  functions: CountedFunction[]
-): string[] {
-  const counted = new Set(functions.map((f) => f.id))
-  const storeless = entryPoints.filter(
-    (entry) => behaviors.has(entry.id) && !counted.has(`tx:${entry.identity}`)
-  )
+function storelessRouteWarnings(notCounted: NotCounted[]): string[] {
+  const storeless = notCounted.filter((entry) => entry.reason === 'reaches no data store')
   if (storeless.length === 0) return []
-  const line = (entry: CollectedEntryPoint) => {
-    const raw = behaviors.get(entry.id)!.rawBuilderCalls
-    return `  ${entry.identity}${raw > 0 ? ` ⚑ raw query builder on the way (${raw} call${raw > 1 ? 's' : ''}) — a data access the analysis does not read yet` : ''}`
-  }
-  const flagged = storeless.filter((e) => behaviors.get(e.id)!.rawBuilderCalls > 0)
-  const plain = storeless.filter((e) => behaviors.get(e.id)!.rawBuilderCalls === 0)
+  const line = ({ entryPoint, rawBuilderCalls: raw = 0 }: NotCounted) =>
+    `  ${entryPoint}${raw > 0 ? ` ⚑ raw query builder on the way (${raw} call${raw > 1 ? 's' : ''}) — a data access the analysis does not read yet` : ''}`
+  const flagged = storeless.filter((e) => (e.rawBuilderCalls ?? 0) > 0)
+  const plain = storeless.filter((e) => (e.rawBuilderCalls ?? 0) === 0)
   return [
     `${storeless.length} route(s) with a handler reach no data store the analysis sees, and are not counted ` +
       `(counting-decisions §1). Most are static pages, redirects and forms` +
@@ -429,9 +427,40 @@ function storelessRouteWarnings(
     ...flagged.map(line),
     ...plain.slice(0, 25 - Math.min(flagged.length, 25)).map(line),
     ...(storeless.length > 25
-      ? [`  … and ${storeless.length - 25} more — fp:inventory lists every entry point`]
+      ? [`  … and ${storeless.length - 25} more — fp:inventory lists every one under "not counted"`]
       : []),
   ]
+}
+
+/**
+ * Every entry point that did not become a function, and why (plan 0.14 §A): one with no
+ * handler, and one whose handler reaches no data store. An entry point the configuration
+ * ignores is not here — it was declared out, not lost. Sorted by identity.
+ */
+function notCountedOf(
+  all: CollectedEntryPoint[],
+  kept: CollectedEntryPoint[],
+  behaviors: Map<string, Behavior>,
+  functions: CountedFunction[]
+): NotCounted[] {
+  const counted = new Set(functions.map((f) => f.id))
+  const keptIds = new Set(kept.map((entry) => entry.id))
+  const list: NotCounted[] = []
+  for (const entry of all) {
+    if (!keptIds.has(entry.id)) continue
+    const behavior = behaviors.get(entry.id)
+    if (!entry.handler || !behavior) {
+      list.push({ entryPoint: entry.identity, reason: 'no handler' })
+      continue
+    }
+    if (counted.has(`tx:${entry.identity}`)) continue
+    list.push({
+      entryPoint: entry.identity,
+      reason: 'reaches no data store',
+      ...(behavior.rawBuilderCalls > 0 ? { rawBuilderCalls: behavior.rawBuilderCalls } : {}),
+    })
+  }
+  return list.sort((a, b) => a.entryPoint.localeCompare(b.entryPoint))
 }
 
 /**

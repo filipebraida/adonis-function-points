@@ -74,6 +74,7 @@ async function configFor(root: string) {
 export async function runInventory(options: Common & { out?: string }): Promise<RunResult> {
   const { config, notes } = await configFor(options.root)
   const { inventory } = await analyze(options.root, config)
+  const notCounted = inventory.notCounted ?? []
 
   const empty = refuseIfEmpty(
     options.root,
@@ -98,6 +99,19 @@ export async function runInventory(options: Common & { out?: string }): Promise<
       ...inventory.unresolved.map((site) => `  ${describeSite(site)}`),
       ...(inventory.notes.length > 0
         ? ['notes (declarations, not gaps):', ...inventory.notes.map((note) => `  ${note}`)]
+        : []),
+      // every one of them — the count's warning shows 25 and sends the reader here (plan 0.14 §A)
+      ...(notCounted.length > 0
+        ? [
+            `not counted (${notCounted.length}):`,
+            ...notCounted.map(
+              (entry) =>
+                `  ${entry.entryPoint} — ${entry.reason}` +
+                (entry.rawBuilderCalls
+                  ? ` (⚑ ${entry.rawBuilderCalls} raw query-builder call(s) not read)`
+                  : '')
+            ),
+          ]
         : []),
     ].join('\n'),
   }
