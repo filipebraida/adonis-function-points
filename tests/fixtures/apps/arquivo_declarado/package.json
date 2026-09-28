@@ -1,0 +1,18 @@
+{
+  "name": "arquivo-declarado",
+  "type": "module",
+  "dependencies": {
+    "@adonisjs/core": "^7.5.0",
+    "@adonisjs/lucid": "^22.4.2",
+    "@acme/permissoes": "^1.0.0",
+    "@acme/cache": "^1.0.0"
+  },
+  "imports": {
+    "#controllers/*": "./app/controllers/*.js",
+    "#actions/*": "./app/actions/*.js",
+    "#services/*": "./app/services/*.js",
+    "#types/*": "./app/types/*.js",
+    "#database/*": "./database/*.js",
+    "#start/*": "./start/*.js"
+  }
+}

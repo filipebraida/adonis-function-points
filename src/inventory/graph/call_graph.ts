@@ -508,6 +508,20 @@ export type GraphOptions = {
    * data stores.
    */
   eventBindings?: EventBindings
+  /** reads and writes of declared logical files (plan 0.14 §D), with how often each matched */
+  logicalFiles?: LogicalFileMatcher[]
+}
+
+/**
+ * One `reads` or `writes` entry of a declared logical file. A RegExp is tested against a
+ * call's callee text; a string names an application body the walk reaches — `Class.method`,
+ * or a function's name. `hits` counts the bodies and calls it matched: zero is reported.
+ */
+export type LogicalFileMatcher = {
+  store: string
+  mode: 'read' | 'write'
+  pattern: RegExp | string
+  hits: number
 }
 
 const DEFAULT_MAX_DEPTH = 3
@@ -526,6 +540,7 @@ export function createAnalyzer(
   options: GraphOptions = {}
 ) {
   const eventBindings = options.eventBindings ?? new Map()
+  const logicalFileMatchers = options.logicalFiles ?? []
 
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
@@ -1078,7 +1093,41 @@ export function createAnalyzer(
 
     bindLocals(body, symbols, context, resolvers)
 
+    /**
+     * A declared logical file (plan 0.14 §D) reached by this BODY: `SettingsService.update`
+     * writes the settings, whatever the lines inside it say — the cache call that stores them
+     * serves two files, the method does not.
+     */
+    const bodyLabel = owner?.getName() ? `${owner.getName()}.${ref.member ?? 'handle'}` : ref.member
+    for (const matcher of logicalFileMatchers) {
+      if (typeof matcher.pattern !== 'string' || matcher.pattern !== bodyLabel) continue
+      matcher.hits++
+      accesses.push({ store: matcher.store, write: matcher.mode === 'write' })
+    }
+
     for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      /**
+       * A declared logical file reached by this CALL — a package's API that writes a table
+       * the application never sees (`permissions.store.createRole(…)`). Declared, it is the
+       * access; nothing else is asked of the call.
+       */
+      const callee = call.getExpression().getText()
+      const declared = logicalFileMatchers.filter(
+        (matcher) => matcher.pattern instanceof RegExp && matcher.pattern.test(callee)
+      )
+      if (declared.length > 0) {
+        for (const matcher of declared) {
+          matcher.hits++
+          const write = matcher.mode === 'write'
+          accesses.push({
+            store: matcher.store,
+            write,
+            technical: write && isTechnicalWrite(call, context, resolvers),
+          })
+        }
+        continue
+      }
+
       const access = detectAccess(call, symbols, relationsByStore)
       if (access) {
         /**

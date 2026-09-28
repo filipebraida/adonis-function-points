@@ -7,6 +7,7 @@ import { collectJobs } from './inventory/sources/jobs.js'
 import { collectEventBindings } from './inventory/sources/event_bindings.js'
 import { collectJsonSchemas } from './inventory/sources/json_schemas.js'
 import { createAnalyzer } from './inventory/graph/call_graph.js'
+import type { LogicalFileMatcher } from './inventory/graph/call_graph.js'
 import { count } from './albrecht/counter.js'
 import { relativeTo } from './inventory/paths.js'
 import { describeSource } from './inventory/source.js'
@@ -120,7 +121,26 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
     unresolved: storeProblems,
     notes: storeNotes,
     undescribed,
-  } = await collectDataStores(app, declaredTables)
+    logicalFiles: logicalFileStores,
+    logicalFileProblems,
+  } = await collectDataStores(app, declaredTables, options.logicalFiles)
+
+  /** each `reads` / `writes` entry of a declared logical file, bound to the store it names */
+  const logicalFileMatchers: (LogicalFileMatcher & { label: string })[] = Object.entries(
+    options.logicalFiles ?? {}
+  ).flatMap(([name, declaration]) => {
+    const store = logicalFileStores[name]
+    if (!store) return []
+    return (['reads', 'writes'] as const).flatMap((key) =>
+      (declaration[key] ?? []).map((pattern, index) => ({
+        store,
+        mode: key === 'reads' ? ('read' as const) : ('write' as const),
+        pattern,
+        hits: 0,
+        label: `logicalFiles.${name}.${key}[${index}] (${String(pattern)})`,
+      }))
+    )
+  })
   const routes = await collectEntryPoints(app)
   const routeProblems = routes.unresolved
   // ace commands are elementary processes too — counting-decisions §5, plan 0.7 §C
@@ -133,6 +153,7 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
     maxDepth: options.maxDepth,
     callResolvers: options.resolvers?.call,
     eventBindings: collectEventBindings(app),
+    logicalFiles: logicalFileMatchers,
   })
 
   const behaviors = new Map(
@@ -273,10 +294,17 @@ export async function analyze(root: string, options: AnalysisOptions = {}): Prom
       unresolved: inventory.unresolved,
       writtenAnywhere: analyzer.writtenAnywhere(),
       addressedAnywhere: analyzer.addressedAnywhere(),
+      logicalFileStores,
       seededAnywhere: analyzer.seededAnywhere(),
     },
     options
   )
+
+  // a declared logical file that could not be described, or an entry that matched nothing
+  counted.confidence.warnings.push(...logicalFileProblems)
+  for (const matcher of logicalFileMatchers)
+    if (matcher.hits === 0)
+      counted.confidence.warnings.push(`${matcher.label} matched nothing: it had no effect`)
 
   // a declaration that matched nothing had no effect, and whoever wrote it believes it did
   for (const resolver of options.resolvers?.call ?? [])

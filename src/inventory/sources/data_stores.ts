@@ -4,6 +4,7 @@ import type { ClassDeclaration, SourceFile, ClassExpression } from 'ts-morph'
 import type { AppContext } from '../app_context.js'
 import { samePath } from '../paths.js'
 import type { Attribute, BoundaryKey, DataStore, UnresolvedCall } from '../../types.js'
+import type { LogicalFileDeclaration } from '../../define_config.js'
 
 /**
  * Collects the logical data stores — ILF/EIF candidates.
@@ -24,7 +25,7 @@ import type { Attribute, BoundaryKey, DataStore, UnresolvedCall } from '../../ty
  * pretending it does not exist would be counting wrong without warning.
  */
 
-export type ColumnSource = 'ast' | 'generated-schema'
+export type ColumnSource = 'ast' | 'generated-schema' | 'declared-type'
 
 export type CollectedDataStore = DataStore & {
   /** where the columns came from; counts from different sources are not equivalent */
@@ -46,6 +47,10 @@ export type DataStoreCollection = {
   notes: string[]
   /** tables declared in the boundary that neither a model nor the generated schema describes */
   undescribed: DeclaredTable[]
+  /** declared logical file -> the store it is (plan 0.14 §D) */
+  logicalFiles: Record<string, string>
+  /** declared logical files that could not be described, said */
+  logicalFileProblems: string[]
 }
 
 const LUCID_ORM = '@adonisjs/lucid/orm'
@@ -65,7 +70,8 @@ const ALL_RELATIONS = new Set(['belongsTo', 'hasMany', 'hasOne', 'manyToMany', '
  */
 export async function collectDataStores(
   app: AppContext,
-  declared: DeclaredTable[] = []
+  declared: DeclaredTable[] = [],
+  logicalFiles: Record<string, LogicalFileDeclaration> = {}
 ): Promise<DataStoreCollection> {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
@@ -130,7 +136,136 @@ export async function collectDataStores(
     })
   }
 
-  return { stores: stores.sort(byName), unresolved, notes, undescribed }
+  const declaredFiles = describeLogicalFiles(
+    logicalFiles,
+    stores,
+    schema,
+    project,
+    app,
+    unresolved,
+    notes
+  )
+  stores.push(...declaredFiles.stores)
+
+  return {
+    stores: stores.sort(byName),
+    unresolved,
+    notes,
+    undescribed,
+    logicalFiles: declaredFiles.storeOf,
+    logicalFileProblems: declaredFiles.problems,
+  }
+}
+
+/**
+ * The declared logical files, as stores — plan 0.14 §D. A `table` a model reads IS that
+ * model's store; one no model reads comes from its generated-schema class; a `type` from
+ * the members of a type or interface the application declares. Nothing invents a column,
+ * and a declaration whose structure is nowhere is reported and not counted.
+ */
+function describeLogicalFiles(
+  declarations: Record<string, LogicalFileDeclaration>,
+  stores: CollectedDataStore[],
+  schema: SourceFile | undefined,
+  project: Project,
+  app: AppContext,
+  unresolved: UnresolvedCall[],
+  notes: string[]
+): { stores: CollectedDataStore[]; storeOf: Record<string, string>; problems: string[] } {
+  const made: CollectedDataStore[] = []
+  const storeOf: Record<string, string> = {}
+  const problems: string[] = []
+
+  for (const [name, declaration] of Object.entries(declarations)) {
+    const exclude = new Set(declaration.exclude ?? [])
+    if (declaration.table) {
+      const modelled = stores.find((store) => store.table === declaration.table)
+      if (modelled) {
+        storeOf[name] = modelled.name
+        continue
+      }
+      const cls = schema
+        ?.getClasses()
+        .find((c) => tablesOfSchemaClass(c).includes(declaration.table!))
+      const described = cls ? describeStore(cls, app, project, unresolved, notes) : null
+      if (!described) {
+        problems.push(
+          `logicalFiles.${name}: no model and no generated-schema class describes table '${declaration.table}' — not counted`
+        )
+        continue
+      }
+      made.push({
+        ...described.store,
+        id: `declared:${name}`,
+        name,
+        table: declaration.table,
+        attributes: described.store.attributes.filter((a) => !exclude.has(a.name)),
+        declaredIn: 'logicalFiles',
+      })
+      storeOf[name] = name
+      continue
+    }
+    if (declaration.type) {
+      const found = project
+        .getSourceFiles()
+        .flatMap((file) => [
+          ...file.getInterfaces().filter((i) => i.getName() === declaration.type),
+          ...file.getTypeAliases().filter((t) => t.getName() === declaration.type),
+        ])
+      if (found.length === 0) {
+        problems.push(
+          `logicalFiles.${name}: the application declares no type '${declaration.type}' — not counted`
+        )
+        continue
+      }
+      if (found.length > 1) {
+        problems.push(
+          `logicalFiles.${name}: ${found.length} types are named '${declaration.type}' — not counted; ` +
+            `the declaration cannot tell which one it means`
+        )
+        continue
+      }
+      const [node] = found
+      const members = node
+        .getType()
+        .getProperties()
+        .filter((p) => !exclude.has(p.getName()))
+        .map((p) => {
+          const where = p.getDeclarations()[0] ?? node
+          return {
+            name: p.getName(),
+            line: where.getStartLineNumber(),
+            file: where.getSourceFile().getFilePath(),
+          }
+        })
+      made.push({
+        id: `declared:${name}`,
+        name,
+        module: 'declared',
+        attributes: members.map((member) => ({
+          name: member.name,
+          isIdentifier: member.name === 'id',
+          provenance: { file: member.file, line: member.line, by: 'logical-files' },
+        })),
+        subgroups: [],
+        relations: {},
+        pivots: {},
+        maintainedExternally: false,
+        columnSource: 'declared-type',
+        declaredIn: 'logicalFiles',
+        declaredType: declaration.type,
+        provenance: {
+          file: node.getSourceFile().getFilePath(),
+          line: node.getStartLineNumber(),
+          by: 'logical-files',
+        },
+      })
+      storeOf[name] = name
+      continue
+    }
+    problems.push(`logicalFiles.${name}: says neither a table nor a type — not counted`)
+  }
+  return { stores: made, storeOf, problems }
 }
 
 export type DeclaredTable = { table: string; key: BoundaryKey }

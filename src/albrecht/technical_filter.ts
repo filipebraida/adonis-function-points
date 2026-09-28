@@ -46,6 +46,8 @@ export function isTechnical(
   store: CollectedDataStore,
   patterns: TechnicalPattern[] = DEFAULT_TECHNICAL_PATTERNS
 ): string | null {
+  // a declared logical file is a person saying it is the user's data (plan 0.14 §D)
+  if (store.declaredIn === 'logicalFiles') return null
   const table = store.table ?? store.name
 
   for (const { label, pattern } of patterns) {

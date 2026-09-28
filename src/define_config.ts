@@ -198,6 +198,39 @@ export type FunctionPointsConfig = {
    * fields are declared anywhere in the code.
    */
   overrides?: Record<string, FunctionOverride>
+
+  /**
+   * Logical files the analysis cannot see, declared by name — plan 0.14 §D. Each one is
+   * listed in the report with the origin of its DETs, the FP it contributes and the
+   * transactions that reach it by declaration; an entry that matches nothing is reported.
+   */
+  logicalFiles?: Record<string, LogicalFileDeclaration>
+}
+
+/**
+ * A logical file the analysis cannot see, declared — plan 0.14 §D.
+ *
+ * Data the user recognises that the code reaches by a path the analysis never follows: a
+ * table a package maintains through its own API, settings kept in a persistent cache, an
+ * appointment book read from another system's HTTP API. Nothing in the application's code
+ * changes to count it; this says what it is.
+ */
+export type LogicalFileDeclaration = {
+  /** a table: its structure from the model that reads it, or from the generated schema */
+  table?: string
+  /** a type or interface the application declares: its members are the DETs */
+  type?: string
+  /** members that are not user-recognisable (a stamp, a technical id) */
+  exclude?: string[]
+  /**
+   * Who reads it: a RegExp over the callee's text (`/\bpermissions\.store\.listRoles$/`), or
+   * an application body the walk reaches — `'SettingsService.get'`, or a function's name.
+   */
+  reads?: Array<RegExp | string>
+  /** who writes it — the same forms; declare the write where the intent is */
+  writes?: Array<RegExp | string>
+  /** why — required, printed with the file */
+  reason: string
 }
 
 export type FunctionOverride = {

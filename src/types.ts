@@ -54,12 +54,17 @@ export type DataStore = {
    * A table no model reads, made a store because the configuration named it in one
    * of the boundary keys — its structure read off the generated schema (plan 0.13 §B).
    */
-  declaredIn?: BoundaryKey
+  declaredIn?: DeclarationKey
+  /** the type a declared logical file takes its DETs from (plan 0.14 §D) */
+  declaredType?: string
   provenance: Provenance
 }
 
 /** the boundary keys that say what a table is — the three a table with no model can be declared in */
 export type BoundaryKey = 'business' | 'externallyMaintained' | 'infrastructure'
+
+/** where a store was declared: a boundary key (0.13 §B), or `logicalFiles` (0.14 §D) */
+export type DeclarationKey = BoundaryKey | 'logicalFiles'
 
 export type Attribute = {
   name: string

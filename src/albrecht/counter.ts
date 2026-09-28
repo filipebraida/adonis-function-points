@@ -16,7 +16,7 @@ import type {
   UnresolvedSite,
 } from '../types.js'
 import { DEFAULT_TABLES, DEFAULT_WEIGHTS, complexityOf, pointsOf } from './tables.js'
-import type { FunctionOverride } from '../define_config.js'
+import type { FunctionOverride, LogicalFileDeclaration } from '../define_config.js'
 import type { ComplexityTable } from './tables.js'
 import { countDataFunctions, groupStores } from './data_functions.js'
 import type { GroupingStrategy, StoreUsage } from './data_functions.js'
@@ -102,6 +102,8 @@ export type CountInput = {
    * children fold into their parent as a RET (counting-decisions §10).
    */
   addressedAnywhere?: Set<string>
+  /** declared logical file -> the store it is (plan 0.14 §D) */
+  logicalFileStores?: Record<string, string>
   /**
    * Stores written by a SEEDER — scaffolding, so not maintenance — kept apart
    * because an EIF only a seed populates is one of two things the code cannot
@@ -127,6 +129,8 @@ export type CountOptions = {
     ignoreEntryPoints?: string[]
   }
   messageDet?: number
+  /** logical files the analysis cannot see, declared — plan 0.14 §D */
+  logicalFiles?: Record<string, LogicalFileDeclaration>
   complexityTables?: Partial<Record<FunctionType, ComplexityTable>>
   weights?: Partial<Record<FunctionType, Record<Complexity, number>>>
 }
@@ -238,6 +242,7 @@ export function count(input: CountInput, options: CountOptions = {}): CountResul
    * group, and its columns are the group's output.
    */
   warnings.push(...declaredTableWarnings(input, dataFunctions))
+  warnings.push(...logicalFileWarnings(input, options, dataFunctions))
 
   const countedRoots = new Set(dataFunctions.map((fn) => fn.name))
   const countedStores = new Map(
@@ -349,6 +354,47 @@ function unreadableDeliveryWarnings(input: CountInput): string[] {
           `  ${entry.identity}: ${behavior!.delivered.opaqueFields.join(', ')}`
       ),
     ...(blind.length > 10 ? [`  … and ${blind.length - 10} more`] : []),
+  ]
+}
+
+/**
+ * The declared logical files (plan 0.14 §D): each with where its DETs came from, the FP they
+ * contribute as data functions, and how many transactions reach them — a declaration moves
+ * the number, and the number it moves is in the report, like `opaque`'s.
+ */
+function logicalFileWarnings(
+  input: CountInput,
+  options: CountOptions,
+  dataFunctions: CountedFunction[]
+): string[] {
+  const declarations = options.logicalFiles ?? {}
+  const storeOf = input.logicalFileStores ?? {}
+  const names = Object.keys(declarations)
+    .filter((name) => storeOf[name])
+    .sort()
+  if (names.length === 0) return []
+
+  const stores = new Set(names.map((name) => storeOf[name]))
+  const byName = new Map(input.stores.map((store) => [store.name, store]))
+  const described = names.map((name) => {
+    const declaration = declarations[name]
+    const store = byName.get(storeOf[name])
+    const det = dataFunctions.find((fn) => fn.name === storeOf[name])?.det
+    if (declaration.type) return `${name} (type ${declaration.type}, ${det ?? 0} DET)`
+    if (store?.declaredIn === 'logicalFiles')
+      return `${name} (table ${declaration.table}, ${det ?? 0} DET from the generated schema)`
+    return `${name} (table ${declaration.table}, the store ${storeOf[name]})`
+  })
+  const points = dataFunctions
+    .filter((fn) => stores.has(fn.name))
+    .reduce((sum, fn) => sum + fn.points, 0)
+  const reaching = [...input.behaviors.values()].filter((behavior) =>
+    behavior.touches.some((store) => stores.has(store))
+  ).length
+
+  return [
+    `${names.length} logical file(s) declared in logicalFiles: ${described.join('; ')} — ` +
+      `${points} FP as data functions, reached by declaration from ${reaching} transaction(s)`,
   ]
 }
 
