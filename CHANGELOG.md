@@ -6,15 +6,26 @@ release moves the number for unchanged code, the rule set version moves with it 
 otherwise the difference would measure the tool's change rather than the work, and
 that difference becomes an invoice.
 
-## Unreleased
+## 0.15.1
+
+Rule set unchanged (`afp@1.11.0`); no count moves.
+
+### Fixed
+
+- **Each diff line is billed in cents, and the lines add up to the total.** `entries[].billable`
+  carried floating-point noise (`2.8000000000000003`), and every consumer rounded each line on its
+  own, which can drift a cent from the total. Lines are now in cents; the rounding remainder goes to
+  the lines with the largest fraction, and the diff's `billable` is the sum of the lines.
 
 ### Documented
 
-- **Measuring an issue, corrected.** 0.15 said to compare an issue's start with its end. That
-  holds for contiguous work (a branch, a merge request); with commits interleaved on the main
-  branch, the span includes other work — measured at 121 FP against 35 FP of the issue's own.
-  The method that holds in both cases: diff each of the issue's commits against its parent and
-  consolidate each function by its ends (counting-decisions §5).
+- **Measuring an issue.** 0.15 said to compare an issue's start with its end. That holds for
+  contiguous work (a branch, a merge request); with commits interleaved on the main branch the span
+  includes other work. The method that holds in both cases: diff each of the issue's commits against
+  its parent and consolidate each function by its ends (counting-decisions §5).
+- **The README** is rewritten for someone arriving now: what the package counts and how it reads
+  the application, how every number is explained, the commands, measuring change, and what the
+  configuration can declare.
 
 ## 0.15.0
 
